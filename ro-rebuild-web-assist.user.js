@@ -771,6 +771,19 @@
     document.body.appendChild(root);
 
     // ---------- wire events ----------
+    // ★★ ดัก keyboard events ใน capture phase ที่ window → ถ้ากำลังพิมพ์ใน panel ของเรา
+    //   ให้หยุด propagation ก่อนถึง Unity (มิฉะนั้น Unity กลืน input ทำให้พิมพ์ไม่ติด)
+    const ASSIST_INPUT_SEL = 'input, select, textarea';
+    function isOurField(t) { return t && t.closest && root.contains(t) && t.matches && t.matches(ASSIST_INPUT_SEL); }
+    ['keydown', 'keyup', 'keypress', 'beforeinput', 'input'].forEach(evType => {
+      window.addEventListener(evType, (e) => {
+        if (isOurField(e.target)) {
+          e.stopPropagation();
+          if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        }
+      }, true);   // ← capture phase = ดักก่อน Unity
+    });
+
     const bar = root.querySelector('#__assist_bar');
     const popup = root.querySelector('#__assist_popup');
     bar.addEventListener('click', (e) => {
