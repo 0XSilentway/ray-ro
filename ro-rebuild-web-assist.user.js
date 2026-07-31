@@ -157,7 +157,8 @@
     targetBlacklist: [],          // ไม่ตีมอนเหล่านี้ (ชื่อหรือ sprite id)
     attackRange: 2,               // ระยะโจมตี (ช่อง) — ใกล้กว่านี้สั่งตี, ไกลกว่าเดินไป
     rangedAttackRange: 8,         // 0 = ใช้ attackRange; >0 = นักธนูตีไกลได้ N ช่อง
-    maxWalkDistance: 15,          // เดินไปหาถ้ามอนไกลกว่านี้ (≤20)
+    maxAcquireDistance: 20,       // ★ เลือกเป้า + ส่ง ATTACK ได้ในระยะนี้ (server เดินเข้าไปตีเอง)
+    maxWalkDistance: 15,          // (legacy — ใช้น้อย เพราะ server walk-and-attack เอง)
     combatTickMs: 200,            // tick loop (มี jitter ±25% เหมือนบอทหลัก)
     attackReIssueMs: 2500,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้
     maxEngageSec: 30,             // abandon target ถ้า engage นานกว่านี้
@@ -1123,27 +1124,26 @@
       }
     }
 
-    // === 3. Attack or walk-to ===
+    // === 3. Attack ===
+    //   ★ server ทำ walk-and-attack เอง: ส่ง ATTACK ในระยะ maxAcquireDistance → server เดินตัวละครเข้าไปตี
+    //     ไม่ต้องส่ง MOVE เอง (เหมือน walk-and-pickup ของ loot)
     if (target) {
       const m = entities.get(target.id);
       if (m && player.x != null) {
         const dist = Math.hypot(m.x - player.x, m.y - player.y);
-        const range = CFG.rangedAttackRange > 0 ? CFG.rangedAttackRange : CFG.attackRange;
-        if (dist <= range) {
-          // ในระยะ → ส่ง attack (re-issue ถ้าเงียบ)
+        // ในระยะ acquire → ส่ง ATTACK ตรงๆ (server เดินเข้าไปตีเอง)
+        if (dist <= CFG.maxAcquireDistance) {
           if (now - target.lastAttackAt > CFG.attackReIssueMs || target.lastAttackAt === 0) {
             if (sendAttack(target.id)) {
               target.lastAttackAt = now; target.pendingAttacks++;
               if (!target.engageAt) { target.engageAt = now; }
-              log('⚔️ ตี', m.name, target.id.toString(16), '(pending', target.pendingAttacks + ')');
+              log('⚔️ ตี', m.name || m.id.toString(16), target.id.toString(16), '@ dist', dist.toFixed(1), '(pending', target.pendingAttacks + ')');
             }
           }
           return;
         }
-        // ไกลเกินระยะโจมตี → เดินไปหาเสมอ (ไม่ abandon ทันที)
-        //   abandon เฉพาะตอน stuck จริง (track ใน walkToTarget ผ่าน stuckWalkCount)
-        if (dist > CFG.maxWalkDistance && CFG.warpToMonster && (warpToMonsterCount.get(target.id) || 0) < CFG.warpToMonsterMaxPerEntity) {
-          // ไกลมาก + เปิด warpToMonster → วาร์ปไปหา (เร็วกว่าเดิน)
+        // ไกลเกิน maxAcquireDistance → warpToMonster (ถ้าเปิด) หรือ abandon
+        if (CFG.warpToMonster && (warpToMonsterCount.get(target.id) || 0) < CFG.warpToMonsterMaxPerEntity) {
           const wc = warpToMonsterCount.get(target.id) || 0;
           if (now - (target._lastWarpAt || 0) > CFG.warpToMonsterCooldownMs) {
             if (sendTeleport(currentMap, m.x, m.y)) {
@@ -1153,8 +1153,9 @@
           }
           return;
         }
-        // เดินเข้าไปหามอน (stuck detection อยู่ใน walkToTarget — abandon ถ้าติดกำแพงนานเกิน)
-        walkToTarget(now, m);
+        // ไกลเกินไป + ไม่เปิด warpToMonster → abandon (หาตัวใกล้กว่า)
+        abandonTarget('ไกลเกิน ' + CFG.maxAcquireDistance + ' @' + dist.toFixed(0), false);
+        target = null;
         return;
       }
     }
