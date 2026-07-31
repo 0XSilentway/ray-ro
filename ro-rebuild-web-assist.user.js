@@ -1274,6 +1274,13 @@
         const dist = Math.hypot(m.x - player.x, m.y - player.y);
         // ในระยะ acquire → ส่ง ATTACK ตรงๆ (server เดินเข้าไปตีเอง)
         if (dist <= CFG.maxAcquireDistance) {
+          // ★ FALLBACK: ถ้า pending ≥ 2 (ส่ง ATTACK แล้ว server เงียบ = walk-and-attack ไม่ทำงาน)
+          //   → เดินเข้าไปใกล้ขึ้นเอง แล้วตีใหม่ (บางมอน เช่น ไข่ server ไม่เดินเข้าให้ ต้องเดินเอง)
+          if (target.pendingAttacks >= 2 && now - target.lastAttackAt > 1000) {
+            log('🚶 server เงียบ → เดินเข้าใกล้เอง', m.name || m.id.toString(16), '(pending', target.pendingAttacks + ')');
+            walkToTarget(now, m);
+            return;
+          }
           if (now - target.lastAttackAt > CFG.attackReIssueMs || target.lastAttackAt === 0) {
             if (sendAttack(target.id)) {
               target.lastAttackAt = now; target.pendingAttacks++;
