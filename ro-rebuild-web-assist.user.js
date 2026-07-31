@@ -735,21 +735,15 @@
       const now = nowMs();
       // เราตีมอน → ลด HP มอน + reset pending + mark combat
       //   ★ reset pending ถ้า victimId = target ปัจจุบัน (แม้ attacker ไม่ตรง playerId — กัน playerId ผิด)
-      if (attacker === playerId && victimId !== playerId && victimId !== 0) {
-        const m = entities.get(victimId);
-        if (m) {
-          m._lastDamageAt = now;
-          if (damage > 0 && m.hp != null && m.hpMax != null) m.hp = Math.max(0, m.hp - damage);
-        }
+      //   ★ ถ้าไม่มี entity ใน map → สร้างเลย (กัน _lastDamageAt ไม่ถูก stamp)
+      const isOurAttack = (attacker === playerId && victimId !== playerId && victimId !== 0);
+      const isTargetHit = (target && victimId === target.id && victimId !== 0 && victimId !== playerId);
+      if (isOurAttack || isTargetHit) {
+        let m = entities.get(victimId);
+        if (!m) { m = { id: victimId, kind: 1, alive: true }; entities.set(victimId, m); }   // สร้างถ้าไม่มี
+        m._lastDamageAt = now;
+        if (damage > 0 && m.hp != null && m.hpMax != null) m.hp = Math.max(0, m.hp - damage);
         if (target && target.id === victimId) { target.lastAttackResultAt = now; target.pendingAttacks = 0; target.firstAttackAt = 0; stuckAbandonCount = 0; stuckAbandonHistory = []; }
-        markCombat();
-      }
-      // ★ fallback reset: ถ้า target ปัจจุบันโดนตี (victimId === target.id) ให้ reset pending ด้วย
-      //   กันเคส attacker !== playerId (playerId อาจผิด) → pending ค้าง
-      else if (target && victimId === target.id && victimId !== 0 && victimId !== playerId) {
-        const m = entities.get(victimId);
-        if (m) { m._lastDamageAt = now; if (damage > 0 && m.hp != null && m.hpMax != null) m.hp = Math.max(0, m.hp - damage); }
-        target.lastAttackResultAt = now; target.pendingAttacks = 0; target.firstAttackAt = 0;
         markCombat();
       }
       // มอนตีเรา → mark mobAttacker
@@ -1563,6 +1557,12 @@
       const playerEntity = playerId ? entities.get(playerId) : null;
       console.log('playerId:', playerId ? playerId.toString(16) : 'NULL', '| player.x/y:', player.x, player.y,
         '| playerEntity:', playerEntity ? `{x:${playerEntity.x}, y:${playerEntity.y}, kind:${playerEntity.kind}, name:${playerEntity.name}}` : 'NOT IN ENTITIES');
+      // ★ debug target ปัจจุบัน (แม้อยู่นอก 8 ตัวแรก)
+      if (target) {
+        const tm = entities.get(target.id);
+        console.log('TARGET:', target.id.toString(16), '| pending:', target.pendingAttacks, '| firstAttackAt:', target.firstAttackAt ? ((now-target.firstAttackAt)/1000).toFixed(1)+'s' : 'none',
+          '| inEntities:', !!tm, tm ? `{name:${tm.name}, hp:${tm.hp}/${tm.hpMax}, _lastDamageAt:${tm._lastDamageAt ? ((now-tm._lastDamageAt)/1000).toFixed(1)+'s ago' : 'NEVER'}}` : '');
+      }
       console.table(sample);
       return { total: entities.size, spawnCount, ghostCount, monsterCount, targetableCount, sample, player: { ...player }, playerId: playerId ? playerId.toString(16) : null };
     },
