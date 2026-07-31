@@ -163,7 +163,8 @@
     maxWalkDistance: 15,          // (legacy — ใช้น้อย เพราะ server walk-and-attack เอง)
     combatTickMs: 200,            // tick loop (มี jitter ±25% เหมือนบอทหลัก)
     attackReIssueMs: 2500,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้
-    attackAbandonMs: 6000,        // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (กัน pending สะสม)
+    attackAbandonMs: 8000,        // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (นักธนูช้า ใช้ 8s)
+    aggroKeepAliveMs: 15000,      // ★ มอน aggro เรา → ถือว่ายังสู้อยู่ N ms (กัน abandon ตอนมอนเดินมาหา)
     maxEngageSec: 30,             // abandon target ถ้า engage นานกว่านี้
     // flee (วาร์ปหนี)
     fleeOnMobCount: 3,            // มอนรุม N ตัว (ที่ตีเรา) → วาร์ปหนี (0=off)
@@ -1135,12 +1136,20 @@
         // abandon เฉพาะเคสจริง: engage นานเกิน หรือ pending สูง (server เงียบ)
         const engageAge = target.engageAt ? (now - target.engageAt) / 1000 : 0;
         const acquireAge = (now - target.acquiredAt) / 1000;
-        if (target.engageAt && engageAge > CFG.maxEngageSec) { abandonTarget('engage นาน ' + engageAge.toFixed(0) + 's', true); target = null; }
-        else if (!target.engageAt && acquireAge > CFG.maxEngageSec) { abandonTarget('ไม่ได้ตี ' + acquireAge.toFixed(0) + 's', true); target = null; }
-        // ★ pending ≥4 abandon ถ้า server ไม่ตอบนานเกินไป
-        //   ใช้เวลาตั้งแต่ครั้งแรกที่ส่ง attack (firstAttackAt) ไม่ใช่ lastAttackAt
-        //   เพราะ lastAttackAt อัปเดตทุกครั้งที่ re-issue → ไม่มีทางถึงเงื่อนไข
-        else if (target.pendingAttacks >= 4 && target.firstAttackAt && (now - target.firstAttackAt > CFG.attackAbandonMs)) {
+        // ★ มอน aggro เราอยู่ (กำลังเดินมา/ตีอยู่) → ยกเลิก abandon จาก pending/server เงียบ
+        //   เพราะนักธนู ATTACK_RESULT อาจล่าช้า 3+ วิ (มอนเดินมาหา) แต่ MONSTER_SKILL/โดนตี บอกว่ายังสู้อยู่
+        const targetAggro = monsterAggro.get(target.id);
+        const targetHitUs = mobAttackers.get(target.id);
+        const lastCombatSignal = Math.max(targetAggro || 0, targetHitUs || 0);
+        const isTargetStillEngaged = lastCombatSignal && (now - lastCombatSignal < CFG.aggroKeepAliveMs);
+        if (target.engageAt && engageAge > CFG.maxEngageSec && !isTargetStillEngaged) {
+          abandonTarget('engage นาน ' + engageAge.toFixed(0) + 's', true); target = null;
+        }
+        else if (!target.engageAt && acquireAge > CFG.maxEngageSec && !isTargetStillEngaged) {
+          abandonTarget('ไม่ได้ตี ' + acquireAge.toFixed(0) + 's', true); target = null;
+        }
+        // ★ pending ≥4 abandon ถ้า server ไม่ตอบนานเกินไป — แต่ถ้ามอนยัง aggro เรา ข้าม (ยังสู้อยู่)
+        else if (target.pendingAttacks >= 4 && target.firstAttackAt && (now - target.firstAttackAt > CFG.attackAbandonMs) && !isTargetStillEngaged) {
           abandonTarget('pending ' + target.pendingAttacks + ' (server เงียบ)', true); target = null;
         }
       }
