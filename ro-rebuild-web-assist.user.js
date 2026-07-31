@@ -130,11 +130,11 @@
 
     // ---------- AUTO-LOOT ----------
     lootEnabled: true,
-    pickRadius: 8,                // ระยะ (ช่อง) จากตัวเรา ที่จะถือว่าของเป็นของเรา
+    pickRadius: 2,                // ระยะ (ช่อง) จากตัวเรา ที่จะถือว่าของเป็นของเรา
     combatWindowMs: 4000,         // ของตกต้องมาภายในเวลานี้หลังเราตี/ฆ่า
-    lootDelayAfterDropMs: 0,      // ★ รอ N ms หลังของตก แล้วค่อยเริ่มเก็บ (0 = เก็บทันที, กันดูเป็นบอท)
+    lootDelayAfterDropMs: 400,      // ★ รอ N ms หลังของตก แล้วค่อยเริ่มเก็บ (0 = เก็บทันที, กันดูเป็นบอท)
     attemptIntervalMs: 1200,      // ห่างระหว่างการลองเก็บชิ้นเดิม (1.2 วิ — รอ server เดินไปเก็บ)
-    sendThrottleMs: 500,          // ห่างระหว่างคำสั่งเก็บทุกชิ้น (กันสแปม)
+    sendThrottleMs: 400,          // ห่างระหว่างคำสั่งเก็บทุกชิ้น (กันสแปม)
     maxAttempts: 6,               // เก็บไม่ได้ 6 ครั้ง → ปล่อย (นักธนูฆ่าไกล ตัวเดินไปเก็บนานขึ้น)
     itemMaxAgeMs: 30000,          // ของเก่ากว่านี้ → ทิ้งออกจากคิว
     lootTickMs: 300,
@@ -147,6 +147,43 @@
     warpLootMaxOffsets: 5,        // ลองกี่ offset รอบไอเท็ม (กลาง + ±3 รอบข้าง) ก่อนปล่อยทิ้ง
     warpLootCooldownMs: 2000,     // ห่างขั้นต่ำระหว่างการวาร์ป (กันสแปม → ถูกตรวจจับ)
     warpLootPickupDelayMs: 800,   // รอ server ย้ายตัวละครหลังวาร์ป ก่อนส่ง pickup
+
+    // ---------- AUTO-COMBAT (★ default OFF — ส่ง attack packet จริง) ----------
+    //  เปิดเองด้วย ASSIST.combatOn() และตั้ง targetWhitelist ก่อน (default ว่าง = ไม่ตีอะไร)
+    combatEnabled: false,
+    targetWhitelist: [],          // ★ [] = ตีมอน kind=1 ทุกตัว; ['Poring', 4000] = เฉพาะ (รองรับชื่อ + sprite id)
+    targetBlacklist: [],          // ไม่ตีมอนเหล่านี้ (ชื่อหรือ sprite id)
+    attackRange: 2,               // ระยะโจมตี (ช่อง) — ใกล้กว่านี้สั่งตี, ไกลกว่าเดินไป
+    rangedAttackRange: 0,         // 0 = ใช้ attackRange; >0 = นักธนูตีไกลได้ N ช่อง
+    maxWalkDistance: 15,          // เดินไปหาถ้ามอนไกลกว่านี้ (≤20)
+    combatTickMs: 200,            // tick loop (มี jitter ±25% เหมือนบอทหลัก)
+    attackReIssueMs: 2500,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้
+    maxEngageSec: 25,             // abandon target ถ้า engage นานกว่านี้
+    // flee (วาร์ปหนี)
+    fleeOnMobCount: 0,            // มอนรุม N ตัว (ที่ตีเรา) → วาร์ปหนี (0=off)
+    fleeOnAggroCount: 0,          // มอนจับเราเป็นเป้า N ตัว → วาร์ปหนี (0=off)
+    fleeOnProximityCount: 0,      // มอนอยู่รอบ N ตัวในระยะ → วาร์ปหนี (0=off)
+    fleeOnProximityRadius: 8,
+    fleeMobWindowMs: 5000,        // ช่วงเวลาที่นับว่ามอน "กำลังตีเรา"
+    fleeCooldownMs: 3000,
+    // KS avoidance + ป้องกันแย่ง
+    antiKS: true,                 // ไม่ตีมอนที่คนอื่นกำลังสู้ (default ON)
+    antiKSCooldownMs: 5000,       // มอนที่ถูกตีโดยคนอื่น จะถูกข้ามไป N ms
+    avoidOtherPlayers: true,      // ไม่ตีมอนที่อยู่ใกล้ผู้เล่นคนอื่น
+    playerProximityRadius: 10,
+    // target selection
+    targetLowestHpFirst: true,    // ถูกรุม ≥2 ตัว → ตีเลือดน้อยสุดก่อน
+    // stuck
+    warpToMonster: false,         // ติดกำแพง → วาร์ปไปหามอน (toggle, default OFF)
+    warpToMonsterCooldownMs: 10000,
+    warpToMonsterMaxPerEntity: 2,
+    stuckWarpOnAbandon: 3,        // abandon 3 ครั้งใน 60s → วาร์ปสุ่ม
+    // หามอน
+    wanderEnabled: true,          // ไม่เจอมอน → สุ่มเดิน
+    wanderMaxStep: 20,            // สุ่มระยะ ≤20 ช่อง
+    wanderCooldownMs: 3000,
+    warpFindEnabled: false,       // ไม่เจอมอนนาน → วาร์ปสุ่ม (toggle, default OFF)
+    noMonsterWarpSec: 30,
 
     // โหมดกรองของ: 'all' = เก็บหมด, 'only' = เก็บเฉพาะ, 'except' = ยกเว้น
     filter: { mode: 'except', onlyItems: [], exceptItems: [909,916] },
@@ -338,6 +375,7 @@
 
   const u16 = (u, o) => u[o] | (u[o + 1] << 8);
   const u32 = (u, o) => ((u[o]) | (u[o + 1] << 8) | (u[o + 2] << 16) | (u[o + 3] << 24)) >>> 0;
+  const i16 = (u, o) => { const v = u16(u, o); return v >= 0x8000 ? v - 0x10000 : v; };   // signed int16 LE (พิกัดติดลบได้)
   const dv = new DataView(new ArrayBuffer(4));
   const f32 = (u, o) => { dv.setUint32(0, u32(u, o), true); return dv.getFloat32(0, true); };
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -503,6 +541,140 @@
         lastWarpTargetId = null;
       }
     }
+    // ============== COMBAT packets ==============
+    // 0x06 SPAWN: สร้าง/อัปเดต entity (kind=0 player/1 monster/2 NPC)
+    //   format ซับซ้อน: scan หา name end (00 00) + kind byte เพราะ nameLen unreliable (UTF-8/ไทย)
+    else if (op === 0x06 && u.length >= 25) {
+      try {
+        const flag = u[1];
+        const entityType = u32(u, 2);
+        const id = u32(u, 7);            // offset 7 (ข้าม marker 0x0f ที่ offset 6)
+        const sub = u32(u, 11);
+        // scan หา name end: หา pattern [00 00][kind<=2] หลัง offset 19
+        let nameEnd = -1, kind = -1;
+        for (let i = 19; i < u.length - 2; i++) {
+          if (u[i] === 0 && u[i + 1] === 0 && u[i + 2] <= 2) { nameEnd = i; kind = u[i + 2]; break; }
+        }
+        if (nameEnd > 19 && kind >= 0) {
+          const nameBytes = u.slice(19, nameEnd);
+          let name = '';
+          try { name = new TextDecoder('utf8', { fatal: false }).decode(nameBytes); } catch (e) { name = ''; }
+          const baseX = nameEnd + 3, baseY = nameEnd + 7;
+          let x = null, y = null, hp = null, hpMax = null;
+          if (kind === 1 || kind === 0) {
+            if (u.length >= baseY + 4) {
+              x = (u[baseX]) | (u[baseX+1] << 8) | (u[baseX+2] << 16) | (u[baseX+3] << 24);   // i32
+              x = x > 0x7fffffff ? x - 0x100000000 : x;
+              y = (u[baseY]) | (u[baseY+1] << 8) | (u[baseY+2] << 16) | (u[baseY+3] << 24);
+              y = y > 0x7fffffff ? y - 0x100000000 : y;
+              // hp/hpMax ที่ offset nameEnd+12/+16 (ถ้ามี)
+              if (u.length >= nameEnd + 20) {
+                const v3 = u32(u, nameEnd + 12);
+                const v4 = u32(u, nameEnd + 16);
+                if (v3 > 0 && v3 <= v4) { hp = v3; hpMax = v4; }
+              }
+            }
+          } else if (kind === 2) {
+            if (u.length >= baseY + 4) {
+              x = (u[baseX]) | (u[baseX+1] << 8) | (u[baseX+2] << 16) | (u[baseX+3] << 24);
+              x = x > 0x7fffffff ? x - 0x100000000 : x;
+              y = (u[baseY]) | (u[baseY+1] << 8) | (u[baseY+2] << 16) | (u[baseY+3] << 24);
+              y = y > 0x7fffffff ? y - 0x100000000 : y;
+            }
+          }
+          const existing = entities.get(id) || {};
+          entities.set(id, { id, kind, sub, name, x: x != null ? x : (existing.x || null), y: y != null ? y : (existing.y || null), hp: hp != null ? hp : existing.hp, hpMax: hpMax != null ? hpMax : existing.hpMax, alive: true, _lastEngagedByOtherAt: existing._lastEngagedByOtherAt || 0, _lastDamageAt: existing._lastDamageAt || 0 });
+        }
+      } catch (e) { /* SPAWN parse error ข้าม */ }
+    }
+    // 0x07 MOVE_UPDATE: อัปเดตตำแหน่ง entity [07][id:4][x:i16][y:i16]...
+    else if (op === 0x07 && u.length >= 9) {
+      const id = u32(u, 1);
+      if (id !== playerId) {
+        const x = i16(u, 5), y = i16(u, 7);
+        const e = entities.get(id);
+        if (e) { e.x = x; e.y = y; }
+        else { entities.set(id, { id, kind: 1, x, y, alive: true }); }   // assume monster
+        // track player position ด้วย (ทับ logic เดิมที่ใช้ f32)
+      }
+    }
+    // 0x3c ENTITY_LIST: batch ตำแหน่ง [3c][count:2][eid:4][x:2][y:2][flag:1]...
+    else if (op === 0x3c && u.length >= 3) {
+      const count = u16(u, 1);
+      let p = 3;
+      for (let i = 0; i < count && p + 9 <= u.length; i++) {
+        const id = u32(u, p);
+        const x = i16(u, p + 4), y = i16(u, p + 6);
+        if (id !== playerId) {
+          const e = entities.get(id);
+          if (e) { e.x = x; e.y = y; }
+          else { entities.set(id, { id, kind: 1, x, y, alive: true }); }
+        }
+        p += 9;
+      }
+    }
+    // 0x14 ENTITY_POS: [14][id:4][x:2][y:2][flag:1]
+    else if (op === 0x14 && u.length >= 9) {
+      const id = u32(u, 1);
+      if (id !== playerId) {
+        const x = i16(u, 5), y = i16(u, 7);
+        const e = entities.get(id);
+        if (e) { e.x = x; e.y = y; }
+        else { entities.set(id, { id, kind: 1, x, y, alive: true }); }
+      }
+    }
+    // 0x0b ATTACK_RESULT IN: [0b][attacker:4][target:4][count:2]...[damage:4]
+    //   + 0x26 variant: [26][attacker:4][damage:4] (มอนตี player)
+    else if ((op === 0x0b || op === 0x26) && playerId != null) {
+      let attacker, victimId, damage;
+      if (op === 0x26 && u.length >= 9) { attacker = u32(u, 1); victimId = 0; damage = u32(u, 5); }
+      else if (op === 0x0b && u.length >= 21) { attacker = u32(u, 1); victimId = u32(u, 5); damage = u32(u, 17); }
+      else return;
+      const now = nowMs();
+      // เราตีมอน → ลด HP มอน + reset pending + mark combat
+      if (attacker === playerId && victimId !== playerId && victimId !== 0) {
+        const m = entities.get(victimId);
+        if (m) {
+          m._lastDamageAt = now;
+          if (damage > 0 && m.hp != null && m.hpMax != null) m.hp = Math.max(0, m.hp - damage);
+        }
+        if (target && target.id === victimId) { target.lastAttackResultAt = now; target.pendingAttacks = 0; stuckAbandonCount = 0; stuckAbandonHistory = []; }
+        markCombat();
+      }
+      // มอนตีเรา → mark mobAttacker
+      else if (victimId === playerId || (victimId === 0 && attacker !== playerId)) {
+        mobAttackers.set(attacker, now);
+        markCombat();
+      }
+      // คนอื่นตีมอน → mark engaged (KS avoidance)
+      else if (attacker !== playerId && victimId !== playerId && victimId !== 0) {
+        const m = entities.get(victimId);
+        if (m && m.kind === 1) m._lastEngagedByOtherAt = now;
+      }
+    }
+    // 0x18 MONSTER_SKILL: [18][srcId:4][dstId:4][skillId:2]... → aggro detection
+    else if (op === 0x18 && u.length >= 11 && playerId != null) {
+      const srcId = u32(u, 1), dstId = u32(u, 5);
+      if (dstId === playerId) { monsterAggro.set(srcId, nowMs()); markCombat(); }
+    }
+    // 0x0f ENTITY_ACTION: action=3 = ตาย (authoritative)
+    else if (op === 0x0f && u.length >= 6 && u[5] === 3) {
+      const id = u32(u, 1);
+      const e = entities.get(id);
+      if (e) { e.alive = false; }
+      entities.delete(id);
+      if (target && target.id === id) abandonTarget('ฆ่าได้', false), target = null;
+    }
+    // 0x1b DESPAWN: entity หาย (มี false-despawn guard)
+    else if (op === 0x1b && u.length >= 5) {
+      const id = u32(u, 1);
+      const e = entities.get(id);
+      if (e) {
+        const now = nowMs();
+        if (e._lastDamageAt && now - e._lastDamageAt < 3000) { e.alive = false; }   // false despawn guard
+        else { entities.delete(id); if (target && target.id === id) { abandonTarget('despawn', false); target = null; } }
+      }
+    }
   }
   function handleOut(u) {
     if (!u.length) return;
@@ -603,6 +775,303 @@
       }
     }
   }, CFG.lootTickMs);
+
+  // ============================================================
+  //  AUTO-COMBAT — entity tracker + state machine
+  // ============================================================
+  // ---------- entity tracker ----------
+  //  kind: 0=player, 1=monster, 2=NPC (จาก SPAWN)
+  const entities = new Map();    // id -> {id,kind,sub,name,x,y,hp,hpMax,alive,_lastEngagedByOtherAt,_lastDamageAt}
+  const monsterAggro = new Map(); // monsterId -> timestamp (มอนจับเราเป็นเป้า)
+  const mobAttackers = new Map(); // monsterId -> timestamp (มอนตีเรา)
+  let noMonsterSince = 0;        // timestamp ที่เริ่มไม่เจอมอน
+  let lastWanderAt = 0;
+  let lastFleeAt = 0;
+
+  // ---------- combat target state ----------
+  let target = null;             // {id, x, y, acquiredAt, engageAt, lastAttackAt, lastAttackResultAt, pendingAttacks, stuckCount, warpCount}
+  let lastWalkPos = null;        // {x,y} สำหรับ stuck detection
+  let stuckWalkCount = 0;
+  let stuckAbandonCount = 0;
+  let stuckAbandonHistory = [];  // timestamps ใน 60s
+  const warpToMonsterCount = new Map(); // entityId -> count
+
+  // ---------- combat helpers ----------
+  function nowMs() { return Date.now(); }
+
+  // whitelist/blacklist matching (รองรับทั้งชื่อ + sprite id แบบ number)
+  function matchList(entity, list) {
+    if (!list || !list.length) return false;
+    return list.some(e => {
+      if (typeof e === 'number') return entity.sub === e;
+      return entity.name && entity.name.toLowerCase() === String(e).toLowerCase();
+    });
+  }
+  function isTargetable(m, now) {
+    if (!m || !m.alive) return false;
+    if (m.kind !== 1) return false;                       // ตีเฉพาะ monster
+    if (m.x == null || m.y == null) return false;
+    if (matchList(m, CFG.targetBlacklist)) return false;
+    if (CFG.targetWhitelist.length && !matchList(m, CFG.targetWhitelist)) return false;
+    // anti-KS: ข้ามมอนที่คนอื่นตีอยู่
+    if (CFG.antiKS && m._lastEngagedByOtherAt && now - m._lastEngagedByOtherAt < CFG.antiKSCooldownMs) return false;
+    // avoid players: ข้ามมอนที่อยู่ใกล้ผู้เล่นคนอื่น
+    if (CFG.avoidOtherPlayers) {
+      for (const e of entities.values()) {
+        if (e.kind === 0 && e.alive && e.id !== playerId && e.x != null) {
+          if (Math.hypot(e.x - m.x, e.y - m.y) <= CFG.playerProximityRadius) return false;
+        }
+      }
+    }
+    return true;
+  }
+  function getMonsters(now) {
+    const out = [];
+    for (const m of entities.values()) {
+      if (isTargetable(m, now || nowMs())) out.push(m);
+    }
+    return out;
+  }
+  function countMonsters(radius) {
+    if (player.x == null) return 0;
+    let n = 0;
+    for (const m of entities.values()) {
+      if (m.kind === 1 && m.alive && m.x != null && Math.hypot(m.x - player.x, m.y - player.y) <= radius) n++;
+    }
+    return n;
+  }
+  function getAggroCount(radius) {
+    const now = nowMs();
+    let n = 0;
+    for (const [id, t] of monsterAggro) {
+      if (now - t > 10000) continue;                      // 10s TTL
+      const m = entities.get(id);
+      if (!m || !m.alive || m.x == null) continue;
+      if (player.x != null && radius && Math.hypot(m.x - player.x, m.y - player.y) > radius) continue;
+      n++;
+    }
+    return n;
+  }
+  function getMobAttackerCount() {
+    const now = nowMs();
+    let n = 0;
+    for (const [id, t] of mobAttackers) {
+      if (now - t < CFG.fleeMobWindowMs) n++; else mobAttackers.delete(id);
+    }
+    return n;
+  }
+  // คำนวณ HP% (default 1.0 ถ้าไม่รู้)
+  function monsterHpPct(m) { return (m.hpMax && m.hpMax > 0 && m.hp != null) ? m.hp / m.hpMax : 1.0; }
+  // เลือกมอนใกล้สุด
+  function findNearestMonster(now) {
+    if (player.x == null) return null;
+    let best = null, bestD = Infinity;
+    for (const m of getMonsters(now)) {
+      const d = Math.hypot(m.x - player.x, m.y - player.y);
+      if (d < bestD) { bestD = d; best = m; }
+    }
+    return best ? { m: best, dist: bestD } : null;
+  }
+  // เลือกมอน HP% ต่ำสุด (tiebreak = ระยะ)
+  function findLowestHpMonster(now) {
+    if (player.x == null) return null;
+    let best = null, bestHp = 2, bestD = Infinity;
+    for (const m of getMonsters(now)) {
+      const hp = monsterHpPct(m);
+      const d = Math.hypot(m.x - player.x, m.y - player.y);
+      if (hp < bestHp || (hp === bestHp && d < bestD)) { bestHp = hp; bestD = d; best = m; }
+    }
+    return best ? { m: best, dist: bestD, hpPct: bestHp } : null;
+  }
+
+  // ---------- combat encoders ----------
+  // ATTACK OUT: [0b][target_id:4]
+  function sendAttack(targetId) {
+    if (!activeWS || activeWS.readyState !== 1) return false;
+    const b = new Uint8Array(5);
+    b[0] = 0x0b;
+    b[1] = targetId & 0xff; b[2] = (targetId >> 8) & 0xff;
+    b[3] = (targetId >> 16) & 0xff; b[4] = (targetId >>> 24) & 0xff;
+    activeWS.send(b);
+    return true;
+  }
+  // MOVE OUT (click-move): [07][x:i16][y:i16] (signed)
+  function sendMove(x, y) {
+    if (!activeWS || activeWS.readyState !== 1) return false;
+    const b = new Uint8Array(5);
+    b[0] = 0x07;
+    writeI16LE(b, 1, Math.round(x));
+    writeI16LE(b, 3, Math.round(y));
+    activeWS.send(b);
+    return true;
+  }
+  // วาร์ปสุ่มในแมปปัจจุบัน (x=y=-999)
+  function sendRandomWarp() {
+    if (!currentMap) { log('⚠️ วาร์ปหนี: ยังไม่รู้ชื่อแมป'); return false; }
+    return sendTeleport(currentMap, -999, -999);
+  }
+  function clearCombatThreat() { monsterAggro.clear(); mobAttackers.clear(); }
+
+  // ---------- combat state machine ----------
+  function abandonTarget(reason, stuck) {
+    if (target) {
+      log('🚫 abandon target', target.id, '(' + reason + ')');
+      if (stuck) {
+        stuckAbandonHistory.push(nowMs());
+        stuckAbandonHistory = stuckAbandonHistory.filter(t => nowMs() - t < 60000);
+        stuckAbandonCount = stuckAbandonHistory.length;
+      }
+    }
+    target = null;
+    stuckWalkCount = 0;
+  }
+  function doFlee(reason) {
+    const now = nowMs();
+    if (now - lastFleeAt < CFG.fleeCooldownMs) return false;
+    log('🏃 วาร์ปหนี:', reason);
+    if (sendRandomWarp()) {
+      lastFleeAt = now;
+      clearCombatThreat();
+      abandonTarget('flee', false);
+      return true;
+    }
+    return false;
+  }
+  function acquireTarget(now) {
+    if (!CFG.targetWhitelist.length) { return null; }   // whitelist ว่าง = ไม่ตี
+    const mobCount = getMobAttackerCount();
+    let found;
+    if (CFG.targetLowestHpFirst && mobCount >= 2) {
+      found = findLowestHpMonster(now);
+      if (found) log('🎯 เลือกเป้า HP ต่ำสุด (รุม', mobCount, 'ตัว):', found.m.name, (found.hpPct * 100).toFixed(0) + '%');
+    } else {
+      found = findNearestMonster(now);
+      if (found) log('🎯 เลือกเป้าใกล้สุด:', found.m.name, '@', found.dist.toFixed(1));
+    }
+    if (!found) return null;
+    const m = found.m;
+    target = {
+      id: m.id, x: m.x, y: m.y, acquiredAt: now, engageAt: 0,
+      lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0,
+      stuckCount: 0, warpCount: 0,
+    };
+    return target;
+  }
+  // เดินไปหามอน (มี stuck detection เหมือนบอทหลัก)
+  let lastWalkToTargetAt = 0;
+  function walkToTarget(now, m) {
+    if (player.x == null) return false;
+    const dist = Math.hypot(m.x - player.x, m.y - player.y);
+    // stuck detection: พิกัดไม่เปลี่ยน → เปลี่ยนทิศตั้งฉาก
+    if (lastWalkPos && lastWalkPos.x === player.x && lastWalkPos.y === player.y) {
+      stuckWalkCount++;
+    } else { stuckWalkCount = 0; }
+    lastWalkPos = { x: player.x, y: player.y };
+
+    if (now - lastWalkToTargetAt < 800) return false;
+    lastWalkToTargetAt = now;
+    // มุมไปหามอน (±30° jitter) หรือตั้งฉากถ้าติด
+    let angle = Math.atan2(m.y - player.y, m.x - player.x);
+    if (stuckWalkCount >= 2) angle += Math.PI / 2;       // เปลี่ยนทิศตั้งฉาก
+    angle += (Math.random() * 2 - 1) * (Math.PI / 6);    // ±30°
+    const step = 10 + Math.random() * 5;                 // 10-15 ช่อง
+    const tx = player.x + Math.cos(angle) * step;
+    const ty = player.y + Math.sin(angle) * step;
+    if (sendMove(tx, ty)) { log('🚶 เดินไปหา', m.name, '@(', tx.toFixed(0), ty.toFixed(0) + ')'); return true; }
+    return false;
+  }
+
+  const combatLoop = setInterval(() => {
+    if (!CFG.combatEnabled) return;
+    if (isDead) { return; }
+    if (!activeWS || activeWS.readyState !== 1) return;
+    const now = nowMs();
+
+    // === 1. Flee checks (priority) ===
+    if (CFG.fleeOnMobCount > 0 && getMobAttackerCount() >= CFG.fleeOnMobCount) { doFlee('รุม ' + getMobAttackerCount() + ' ตัว'); return; }
+    if (CFG.fleeOnAggroCount > 0 && getAggroCount() >= CFG.fleeOnAggroCount) { doFlee('aggro ' + getAggroCount() + ' ตัว'); return; }
+    if (CFG.fleeOnProximityCount > 0 && countMonsters(CFG.fleeOnProximityRadius) >= CFG.fleeOnProximityCount) { doFlee('มอนรอบ ' + countMonsters(CFG.fleeOnProximityRadius) + ' ตัว'); return; }
+
+    // === 2. Target validation / abandon ===
+    if (target) {
+      const m = entities.get(target.id);
+      if (!m || !m.alive) { abandonTarget('ตาย/หาย', false); target = null; }
+      else {
+        target.x = m.x; target.y = m.y;
+        // abandon ถ้า engage นานเกิน
+        const engageAge = target.engageAt ? (now - target.engageAt) / 1000 : 0;
+        const acquireAge = (now - target.acquiredAt) / 1000;
+        if (target.engageAt && engageAge > CFG.maxEngageSec) { abandonTarget('engage นาน ' + engageAge.toFixed(0) + 's', true); target = null; }
+        else if (!target.engageAt && acquireAge > CFG.maxEngageSec) { abandonTarget('ไม่ได้ตี ' + acquireAge.toFixed(0) + 's', true); target = null; }
+        else if (target.pendingAttacks >= 3) { abandonTarget('pending ' + target.pendingAttacks, true); target = null; }
+      }
+      // stuck warp escalation
+      if (!target && CFG.stuckWarpOnAbandon > 0 && stuckAbandonCount >= CFG.stuckWarpOnAbandon) {
+        log('🌀 stuck abandon', stuckAbandonCount, 'ครั้ง → วาร์ปสุ่ม');
+        sendRandomWarp(); stuckAbandonCount = 0; stuckAbandonHistory = [];
+      }
+    }
+
+    // === 3. Attack or walk-to ===
+    if (target) {
+      const m = entities.get(target.id);
+      if (m && player.x != null) {
+        const dist = Math.hypot(m.x - player.x, m.y - player.y);
+        const range = CFG.rangedAttackRange > 0 ? CFG.rangedAttackRange : CFG.attackRange;
+        if (dist <= range) {
+          // ในระยะ → ส่ง attack (re-issue ถ้าเงียบ)
+          if (now - target.lastAttackAt > CFG.attackReIssueMs || target.lastAttackAt === 0) {
+            if (sendAttack(target.id)) {
+              target.lastAttackAt = now; target.pendingAttacks++;
+              if (!target.engageAt) { target.engageAt = now; }
+              log('⚔️ ตี', m.name, target.id.toString(16), '(pending', target.pendingAttacks + ')');
+            }
+          }
+          return;
+        }
+        // ไกลเกิน maxWalkDistance → warpToMonster หรือ abandon
+        if (dist > CFG.maxWalkDistance) {
+          if (CFG.warpToMonster && (warpToMonsterCount.get(target.id) || 0) < CFG.warpToMonsterMaxPerEntity) {
+            const wc = warpToMonsterCount.get(target.id) || 0;
+            if (now - (target._lastWarpAt || 0) > CFG.warpToMonsterCooldownMs) {
+              if (sendTeleport(currentMap, m.x, m.y)) {
+                target._lastWarpAt = now; warpToMonsterCount.set(target.id, wc + 1);
+                log('🌀 วาร์ปไปหา', m.name, '@(', m.x, m.y + ')', '(warp', wc + 1 + ')');
+              }
+              return;
+            }
+          } else { abandonTarget('ไกลเกิน ' + CFG.maxWalkDistance, true); target = null; return; }
+        } else {
+          // ในระยะเดิน → เดินไปหา
+          walkToTarget(now, m); return;
+        }
+      }
+    }
+
+    // === 4. Acquire new target ===
+    if (!target) {
+      const t = acquireTarget(now);
+      if (t) { target = t; noMonsterSince = 0; return; }
+      // ไม่เจอมอน
+      if (!noMonsterSince) noMonsterSince = now;
+      const noMonSec = (now - noMonsterSince) / 1000;
+      // warp-find
+      if (CFG.warpFindEnabled && noMonSec >= CFG.noMonsterWarpSec) {
+        log('🌀 ไม่เจอมอน', noMonSec.toFixed(0) + 's → วาร์ปสุ่ม');
+        if (sendRandomWarp()) noMonsterSince = now;
+        return;
+      }
+      // wander
+      if (CFG.wanderEnabled && now - lastWanderAt > CFG.wanderCooldownMs && player.x != null) {
+        lastWanderAt = now;
+        const angle = Math.random() * Math.PI * 2;
+        const step = 3 + Math.random() * (CFG.wanderMaxStep - 3);
+        const tx = player.x + Math.cos(angle) * step;
+        const ty = player.y + Math.sin(angle) * step;
+        if (sendMove(tx, ty)) log('🚶 สุ่มเดินหามอน @(', tx.toFixed(0), ty.toFixed(0) + ')');
+      }
+    }
+  }, CFG.combatTickMs);
 
   // ---------- patch WebSocket ----------
   function attach(ws) {
@@ -759,6 +1228,46 @@
       log('📦 ดีเลย์ก่อนเก็บ =', ms + 'ms' + (ms ? ' (รอหลังของตก)' : ' (เก็บทันที)'));
     },
 
+    // ---------- Auto-Combat ----------
+    combatOn() {
+      CFG.combatEnabled = true;
+      if (!CFG.targetWhitelist.length) console.warn('⚠️ targetWhitelist ว่าง — จะไม่ตีอะไร ตั้งก่อนด้วย ASSIST.setTargetWhitelist(...)');
+      log('⚔️ Auto-Combat: ON');
+    },
+    combatOff() { CFG.combatEnabled = false; target = null; log('⚔️ Auto-Combat: OFF'); },
+    setTargetWhitelist(...namesOrIds) {
+      CFG.targetWhitelist = namesOrIds;
+      log('⚔️ whitelist =', namesOrIds.join(', ') || '(ว่าง = ตีทุกมอน)');
+    },
+    addTargetWhitelist(...x) { for (const e of x) if (!CFG.targetWhitelist.includes(e)) CFG.targetWhitelist.push(e); log('⚔️ whitelist =', CFG.targetWhitelist.join(', ')); },
+    clearTargetWhitelist() { CFG.targetWhitelist = []; log('⚔️ ล้าง whitelist = ตีทุกมอน'); },
+    setTargetBlacklist(...namesOrIds) { CFG.targetBlacklist = namesOrIds; log('⚔️ blacklist =', namesOrIds.join(', ')); },
+    addTargetBlacklist(...x) { for (const e of x) if (!CFG.targetBlacklist.includes(e)) CFG.targetBlacklist.push(e); log('⚔️ blacklist =', CFG.targetBlacklist.join(', ')); },
+    clearTargetBlacklist() { CFG.targetBlacklist = []; log('⚔️ ล้าง blacklist'); },
+    setFleeMob(n) { CFG.fleeOnMobCount = n; log('🏃 flee รุม', n, 'ตัว' + (n ? '' : ' (off)')); },
+    setFleeAggro(n) { CFG.fleeOnAggroCount = n; log('🏃 flee aggro', n, 'ตัว' + (n ? '' : ' (off)')); },
+    setFleeProximity(n, radius) { CFG.fleeOnProximityCount = n; if (radius != null) CFG.fleeOnProximityRadius = radius; log('🏃 flee มอนรอบ', n, 'ตัวในระยะ', CFG.fleeOnProximityRadius); },
+    setRanged(range) { CFG.rangedAttackRange = range; log('🏹 ranged range =', range, range ? '' : '(ใช้ attackRange)'); },
+    setAttackRange(r) { CFG.attackRange = r; log('⚔️ attackRange =', r); },
+    // toggle helpers สำหรับ UI
+    toggleAntiKS(on) { CFG.antiKS = !!on; log('⚔️ antiKS =', CFG.antiKS); },
+    toggleAvoidPlayers(on) { CFG.avoidOtherPlayers = !!on; log('⚔️ avoidOtherPlayers =', CFG.avoidOtherPlayers); },
+    toggleLowestHpFirst(on) { CFG.targetLowestHpFirst = !!on; log('⚔️ targetLowestHpFirst =', CFG.targetLowestHpFirst); },
+    toggleWander(on) { CFG.wanderEnabled = !!on; log('⚔️ wander =', CFG.wanderEnabled); },
+    toggleWarpFind(on) { CFG.warpFindEnabled = !!on; log('⚔️ warpFind =', CFG.warpFindEnabled); },
+    toggleWarpToMonster(on) { CFG.warpToMonster = !!on; log('⚔️ warpToMonster =', CFG.warpToMonster); },
+    // debug
+    getEntities() {
+      const now = nowMs();
+      return [...entities.values()].filter(e => e.kind === 1 && e.alive).slice(0, 30).map(e => ({
+        id: e.id.toString(16), name: e.name || '?', sub: e.sub, x: e.x, y: e.y,
+        hp: e.hp != null && e.hpMax ? (e.hp + '/' + e.hpMax + ' ' + monsterHpPct(e).toFixed(0) + '%') : '?',
+        engaged: e._lastEngagedByOtherAt && (now - e._lastEngagedByOtherAt) < 5000,
+      }));
+    },
+    getTarget() { return target ? { id: target.id.toString(16), pending: target.pendingAttacks, engageSec: target.engageAt ? ((nowMs()-target.engageAt)/1000).toFixed(0) : 0 } : null; },
+    getAggro() { return { mobAttackers: getMobAttackerCount(), aggro: getAggroCount(CFG.fleeOnProximityRadius), monstersNearby: countMonsters(CFG.fleeOnProximityRadius) }; },
+
     // ---------- ทั่วไป ----------
     name(id, label) { CFG.itemNames[id] = label; log('🏷️', id, '=', label); },
     config() { return CFG; },
@@ -780,7 +1289,7 @@
     getLogs() { return logBuf.slice(); },
     clearLogs() { logBuf.length = 0; log('🧹 ล้าง log'); },
     stopAll() {
-      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop);
+      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop);
       if (typeof uiLoop !== 'undefined') clearInterval(uiLoop);
       log('⏹ หยุดระบบทั้งหมดแล้ว');
     },
@@ -876,6 +1385,7 @@
         <span class="pill off" data-loot>Loot</span>
         <span class="pill off" data-heal>Heal</span>
         <span class="pill off" data-warp>Warp</span>
+        <span class="pill off" data-combat>Combat</span>
         <span class="expand">⚙</span>
       </div>
       <div id="__assist_popup">
@@ -896,6 +1406,9 @@
           <div class="row"><span class="k">EXP/นาที</span><span class="v" data-expmin>0</span></div>
           <div class="row"><span class="k">เวลาทำงาน</span><span class="v" data-elapsed>0s</span></div>
           <div class="row"><span class="k">ตาย</span><span class="v" data-deaths>0</span></div>
+          <h4>Combat</h4>
+          <div class="row"><span class="k">เป้าหมาย</span><span class="v" data-combat-target>(none)</span></div>
+          <div class="row"><span class="k">มอน (ตี/aggro/รอบ)</span><span class="v" data-combat-aggro>0 / 0 / 0</span></div>
           <h4>ของที่เก็บได้ (ล่าสุด)</h4>
           <div data-items style="font-size:11px;color:#9aa0a6">(ยังไม่มี)</div>
           <div class="btns"><button class="danger" id="__assist_resetstats">รีเซ็ตสถิติ</button></div>
@@ -919,6 +1432,27 @@
           </div>
           <div class="field"><label>ดีเลย์ก่อนเก็บ (ms หลังของตก) — 0 = เก็บทันที</label><input type="number" id="__assist_lootdelay" min="0" step="100"></div>
           <div class="btns"><button id="__assist_applylootdelay">ตั้งดีเลย์</button></div>
+
+          <h4>⚔️ Combat (ส่ง attack packet จริง)</h4>
+          <div class="btns"><button id="__assist_combatbtn" class="off">Combat: ?</button></div>
+          <div class="field"><label>มอนที่จะตี — whitelist (ชื่อหรือ sprite id, คั่นจุลภาค) — ว่าง = ตีทุกมอน</label><input type="text" id="__assist_whitelist" placeholder="เช่น Poring,Lunatic หรือ 4000,1010"></div>
+          <div class="field"><label>มอนที่จะไม่ตี — blacklist</label><input type="text" id="__assist_blacklist" placeholder="เช่น MVP,Boss"></div>
+          <div class="btns"><button id="__assist_applywhitelist">ตั้ง whitelist</button><button id="__assist_applyblacklist">ตั้ง blacklist</button></div>
+          <div class="field"><label>ระยะโจมตี (ช่อง) — นักธนูตั้ง >2 เพื่อตีไกล</label><input type="number" id="__assist_attackrange" min="0" max="15"></div>
+          <div class="field"><label>flee: รุม N ตัว (0=off)</label><input type="number" id="__assist_fleemob" min="0" max="20"></div>
+          <div class="field"><label>flee: aggro N ตัว (0=off)</label><input type="number" id="__assist_fleeaggro" min="0" max="20"></div>
+          <div class="field"><label>flee: มอนรอบ N ตัว ในระยะ (0=off)</label><input type="number" id="__assist_fleeprox" min="0" max="20"></div>
+          <div class="btns">
+            <button id="__assist_t_antiks" class="on">antiKS</button>
+            <button id="__assist_t_avoidp" class="on">avoidPlayers</button>
+            <button id="__assist_t_lowhp" class="on">lowestHP</button>
+          </div>
+          <div class="btns">
+            <button id="__assist_t_wander" class="on">wander</button>
+            <button id="__assist_t_warpfind" class="off">warpFind</button>
+            <button id="__assist_t_warptomon" class="off">warpToMon</button>
+          </div>
+          <div class="btns"><button id="__assist_applycombat">ใช้ค่า flee + range</button></div>
         </div>
         <div class="__assist_page" data-page="log">
           <div class="logbox" id="__assist_logbox"></div>
@@ -953,6 +1487,10 @@
         if (pill.hasAttribute('data-warp')) {
           if (!CFG.warpLootEnabled && !confirm('เปิด Warp-to-Loot?\n\nเป็นฟีเจอร์ที่ส่ง packet วาร์ปจริง — เก็บไม่ได้ครบ ' + CFG.maxAttempts + ' ครั้งจะวาร์ปไปที่ไอเท็ม\nใช้ในความรับผิดชอบของคุณ')) return;
           CFG.warpLootEnabled ? ASSIST.warpLootOff() : ASSIST.warpLootOn();
+        }
+        if (pill.hasAttribute('data-combat')) {
+          if (!CFG.combatEnabled && !confirm('เปิด Auto-Combat?\n\nส่ง packet โจมตีจริง — ตั้ง whitelist ก่อน (เช่น ASSIST.setTargetWhitelist("Poring"))\nใช้ในความรับผิดชอบของคุณ')) return;
+          CFG.combatEnabled ? ASSIST.combatOff() : ASSIST.combatOn();
         }
         return;
       }
@@ -999,6 +1537,36 @@
       const ms = parseInt(root.querySelector('#__assist_lootdelay').value, 10);
       if (!isNaN(ms)) ASSIST.setLootDelay(ms);
     });
+
+    // ---- combat wires ----
+    const parseList = (sel) => root.querySelector(sel).value.split(',').map(s => {
+      const t = s.trim(); if (!t) return null;
+      const n = parseInt(t, 10); return isNaN(n) ? t : n;     // ตัวเลข → number, อื่น → ชื่อ
+    }).filter(x => x !== null);
+    root.querySelector('#__assist_combatbtn').addEventListener('click', () => {
+      if (!CFG.combatEnabled && !confirm('เปิด Auto-Combat?\n\nส่ง packet โจมตีจริง — ตั้ง whitelist ก่อน\nใช้ในความรับผิดชอบของคุณ')) return;
+      CFG.combatEnabled ? ASSIST.combatOff() : ASSIST.combatOn();
+    });
+    root.querySelector('#__assist_applywhitelist').addEventListener('click', () => ASSIST.setTargetWhitelist(...parseList('#__assist_whitelist')));
+    root.querySelector('#__assist_applyblacklist').addEventListener('click', () => ASSIST.setTargetBlacklist(...parseList('#__assist_blacklist')));
+    root.querySelector('#__assist_applycombat').addEventListener('click', () => {
+      const r = parseInt(root.querySelector('#__assist_attackrange').value, 10);
+      const fm = parseInt(root.querySelector('#__assist_fleemob').value, 10);
+      const fa = parseInt(root.querySelector('#__assist_fleeaggro').value, 10);
+      const fp = parseInt(root.querySelector('#__assist_fleeprox').value, 10);
+      if (!isNaN(r)) { if (r > 2) ASSIST.setRanged(r); else ASSIST.setAttackRange(r || 2); }
+      if (!isNaN(fm)) ASSIST.setFleeMob(fm);
+      if (!isNaN(fa)) ASSIST.setFleeAggro(fa);
+      if (!isNaN(fp)) ASSIST.setFleeProximity(fp);
+    });
+    const tBtn = (sel, fn, cfgKey) => root.querySelector(sel).addEventListener('click', () => { CFG[cfgKey] = !CFG[cfgKey]; fn(CFG[cfgKey]); });
+    tBtn('#__assist_t_antiks', (v) => ASSIST.toggleAntiKS(v), 'antiKS');
+    tBtn('#__assist_t_avoidp', (v) => ASSIST.toggleAvoidPlayers(v), 'avoidOtherPlayers');
+    tBtn('#__assist_t_lowhp', (v) => ASSIST.toggleLowestHpFirst(v), 'targetLowestHpFirst');
+    tBtn('#__assist_t_wander', (v) => ASSIST.toggleWander(v), 'wanderEnabled');
+    tBtn('#__assist_t_warpfind', (v) => ASSIST.toggleWarpFind(v), 'warpFindEnabled');
+    tBtn('#__assist_t_warptomon', (v) => ASSIST.toggleWarpToMonster(v), 'warpToMonster');
+
     root.querySelector('#__assist_resetstats').addEventListener('click', () => ASSIST.resetStats());
     root.querySelector('#__assist_clearlog').addEventListener('click', () => ASSIST.clearLogs());
 
@@ -1035,6 +1603,7 @@
       if (p.hasAttribute('data-loot')) { on = CFG.lootEnabled; label = 'Loot'; }
       else if (p.hasAttribute('data-heal')) { on = CFG.healEnabled; label = 'Heal'; }
       else if (p.hasAttribute('data-warp')) { on = CFG.warpLootEnabled; label = 'Warp'; }
+      else if (p.hasAttribute('data-combat')) { on = CFG.combatEnabled; label = 'Combat'; }
       else return;
       p.className = 'pill ' + (on ? 'on' : 'off');
       p.textContent = label + ': ' + (on ? 'ON' : 'OFF');
@@ -1060,6 +1629,11 @@
       const top = s.itemsByCount.slice(0, 8);
       itemsEl.innerHTML = top.length ? top.map(i => `<div>${i.name} ×${i.count}</div>`).join('') : '(ยังไม่มี)';
     }
+    // combat stats
+    const tgt = ASSIST.getTarget();
+    const agg = ASSIST.getAggro();
+    set('[data-combat-target]', tgt ? (tgt.id + ' pending:' + tgt.pending) : '(none)');
+    set('[data-combat-aggro]', agg.mobAttackers + ' ตี / ' + agg.aggro + ' aggro / ' + agg.monstersNearby + ' รอบ');
 
     // config page — ซิงค์ค่าปัจจุบันเข้า input (กันเขียนทับเวลา user กำลังพิมพ์)
     const lootBtn = root.querySelector('#__assist_lootbtn');
@@ -1083,6 +1657,24 @@
     }
     const ld = root.querySelector('#__assist_lootdelay');
     if (ld && document.activeElement !== ld) ld.value = CFG.lootDelayAfterDropMs;
+
+    // combat config sync
+    const combatBtn = root.querySelector('#__assist_combatbtn');
+    if (combatBtn) { combatBtn.textContent = 'Combat: ' + (CFG.combatEnabled ? 'ON' : 'OFF'); combatBtn.className = CFG.combatEnabled ? 'on' : 'off'; }
+    const syncInput = (sel, val) => { const el = root.querySelector(sel); if (el && document.activeElement !== el) el.value = val; };
+    syncInput('#__assist_whitelist', CFG.targetWhitelist.join(','));
+    syncInput('#__assist_blacklist', CFG.targetBlacklist.join(','));
+    syncInput('#__assist_attackrange', CFG.rangedAttackRange > 0 ? CFG.rangedAttackRange : CFG.attackRange);
+    syncInput('#__assist_fleemob', CFG.fleeOnMobCount);
+    syncInput('#__assist_fleeaggro', CFG.fleeOnAggroCount);
+    syncInput('#__assist_fleeprox', CFG.fleeOnProximityCount);
+    const syncToggle = (sel, on) => { const el = root.querySelector(sel); if (el) el.className = on ? 'on' : 'off'; };
+    syncToggle('#__assist_t_antiks', CFG.antiKS);
+    syncToggle('#__assist_t_avoidp', CFG.avoidOtherPlayers);
+    syncToggle('#__assist_t_lowhp', CFG.targetLowestHpFirst);
+    syncToggle('#__assist_t_wander', CFG.wanderEnabled);
+    syncToggle('#__assist_t_warpfind', CFG.warpFindEnabled);
+    syncToggle('#__assist_t_warptomon', CFG.warpToMonster);
 
     // log page (อัปเดตเฉพาะถ้าเปิดอยู่ เพื่อประหยัด)
     const logPage = root.querySelector('.__assist_page[data-page="log"]');
