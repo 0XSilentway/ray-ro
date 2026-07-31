@@ -464,10 +464,19 @@
       const cur = u32(u, 9), m = u32(u, 13);
       applyStat(id, cur, m);
     }
-    // 0x07 MOVE: ตำแหน่ง entity
-    else if (op === 0x07 && u.length >= 17) {
+    // 0x07 MOVE: ตำแหน่ง entity (ทั้ง player + monster/NPC)
+    else if (op === 0x07 && u.length >= 9) {
       const id = u32(u, 1);
-      if (playerId != null && id === playerId) { player.x = f32(u, 9); player.y = f32(u, 13); }
+      if (playerId != null && id === playerId) {
+        // player → ใช้ f32 (offset 9/13) ที่แม่นกว่า
+        if (u.length >= 17) { player.x = f32(u, 9); player.y = f32(u, 13); }
+      } else {
+        // entity อื่น → i16 (offset 5/7) + อัปเดต entities map (สำหรับ combat)
+        const x = i16(u, 5), y = i16(u, 7);
+        const e = entities.get(id);
+        if (e) { e.x = x; e.y = y; }
+        else { entities.set(id, { id, kind: 1, x, y, alive: true }); }   // assume monster
+      }
     }
     // 0x0b ATTACK_RESULT: ถ้าตัวเราเป็นคนตี → กำลังสู้
     else if (op === 0x0b && u.length >= 9) {
@@ -589,17 +598,7 @@
         }
       } catch (e) { /* SPAWN parse error ข้าม */ }
     }
-    // 0x07 MOVE_UPDATE: อัปเดตตำแหน่ง entity [07][id:4][x:i16][y:i16]...
-    else if (op === 0x07 && u.length >= 9) {
-      const id = u32(u, 1);
-      if (id !== playerId) {
-        const x = i16(u, 5), y = i16(u, 7);
-        const e = entities.get(id);
-        if (e) { e.x = x; e.y = y; }
-        else { entities.set(id, { id, kind: 1, x, y, alive: true }); }   // assume monster
-        // track player position ด้วย (ทับ logic เดิมที่ใช้ f32)
-      }
-    }
+    // 0x07 MOVE_UPDATE: อัปเดตตำแหน่ง entity — merge แล้วใน handler 0x07 ด้านบน (player + entity)
     // 0x3c ENTITY_LIST: batch ตำแหน่ง [3c][count:2][eid:4][x:2][y:2][flag:1]...
     else if (op === 0x3c && u.length >= 3) {
       const count = u16(u, 1);
@@ -813,6 +812,8 @@
     if (!m || !m.alive) return false;
     if (m.kind !== 1) return false;                       // ตีเฉพาะ monster
     if (m.x == null || m.y == null) return false;
+    // ★ ต้องเคยเห็น SPAWN (มี sub/name) — กัน ghost entity จาก MOVE_UPDATE ที่ยังไม่รู้ชื่อ/ชนิดจริง
+    if (m.sub == null) return false;
     if (matchList(m, CFG.targetBlacklist)) return false;
     if (CFG.targetWhitelist.length && !matchList(m, CFG.targetWhitelist)) return false;
     // anti-KS: ข้ามมอนที่คนอื่นตีอยู่
@@ -963,12 +964,18 @@
   let lastWalkToTargetAt = 0;
   function walkToTarget(now, m) {
     if (player.x == null) return false;
-    const dist = Math.hypot(m.x - player.x, m.y - player.y);
-    // stuck detection: พิกัดไม่เปลี่ยน → เปลี่ยนทิศตั้งฉาก
+    // stuck detection: พิกัดไม่เปลี่ยน → เพิ่ม counter
     if (lastWalkPos && lastWalkPos.x === player.x && lastWalkPos.y === player.y) {
       stuckWalkCount++;
     } else { stuckWalkCount = 0; }
     lastWalkPos = { x: player.x, y: player.y };
+
+    // ★ stuck จริงๆ (≥8 tick ไม่ขยับ ≈ พยายาม 6s+) → abandon ติดกำแพงจริง
+    if (stuckWalkCount >= 8) {
+      abandonTarget('ติดกำแพง (stuck ' + stuckWalkCount + ')', true);
+      target = null;
+      return false;
+    }
 
     if (now - lastWalkToTargetAt < 800) return false;
     lastWalkToTargetAt = now;
@@ -979,7 +986,7 @@
     const step = 10 + Math.random() * 5;                 // 10-15 ช่อง
     const tx = player.x + Math.cos(angle) * step;
     const ty = player.y + Math.sin(angle) * step;
-    if (sendMove(tx, ty)) { log('🚶 เดินไปหา', m.name, '@(', tx.toFixed(0), ty.toFixed(0) + ')'); return true; }
+    if (sendMove(tx, ty)) { log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', tx.toFixed(0), ty.toFixed(0) + ') stuck=' + stuckWalkCount); return true; }
     return false;
   }
 
@@ -1031,22 +1038,22 @@
           }
           return;
         }
-        // ไกลเกิน maxWalkDistance → warpToMonster หรือ abandon
-        if (dist > CFG.maxWalkDistance) {
-          if (CFG.warpToMonster && (warpToMonsterCount.get(target.id) || 0) < CFG.warpToMonsterMaxPerEntity) {
-            const wc = warpToMonsterCount.get(target.id) || 0;
-            if (now - (target._lastWarpAt || 0) > CFG.warpToMonsterCooldownMs) {
-              if (sendTeleport(currentMap, m.x, m.y)) {
-                target._lastWarpAt = now; warpToMonsterCount.set(target.id, wc + 1);
-                log('🌀 วาร์ปไปหา', m.name, '@(', m.x, m.y + ')', '(warp', wc + 1 + ')');
-              }
-              return;
+        // ไกลเกินระยะโจมตี → เดินไปหาเสมอ (ไม่ abandon ทันที)
+        //   abandon เฉพาะตอน stuck จริง (track ใน walkToTarget ผ่าน stuckWalkCount)
+        if (dist > CFG.maxWalkDistance && CFG.warpToMonster && (warpToMonsterCount.get(target.id) || 0) < CFG.warpToMonsterMaxPerEntity) {
+          // ไกลมาก + เปิด warpToMonster → วาร์ปไปหา (เร็วกว่าเดิน)
+          const wc = warpToMonsterCount.get(target.id) || 0;
+          if (now - (target._lastWarpAt || 0) > CFG.warpToMonsterCooldownMs) {
+            if (sendTeleport(currentMap, m.x, m.y)) {
+              target._lastWarpAt = now; warpToMonsterCount.set(target.id, wc + 1);
+              log('🌀 วาร์ปไปหา', m.name || target.id.toString(16), '@(', m.x, m.y + ')', '(warp', wc + 1 + ')');
             }
-          } else { abandonTarget('ไกลเกิน ' + CFG.maxWalkDistance, true); target = null; return; }
-        } else {
-          // ในระยะเดิน → เดินไปหา
-          walkToTarget(now, m); return;
+          }
+          return;
         }
+        // เดินเข้าไปหามอน (stuck detection อยู่ใน walkToTarget — abandon ถ้าติดกำแพงนานเกิน)
+        walkToTarget(now, m);
+        return;
       }
     }
 
