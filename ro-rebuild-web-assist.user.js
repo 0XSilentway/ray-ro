@@ -132,10 +132,10 @@
     //  เมื่อ HP ต่ำกว่า restHpPercent และไม่โดนรุม → นั่งพัก
     //  ฟื้นถึง restUntilPercent หรือหมดเวลา restMaxSec → ลุกยืนกลับฟาร์ม
     //  ★ โดนรุมระหว่างนั่ง → ลุกทันทีเพื่อตีตอบ
-    restEnabled: false,
-    restHpPercent: 30,            // HP ต่ำกว่า 30% → นั่งพัก
+    restEnabled: true,
+    restHpPercent: 40,            // HP ต่ำกว่า 30% → นั่งพัก
     restUntilPercent: 90,         // ฟื้นถึง 90% → ลุก
-    restMaxSec: 60,               // นั่งนานสุด 60 วิ (กันค้าง — HP ไม่ขยับ = มีปัญหา)
+    restMaxSec: 40,               // นั่งนานสุด 60 วิ (กันค้าง — HP ไม่ขยับ = มีปัญหา)
 
     // ---------- AUTO-LOOT ----------
     lootEnabled: true,
@@ -548,10 +548,13 @@
           combatCooldownUntil = nowMs() + CFG.postCombatDelayMs;
         }
       } else {
+        // server ตอบ FAIL ชัดเจน → ของอาจถูกมอนเก็บไปแล้ว → ลด attempts ที่เหลือให้เหลือ 1 (ลองอีกทีเดียวแล้วปล่อย)
         stats.pickupFails++;
-        if (it && it.attempts >= CFG.maxAttempts) {
-          queue.delete(dropId);
-          log('🚫 ปล่อย', nameOf(it.itemId), 'drop', dropId, '(ล้มเหลว', it.attempts, 'ครั้ง)');
+        if (it) {
+          if (it.attempts >= CFG.maxAttempts - 1) {
+            queue.delete(dropId);
+            log('🚫 ปล่อย', nameOf(it.itemId), 'drop', dropId, '(server ตอบ FAIL', it.attempts, 'ครั้ง — ของอาจถูกเก็บไปแล้ว)');
+          }
         }
         // wit ไม่ delete ที่นี่ → warpLoop จะจัดการ offset ถัดไป
       }
@@ -595,6 +598,22 @@
           wit.warpAt = 0;               // ให้ warpLoop วาร์ปใหม่ได้เลย (ผ่าน cooldown)
         }
         lastWarpTargetId = null;
+      }
+    }
+    // 0x36 DESPAWN_REASON: [36][eid:4][reason:4] — reason=2 = entity ถูกเก็บไป (โดย player หรือมอน loot)
+    //   ★ สำคัญ: ถ้าของที่เรารอเก็บถูกมอน loot (เช่น Poring กินของ) → ลบออกจาก queue ทันที ไม่ต้องลองเก็บเปล่าๆ
+    else if (op === 0x36 && u.length >= 9) {
+      const eid = u32(u, 1);
+      const reason = u32(u, 5);
+      if (reason === 2) {
+        // ของถูกเก็บไป → ลบจาก queue/recentDrops/warpQueue
+        if (queue.has(eid)) {
+          const it = queue.get(eid);
+          queue.delete(eid);
+          log('🗑️ ของหายไป:', nameOf(it.itemId), 'drop', eid, '(ถูกเก็บไปแล้ว — อาจโดยมอน loot)');
+        }
+        recentDrops.delete(eid);
+        warpQueue.delete(eid);
       }
     }
     // ============== COMBAT packets ==============
