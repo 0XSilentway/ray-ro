@@ -132,6 +132,7 @@
     lootEnabled: true,
     pickRadius: 8,                // ระยะ (ช่อง) จากตัวเรา ที่จะถือว่าของเป็นของเรา
     combatWindowMs: 4000,         // ของตกต้องมาภายในเวลานี้หลังเราตี/ฆ่า
+    lootDelayAfterDropMs: 0,      // ★ รอ N ms หลังของตก แล้วค่อยเริ่มเก็บ (0 = เก็บทันที, กันดูเป็นบอท)
     attemptIntervalMs: 1200,      // ห่างระหว่างการลองเก็บชิ้นเดิม (1.2 วิ — รอ server เดินไปเก็บ)
     sendThrottleMs: 500,          // ห่างระหว่างคำสั่งเก็บทุกชิ้น (กันสแปม)
     maxAttempts: 6,               // เก็บไม่ได้ 6 ครั้ง → ปล่อย (นักธนูฆ่าไกล ตัวเดินไปเก็บนานขึ้น)
@@ -533,7 +534,11 @@
 
     const eligible = [];
     for (const it of queue.values()) {
-      if (it.attempts < CFG.maxAttempts && now - it.lastAttemptAt >= CFG.attemptIntervalMs) eligible.push(it);
+      if (it.attempts >= CFG.maxAttempts) continue;
+      if (now - it.lastAttemptAt < CFG.attemptIntervalMs) continue;
+      // ★ รอ lootDelayAfterDropMs หลังของตก ก่อนเริ่มเก็บ (addedAt = ตอนของตกเข้าคิว)
+      if (now - it.addedAt < CFG.lootDelayAfterDropMs) continue;
+      eligible.push(it);
     }
     if (!eligible.length) return;
     if (now - lastSendAt < CFG.sendThrottleMs) return;
@@ -666,6 +671,7 @@
       console.log('  ASSIST.setLootMode("all")         // "all" | "only" | "except"');
       console.log('  ASSIST.addLootOnly(909,512)       ASSIST.addLootExcept(909)');
       console.log('  ASSIST.clearLootOnly()            ASSIST.clearLootExcept()');
+      console.log('  ASSIST.setLootDelay(500)         // รอ 500ms หลังของตกแล้วค่อยเก็บ (0=ทันที)');
       console.log(`%c อื่นๆ `, 'color:#9c27b0;font-weight:bold');
       console.log('  ASSIST.name(935,"Feather")        // ตั้งชื่อ item');
       console.log('  ASSIST.status()  ASSIST.config()  ASSIST.stopAll()');
@@ -746,6 +752,12 @@
     },
     clearLootOnly()   { CFG.filter.onlyItems = [];   log('📦 ล้าง onlyItems'); },
     clearLootExcept() { CFG.filter.exceptItems = []; log('📦 ล้าง exceptItems'); },
+    // ตั้งดีเลย์ก่อนเริ่มเก็บ (ms หลังของตก) — 0 = เก็บทันที
+    setLootDelay(ms) {
+      if (typeof ms !== 'number' || ms < 0) { console.warn('ต้องเป็นเลข ≥ 0'); return; }
+      CFG.lootDelayAfterDropMs = ms;
+      log('📦 ดีเลย์ก่อนเก็บ =', ms + 'ms' + (ms ? ' (รอหลังของตก)' : ' (เก็บทันที)'));
+    },
 
     // ---------- ทั่วไป ----------
     name(id, label) { CFG.itemNames[id] = label; log('🏷️', id, '=', label); },
@@ -905,6 +917,8 @@
             <button id="__assist_applylootexcept">ตั้ง except</button>
             <button id="__assist_clearfilter">ล้าง</button>
           </div>
+          <div class="field"><label>ดีเลย์ก่อนเก็บ (ms หลังของตก) — 0 = เก็บทันที</label><input type="number" id="__assist_lootdelay" min="0" step="100"></div>
+          <div class="btns"><button id="__assist_applylootdelay">ตั้งดีเลย์</button></div>
         </div>
         <div class="__assist_page" data-page="log">
           <div class="logbox" id="__assist_logbox"></div>
@@ -981,6 +995,10 @@
       if (ids.length) ASSIST.addLootExcept(...ids);
     });
     root.querySelector('#__assist_clearfilter').addEventListener('click', () => { ASSIST.clearLootOnly(); ASSIST.clearLootExcept(); });
+    root.querySelector('#__assist_applylootdelay').addEventListener('click', () => {
+      const ms = parseInt(root.querySelector('#__assist_lootdelay').value, 10);
+      if (!isNaN(ms)) ASSIST.setLootDelay(ms);
+    });
     root.querySelector('#__assist_resetstats').addEventListener('click', () => ASSIST.resetStats());
     root.querySelector('#__assist_clearlog').addEventListener('click', () => ASSIST.clearLogs());
 
@@ -1063,6 +1081,8 @@
       lf.value = (CFG.filter.mode === 'only' ? CFG.filter.onlyItems : CFG.filter.mode === 'except' ? CFG.filter.exceptItems : []).join(',');
       lf.placeholder = CFG.filter.mode === 'only' ? 'item id ที่จะเก็บเท่านั้น' : CFG.filter.mode === 'except' ? 'item id ที่จะไม่เก็บ' : 'เลือกโหมดก่อน';
     }
+    const ld = root.querySelector('#__assist_lootdelay');
+    if (ld && document.activeElement !== ld) ld.value = CFG.lootDelayAfterDropMs;
 
     // log page (อัปเดตเฉพาะถ้าเปิดอยู่ เพื่อประหยัด)
     const logPage = root.querySelector('.__assist_page[data-page="log"]');
