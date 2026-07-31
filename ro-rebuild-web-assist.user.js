@@ -458,9 +458,11 @@
     const op = u[0];
 
     // 0x25 STAT: HP/SP ของ entity → [25][eid:4][statType:4][cur:4][max:4][flag:1]
+    //   ★★ ห้ามตั้ง playerId จากที่นี่! STAT ส่งมาให้หลาย entity (player + monster)
+    //      entityId แรกที่ส่ง STAT อาจเป็น monster → playerId ผิด → player position ไม่อัปเดต
+    //      playerId ต้องมาจาก SELECT_CHAR(0x03) หรือ SPAWN(flag=1) เท่านั้น
     if (op === 0x25 && u.length >= 18) {
       const id = u32(u, 1);
-      if (playerId == null) { playerId = id; log('👤 player_id =', id.toString(16)); }
       const cur = u32(u, 9), m = u32(u, 13);
       applyStat(id, cur, m);
     }
@@ -573,6 +575,8 @@
         const flag = u[1];
         const id = u32(u, 7);            // offset 7 (ข้าม marker 0x0f @6)
         const sub = u32(u, 11);          // offset 11
+        // ★ flag=1 = SPAWN ตัวเอง → ใช้หา playerId (สำรอง ถ้า SELECT_CHAR ไม่มา)
+        if (flag === 1 && playerId == null) { playerId = id; log('👤 player_id =', id.toString(16), '(จาก SPAWN flag=1)'); }
         // z @ 19-22 (i32 signed) — ข้าม
         const nameLenField = u32(u, 23); // nameLen @ 23 (u32 — น่าเชื่อถือไม่ได้สำหรับ UTF-8 ไทย)
         // หา nameEnd: เริ่มจาก 27+nameLenField ถ้าดูเหมือน ASCII, ไม่งั้น scan จาก offset 27
@@ -1107,7 +1111,10 @@
         if (target.engageAt && engageAge > CFG.maxEngageSec) { abandonTarget('engage นาน ' + engageAge.toFixed(0) + 's', true); target = null; }
         else if (!target.engageAt && acquireAge > CFG.maxEngageSec) { abandonTarget('ไม่ได้ตี ' + acquireAge.toFixed(0) + 's', true); target = null; }
         // pending ≥3 abandon เฉพาะถ้าไม่ได้กำลังเข้าใกล้ (เดินอยู่ไม่นับ)
-        else if (target.pendingAttacks >= 3 && !(curDist < (target._lastDist || Infinity))) { abandonTarget('pending ' + target.pendingAttacks, true); target = null; }
+        //   + ต้องเคยส่ง attack แล้ว ≥8s (กัน abandon ก่อน server ตอบ)
+        else if (target.pendingAttacks >= 3 && target.lastAttackAt && (now - target.lastAttackAt > 8000)) {
+          abandonTarget('pending ' + target.pendingAttacks + ' (server เงียบ)', true); target = null;
+        }
       }
       // stuck warp escalation
       if (!target && CFG.stuckWarpOnAbandon > 0 && stuckAbandonCount >= CFG.stuckWarpOnAbandon) {
