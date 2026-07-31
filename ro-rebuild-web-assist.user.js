@@ -465,14 +465,13 @@
       applyStat(id, cur, m);
     }
     // 0x07 MOVE: ตำแหน่ง entity (ทั้ง player + monster/NPC)
+    //   ★ player ใช้ i16 (offset 5/7) เหมือน monster เพื่อให้ระบบพิกัดตรงกัน (combat คำนวณระยะ/ทิศได้แม่น)
     else if (op === 0x07 && u.length >= 9) {
       const id = u32(u, 1);
+      const x = i16(u, 5), y = i16(u, 7);
       if (playerId != null && id === playerId) {
-        // player → ใช้ f32 (offset 9/13) ที่แม่นกว่า
-        if (u.length >= 17) { player.x = f32(u, 9); player.y = f32(u, 13); }
+        player.x = x; player.y = y;
       } else {
-        // entity อื่น → i16 (offset 5/7) + อัปเดต entities map (สำหรับ combat)
-        const x = i16(u, 5), y = i16(u, 7);
         const e = entities.get(id);
         if (e) { e.x = x; e.y = y; }
         else { entities.set(id, { id, kind: 1, x, y, alive: true }); }   // assume monster
@@ -840,6 +839,10 @@
     if (!m || !m.alive) return false;
     if (m.kind !== 1) return false;                       // ตีเฉพาะ monster
     if (m.x == null || m.y == null) return false;
+    // ★ ข้ามมอนที่เพิ่ง abandon (กันเลือกตัวเดิมซ้ำทันที → วนลูป)
+    const ab = abandonCooldown.get(m.id);
+    if (ab && now < ab) return false;
+    if (ab && now >= ab) abandonCooldown.delete(m.id);    // หมดอายุ → ล้าง
     // ★ ผ่อน guard: ต้องเคยเห็น SPAWN (มี sub) หรืออยู่ใกล้ตัวเรามาก (≤12 ช่อง — NPC มักนิ่ง ไม่ใช่อันตราย)
     //   กัน ghost entity ไกลๆ แต่ยอมรับมอนใกล้ที่อาจยังไม่ได้ SPAWN
     if (m.sub == null) {
@@ -993,33 +996,46 @@
     };
     return target;
   }
-  // เดินไปหามอน (มี stuck detection เหมือนบอทหลัก)
+  // เดินไปหามอน — เดินเส้นตรงไปทางมอน + stuck detection ดูระยะลดลง
   let lastWalkToTargetAt = 0;
+  let lastDistToTarget = null;
+  let noProgressTicks = 0;
+  const abandonCooldown = new Map();   // entityId → timestamp ที่ abandon (กันเลือกตัวเดิมซ้ำเลย)
   function walkToTarget(now, m) {
     if (player.x == null) return false;
-    // stuck detection: พิกัดไม่เปลี่ยน → เพิ่ม counter
-    if (lastWalkPos && lastWalkPos.x === player.x && lastWalkPos.y === player.y) {
-      stuckWalkCount++;
-    } else { stuckWalkCount = 0; }
-    lastWalkPos = { x: player.x, y: player.y };
+    const dist = Math.hypot(m.x - player.x, m.y - player.y);
+    // stuck detection: ดูว่าระยะลดลงไหม (แม่นกว่าดูพิกัดคงที่)
+    if (lastDistToTarget != null) {
+      if (dist < lastDistToTarget - 0.5) {
+        noProgressTicks = 0;             // ใกล้ขึ้น → ไม่ stuck
+      } else {
+        noProgressTicks++;               // ไม่ใกล้ขึ้น → นับ stuck
+      }
+    }
+    lastDistToTarget = dist;
 
-    // ★ stuck จริงๆ (≥8 tick ไม่ขยับ ≈ พยายาม 6s+) → abandon ติดกำแพงจริง
-    if (stuckWalkCount >= 8) {
-      abandonTarget('ติดกำแพง (stuck ' + stuckWalkCount + ')', true);
+    // ★ stuck จริงๆ (ระยะไม่ลด ≥10 tick ≈ 8s+) → abandon + cooldown กันเลือกใหม่ทันที
+    if (noProgressTicks >= 10) {
+      log('🚫 abandon target', target.id.toString(16), '(ไม่เข้าใกล้ ' + noProgressTicks + ' tick @ dist ' + dist.toFixed(1) + ')');
+      abandonCooldown.set(target.id, now + 15000);   // ข้ามมอนตัวนี้ 15s
+      abandonTarget('ติดกำแพง', true);
       target = null;
+      lastDistToTarget = null;
+      noProgressTicks = 0;
       return false;
     }
 
     if (now - lastWalkToTargetAt < 800) return false;
     lastWalkToTargetAt = now;
-    // มุมไปหามอน (±30° jitter) หรือตั้งฉากถ้าติด
+    // เดินเส้นตรงไปทางมอน (step = min(ระยะที่เหลือ, 12) กันเดินเกิน)
     let angle = Math.atan2(m.y - player.y, m.x - player.x);
-    if (stuckWalkCount >= 2) angle += Math.PI / 2;       // เปลี่ยนทิศตั้งฉาก
-    angle += (Math.random() * 2 - 1) * (Math.PI / 6);    // ±30°
-    const step = 10 + Math.random() * 5;                 // 10-15 ช่อง
+    // ถ้า stuck (ระยะไม่ลด) → เปลี่ยนทิศตั้งฉากบ้างเพื่อหาทางอ้อม
+    if (noProgressTicks >= 3) angle += (Math.random() < 0.5 ? 1 : -1) * (Math.PI / 2);
+    else angle += (Math.random() * 2 - 1) * (Math.PI / 12);   // ±15° jitter เล็กน้อย
+    const step = Math.min(dist, 12);
     const tx = player.x + Math.cos(angle) * step;
     const ty = player.y + Math.sin(angle) * step;
-    if (sendMove(tx, ty)) { log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', tx.toFixed(0), ty.toFixed(0) + ') stuck=' + stuckWalkCount); return true; }
+    if (sendMove(tx, ty)) { log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', Math.round(tx), Math.round(ty) + ') dist=' + dist.toFixed(1) + ' stuck=' + noProgressTicks); return true; }
     return false;
   }
 
