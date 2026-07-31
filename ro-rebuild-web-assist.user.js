@@ -1276,6 +1276,18 @@
         // ในระยะ acquire → ส่ง ATTACK ตรงๆ (server เดินเข้าไปตีเอง)
         if (dist <= CFG.maxAcquireDistance) {
           // (ลบ fallback เดินเข้า — server walk-and-attack ทำงานจริง แค่ reset ไม่ทำงานชั่วคราว)
+          // ★ ถ้า pending สูง + server เงียบนาน + เปิด warpToMonster → วาร์ปไปหามอน (แทน abandon)
+          if (CFG.warpToMonster && target.pendingAttacks >= 4 && target.firstAttackAt && (now - target.firstAttackAt > 8000)
+              && (warpToMonsterCount.get(target.id) || 0) < CFG.warpToMonsterMaxPerEntity
+              && now - (target._lastWarpAt || 0) > CFG.warpToMonsterCooldownMs) {
+            const wc = warpToMonsterCount.get(target.id) || 0;
+            if (sendTeleport(currentMap, m.x, m.y)) {
+              target._lastWarpAt = now; warpToMonsterCount.set(target.id, wc + 1);
+              target.pendingAttacks = 0; target.firstAttackAt = 0;   // reset หลังวาร์ป
+              log('🌀 วาร์ปไปหา', m.name || target.id.toString(16), '@(', m.x, m.y + ')', '(pending สูง warp', wc + 1 + ')');
+            }
+            return;
+          }
           if (now - target.lastAttackAt > CFG.attackReIssueMs || target.lastAttackAt === 0) {
             if (sendAttack(target.id)) {
               target.lastAttackAt = now; target.pendingAttacks++;
