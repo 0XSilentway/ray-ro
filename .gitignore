@@ -1,0 +1,18 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Node (ถ้ามี tooling เสริมในอนาคต)
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Local config / secrets (กัน token รั่ว)
+.env
+.env.local
+*.local
