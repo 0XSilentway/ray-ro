@@ -812,8 +812,13 @@
     if (!m || !m.alive) return false;
     if (m.kind !== 1) return false;                       // ตีเฉพาะ monster
     if (m.x == null || m.y == null) return false;
-    // ★ ต้องเคยเห็น SPAWN (มี sub/name) — กัน ghost entity จาก MOVE_UPDATE ที่ยังไม่รู้ชื่อ/ชนิดจริง
-    if (m.sub == null) return false;
+    // ★ ผ่อน guard: ต้องเคยเห็น SPAWN (มี sub) หรืออยู่ใกล้ตัวเรามาก (≤12 ช่อง — NPC มักนิ่ง ไม่ใช่อันตราย)
+    //   กัน ghost entity ไกลๆ แต่ยอมรับมอนใกล้ที่อาจยังไม่ได้ SPAWN
+    if (m.sub == null) {
+      if (player.x == null) return false;
+      const d = Math.hypot(m.x - player.x, m.y - player.y);
+      if (d > 12) return false;                           // ghost ไกล → ข้าม (รอ SPAWN)
+    }
     if (matchList(m, CFG.targetBlacklist)) return false;
     if (CFG.targetWhitelist.length && !matchList(m, CFG.targetWhitelist)) return false;
     // anti-KS: ข้ามมอนที่คนอื่นตีอยู่
@@ -1276,6 +1281,23 @@
     },
     getTarget() { return target ? { id: target.id.toString(16), pending: target.pendingAttacks, engageSec: target.engageAt ? ((nowMs()-target.engageAt)/1000).toFixed(0) : 0 } : null; },
     getAggro() { return { mobAttackers: getMobAttackerCount(), aggro: getAggroCount(CFG.fleeOnProximityRadius), monstersNearby: countMonsters(CFG.fleeOnProximityRadius) }; },
+    // ★ debug: ดู entities ทั้งหมดเพื่อหาสาเหตุ acquire ไม่ติด
+    debugEntities() {
+      const now = nowMs();
+      let spawnCount = 0, ghostCount = 0, monsterCount = 0, targetableCount = 0;
+      const sample = [];
+      for (const e of entities.values()) {
+        if (e.sub != null) spawnCount++; else ghostCount++;
+        if (e.kind === 1 && e.alive) {
+          monsterCount++;
+          if (sample.length < 8) sample.push({ id: e.id.toString(16), name: e.name, sub: e.sub, x: e.x, y: e.y, hp: e.hp, hpMax: e.hpMax, targetable: isTargetable(e, now) });
+          if (isTargetable(e, now)) targetableCount++;
+        }
+      }
+      console.log('entities total:', entities.size, '| fromSPAWN:', spawnCount, '| ghost:', ghostCount, '| monsters:', monsterCount, '| targetable:', targetableCount);
+      console.table(sample);
+      return { total: entities.size, spawnCount, ghostCount, monsterCount, targetableCount, sample, player: { ...player }, playerId: playerId ? playerId.toString(16) : null };
+    },
 
     // ---------- ทั่วไป ----------
     name(id, label) { CFG.itemNames[id] = label; log('🏷️', id, '=', label); },
