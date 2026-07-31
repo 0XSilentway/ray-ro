@@ -737,6 +737,15 @@
       }
       else return;
       const now = nowMs();
+      // ★ DEBUG: ถ้ากำลังตี target อยู่ → log packet จริงเพื่อหาสาเหตุ reset ไม่ทำงาน
+      if (target && CFG.verbose) {
+        const isOur = (attacker === playerId);
+        const isTgt = (victimId === target.id);
+        if (!isOur && !isTgt && victimId !== playerId && victimId !== 0) {
+          // packet ไม่ match ทั้ง playerId ทั้ง target.id → น่าสงสัย
+          console.log('[ASSIST][debug] ATTACK_RESULT ไม่ match: attacker=' + attacker.toString(16) + ' victim=' + victimId.toString(16) + ' target=' + target.id.toString(16) + ' playerId=' + playerId.toString(16) + ' len=' + u.length + ' dmg=' + damage);
+        }
+      }
       // เราตีมอน → ลด HP มอน + reset pending + mark combat
       //   ★ reset pending ถ้า victimId = target ปัจจุบัน (แม้ attacker ไม่ตรง playerId — กัน playerId ผิด)
       //   ★ ถ้าไม่มี entity ใน map → สร้างเลย (กัน _lastDamageAt ไม่ถูก stamp)
