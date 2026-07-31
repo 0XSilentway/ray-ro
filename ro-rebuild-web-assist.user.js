@@ -725,12 +725,16 @@
         } else { player.x = x; player.y = y; }
       }
     }
-    // 0x0b ATTACK_RESULT IN: [0b][attacker:4][target:4][count:2]...[damage:4]
+    // 0x0b ATTACK_RESULT IN: [0b][attacker:4][target:4]...[damage:4 @17 ถ้ามี]
     //   + 0x26 variant: [26][attacker:4][damage:4] (มอนตี player)
+    //   ★ บอทหลักรับแค่ 8 bytes (attacker+target) damage เป็น optional — กันเคส packet สั้น
     else if ((op === 0x0b || op === 0x26) && playerId != null) {
       let attacker, victimId, damage;
       if (op === 0x26 && u.length >= 9) { attacker = u32(u, 1); victimId = 0; damage = u32(u, 5); }
-      else if (op === 0x0b && u.length >= 21) { attacker = u32(u, 1); victimId = u32(u, 5); damage = u32(u, 17); }
+      else if (op === 0x0b && u.length >= 9) {   // ★ ลดจาก 21 → 9 (รับ packet สั้น)
+        attacker = u32(u, 1); victimId = u32(u, 5);
+        damage = u.length >= 21 ? u32(u, 17) : 0;   // damage optional (offset 17 ถ้ามี)
+      }
       else return;
       const now = nowMs();
       // เราตีมอน → ลด HP มอน + reset pending + mark combat
