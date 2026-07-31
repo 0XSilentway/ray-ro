@@ -42,7 +42,7 @@
      // Auto-Loot (เปิดอยู่ default)
      ASSIST.lootOn()  /  ASSIST.lootOff()
 
-     // Auto-Heal ★ DEFAULT = OFF (ยังไม่สมบูรณ์ อาจถูกตรวจจับ)
+     // Auto-Heal ★ DEFAULT = OFF (ยังไม่สมบูรณ์)
      //   ต้องตั้ง item ก่อน แล้วเปิดเอง:
      ASSIST.setHealItems(501,502,503)   // ตั้งไอเทม (จะเปิด auto-heal ให้อัตโนมัติ)
      ASSIST.setHealAt(50)               // เลือดต่ำกว่า 50% → ใช้ยา
@@ -120,7 +120,7 @@
     //     เปิดใช้เองด้วย ASSIST.healOn() หรือ ASSIST.setHealItems(...) (จะเปิดให้อัตโนมัติ)
     healEnabled: false,           // เปิดใช้ตอนเริ่มหรือไม่
     healAtPercent: 60,            // HP% ที่จะเริ่มใช้ยา (เช่น 60 = ต่ำกว่า 60% ใช้ยา)
-    healItems: [],                // ★ DEFAULT = ว่าง → จะไม่ส่ง packet heal ใด ๆ จนกว่าจะตั้ง item
+    healItems: [512,507,501,502],                // ★ DEFAULT = ว่าง → จะไม่ส่ง packet heal ใด ๆ จนกว่าจะตั้ง item
     healMode: 'order',            // 'order' = ใช้ตัวเดิมจนหมดแล้วค่อยข้าม, 'random' = สุ่มทุกครั้ง
     healDelayMs: 200,             // ดีเลย์ขั้นต่ำระหว่างการใช้ item แต่ละครั้ง
     healCheckMs: 100,             // ความถี่ในการเช็ค HP
@@ -143,26 +143,28 @@
     //  เมื่อเก็บของไม่ได้ครบ maxAttempts (server เงียบ = ติดกำแพง/หน้าผา)
     //  → วาร์ปไปที่พิกัดของไอเท็ม แล้วส่ง pickup อีกครั้ง
     //  ★ default OFF เพราะส่ง packet warp จริง — เปิดเองด้วย ASSIST.warpLootOn()
-    warpLootEnabled: false,
-    warpLootMaxOffsets: 5,        // ลองกี่ offset รอบไอเท็ม (กลาง + ±3 รอบข้าง) ก่อนปล่อยทิ้ง
-    warpLootCooldownMs: 2000,     // ห่างขั้นต่ำระหว่างการวาร์ป (กันสแปม → ถูกตรวจจับ)
-    warpLootPickupDelayMs: 800,   // รอ server ย้ายตัวละครหลังวาร์ป ก่อนส่ง pickup
+    warpLootEnabled: true,
+    warpLootMaxOffsets: 3,        // ลองกี่ offset รอบไอเท็ม (กลาง + ±3 รอบข้าง) ก่อนปล่อยทิ้ง
+    warpLootCooldownMs: 2000,     // ห่างขั้นต่ำระหว่างการวาร์ป (กันสแปม)
+    warpLootPickupDelayMs: 1000,   // รอ server ย้ายตัวละครหลังวาร์ป ก่อนส่ง pickup
 
     // ---------- AUTO-COMBAT (★ default OFF — ส่ง attack packet จริง) ----------
-    //  เปิดเองด้วย ASSIST.combatOn() และตั้ง targetWhitelist ก่อน (default ว่าง = ไม่ตีอะไร)
+    //  เปิดเองด้วย ASSIST.combatOn()
+    //  targetWhitelist: [] = ตีทุกมอน kind=1; ['Poring', 4000] = ตีเฉพาะ (รองรับชื่อ + sprite id)
+    //  ⚠️ ว่าง = ตีทุกมอน รวม MVP/มอนแรง → แนะนำให้ตั้ง whitelist หรือใช้ blacklist กันตาย
     combatEnabled: false,
-    targetWhitelist: [],          // ★ [] = ตีมอน kind=1 ทุกตัว; ['Poring', 4000] = เฉพาะ (รองรับชื่อ + sprite id)
+    targetWhitelist: [],          // [] = ตีมอน kind=1 ทุกตัว; ['Poring', 4000] = เฉพาะ (รองรับชื่อ + sprite id)
     targetBlacklist: [],          // ไม่ตีมอนเหล่านี้ (ชื่อหรือ sprite id)
     attackRange: 2,               // ระยะโจมตี (ช่อง) — ใกล้กว่านี้สั่งตี, ไกลกว่าเดินไป
-    rangedAttackRange: 0,         // 0 = ใช้ attackRange; >0 = นักธนูตีไกลได้ N ช่อง
+    rangedAttackRange: 8,         // 0 = ใช้ attackRange; >0 = นักธนูตีไกลได้ N ช่อง
     maxWalkDistance: 15,          // เดินไปหาถ้ามอนไกลกว่านี้ (≤20)
     combatTickMs: 200,            // tick loop (มี jitter ±25% เหมือนบอทหลัก)
     attackReIssueMs: 2500,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้
-    maxEngageSec: 25,             // abandon target ถ้า engage นานกว่านี้
+    maxEngageSec: 30,             // abandon target ถ้า engage นานกว่านี้
     // flee (วาร์ปหนี)
-    fleeOnMobCount: 0,            // มอนรุม N ตัว (ที่ตีเรา) → วาร์ปหนี (0=off)
-    fleeOnAggroCount: 0,          // มอนจับเราเป็นเป้า N ตัว → วาร์ปหนี (0=off)
-    fleeOnProximityCount: 0,      // มอนอยู่รอบ N ตัวในระยะ → วาร์ปหนี (0=off)
+    fleeOnMobCount: 3,            // มอนรุม N ตัว (ที่ตีเรา) → วาร์ปหนี (0=off)
+    fleeOnAggroCount: 5,          // มอนจับเราเป็นเป้า N ตัว → วาร์ปหนี (0=off)
+    fleeOnProximityCount: 10,      // มอนอยู่รอบ N ตัวในระยะ → วาร์ปหนี (0=off)
     fleeOnProximityRadius: 8,
     fleeMobWindowMs: 5000,        // ช่วงเวลาที่นับว่ามอน "กำลังตีเรา"
     fleeCooldownMs: 3000,
@@ -313,7 +315,7 @@
   // ตัวเช็ค HP และใช้ยา
   const healLoop = setInterval(() => {
     if (!CFG.healEnabled) return;
-    // ★★ GUARD สำคัญ: ถ้าไม่มี item heal เลย → ห้ามทำอะไร (กันส่ง packet 0x2f ปลอม → ถูกตรวจจับเป็นบอท)
+    // ★★ GUARD สำคัญ: ถ้าไม่มี item heal เลย → ห้ามทำอะไร (กันส่ง packet 0x2f ปลอม)
     if (!CFG.healItems.length) return;
     const now = Date.now();
     const pct = hpPct();
@@ -938,7 +940,7 @@
     return false;
   }
   function acquireTarget(now) {
-    if (!CFG.targetWhitelist.length) { return null; }   // whitelist ว่าง = ไม่ตี
+    // whitelist ว่าง = ตีทุกมอน kind=1 (ตามความหมายของ whitelist); ตั้งค่า = ตีเฉพาะที่ match
     const mobCount = getMobAttackerCount();
     let found;
     if (CFG.targetLowestHpFirst && mobCount >= 2) {
@@ -1231,7 +1233,7 @@
     // ---------- Auto-Combat ----------
     combatOn() {
       CFG.combatEnabled = true;
-      if (!CFG.targetWhitelist.length) console.warn('⚠️ targetWhitelist ว่าง — จะไม่ตีอะไร ตั้งก่อนด้วย ASSIST.setTargetWhitelist(...)');
+      if (!CFG.targetWhitelist.length && !CFG.targetBlacklist.length) console.warn('⚠️ whitelist + blacklist ว่าง = ตีทุกมอน (รวม MVP/มอนแรง) — ควรตั้ง whitelist หรือ blacklist กันตาย');
       log('⚔️ Auto-Combat: ON');
     },
     combatOff() { CFG.combatEnabled = false; target = null; log('⚔️ Auto-Combat: OFF'); },
@@ -1467,7 +1469,7 @@
     //   ให้หยุด propagation ก่อนถึง Unity (มิฉะนั้น Unity กลืน input ทำให้พิมพ์ไม่ติด)
     const ASSIST_INPUT_SEL = 'input, select, textarea';
     function isOurField(t) { return t && t.closest && root.contains(t) && t.matches && t.matches(ASSIST_INPUT_SEL); }
-    ['keydown', 'keyup', 'keypress', 'beforeinput', 'input'].forEach(evType => {
+    ['keydown', 'keyup', 'keypress', 'beforeinput', 'input', 'compositionstart', 'compositionupdate', 'compositionend'].forEach(evType => {
       window.addEventListener(evType, (e) => {
         if (isOurField(e.target)) {
           e.stopPropagation();
@@ -1475,6 +1477,31 @@
         }
       }, true);   // ← capture phase = ดักก่อน Unity
     });
+    // ★★ บังคับ focus กลับเข้า input ของเราเมื่อคลิก (Unity canvas ขโมย focus)
+    //   + ดัก mousedown ที่ canvas ก่อน Unity (capture) กัน blur ตอนกำลังพิมพ์
+    root.addEventListener('mousedown', (e) => {
+      if (isOurField(e.target)) {
+        e.stopPropagation();
+        setTimeout(() => { try { e.target.focus(); e.target.select && e.target.select(); } catch (_) {} }, 0);
+      }
+    }, true);
+    document.addEventListener('mousedown', (e) => {
+      // ถ้ากำลังโฟกัส input ของเราอยู่ และคลิกอยู่บน panel → กัน Unity canvas steal focus
+      if (document.activeElement && isOurField(document.activeElement) && root.contains(e.target)) {
+        e.stopPropagation();
+      }
+    }, true);
+    // กัน Unity เรียก canvas.focus() ตีตื้น: ถ้า focus หายไปจาก input ของเราโดยไม่ได้ตั้งใจ → คืน
+    // (ใช้ focusin capture เพื่อ intercept)
+    document.addEventListener('focusin', (e) => {
+      const active = document.activeElement;
+      if (active && (active.tagName === 'CANVAS' || active.tagName === 'EMBED' || active.tagName === 'OBJECT')) {
+        // canvas ได้ focus — แต่ถ้ามี input ของเราที่พึ่งถูกคลิก ให้คืน focus
+        if (root._justClickedInput) {
+          try { root._justClickedInput.focus(); } catch (_) {}
+        }
+      }
+    }, true);
 
     const bar = root.querySelector('#__assist_bar');
     const popup = root.querySelector('#__assist_popup');
