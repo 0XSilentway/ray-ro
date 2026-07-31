@@ -48,6 +48,10 @@
      ASSIST.setHealAt(50)               // เลือดต่ำกว่า 50% → ใช้ยา
      ASSIST.healOn()  /  ASSIST.healOff()
 
+     // Warp-to-Loot ★ DEFAULT = OFF (ส่ง packet วาร์ปจริง)
+     //   เก็บไม่ได้ครบ 6 ครั้ง → วาร์ปไปที่ไอเท็ม (กรณีติดกำแพง/หน้าผา)
+     ASSIST.warpLootOn() / ASSIST.warpLootOff()
+
    ==========================================================================
    ส่วนที่ 1 — AUTO-HEAL
    ==========================================================================
@@ -133,6 +137,16 @@
     maxAttempts: 6,               // เก็บไม่ได้ 6 ครั้ง → ปล่อย (นักธนูฆ่าไกล ตัวเดินไปเก็บนานขึ้น)
     itemMaxAgeMs: 30000,          // ของเก่ากว่านี้ → ทิ้งออกจากคิว
     lootTickMs: 300,
+
+    // ---------- WARP-TO-LOOT (ฟีเจอร์รุนแรง — default OFF) ----------
+    //  เมื่อเก็บของไม่ได้ครบ maxAttempts (server เงียบ = ติดกำแพง/หน้าผา)
+    //  → วาร์ปไปที่พิกัดของไอเท็ม แล้วส่ง pickup อีกครั้ง
+    //  ★ default OFF เพราะส่ง packet warp จริง — เปิดเองด้วย ASSIST.warpLootOn()
+    warpLootEnabled: false,
+    warpLootMaxOffsets: 5,        // ลองกี่ offset รอบไอเท็ม (กลาง + ±3 รอบข้าง) ก่อนปล่อยทิ้ง
+    warpLootCooldownMs: 2000,     // ห่างขั้นต่ำระหว่างการวาร์ป (กันสแปม → ถูกตรวจจับ)
+    warpLootPickupDelayMs: 800,   // รอ server ย้ายตัวละครหลังวาร์ป ก่อนส่ง pickup
+
     // โหมดกรองของ: 'all' = เก็บหมด, 'only' = เก็บเฉพาะ, 'except' = ยกเว้น
     filter: { mode: 'except', onlyItems: [], exceptItems: [909,916] },
 
@@ -315,6 +329,12 @@
   const recentDrops = new Map();       // dropId -> {dropId,x,y,itemId,t}
   const queue = new Map();             // dropId -> {dropId,itemId,x,y,attempts,lastAttemptAt,addedAt}
 
+  // ---------- WARP-TO-LOOT state ----------
+  let currentMap = null;               // ชื่อแมปปัจจุบัน (จาก opcode 0x12) — จำเป็นสำหรับ warp
+  const warpQueue = new Map();         // dropId -> {dropId,itemId,x,y,offsetIdx,warpAt,pickupSentAt}
+  let lastWarpAt = 0;                  // throttle การวาร์ป
+  let lastWarpTargetId = null;         // dropId ที่กำลังวาร์ปไป (เช็คผลจาก 0x2a)
+
   const u16 = (u, o) => u[o] | (u[o + 1] << 8);
   const u32 = (u, o) => ((u[o]) | (u[o + 1] << 8) | (u[o + 2] << 16) | (u[o + 3] << 24)) >>> 0;
   const dv = new DataView(new ArrayBuffer(4));
@@ -348,6 +368,29 @@
     b[0] = 0x52;
     b[1] = dropId & 0xff; b[2] = (dropId >> 8) & 0xff;
     b[3] = (dropId >> 16) & 0xff; b[4] = (dropId >>> 24) & 0xff;
+    activeWS.send(b);
+    return true;
+  }
+
+  // ★ เขียน signed int16 LE ลง Uint8Array ที่ offset (รองรับค่าติดลบ เช่น -999)
+  function writeI16LE(b, off, v) {
+    const x = v & 0xffff;
+    b[off] = x & 0xff; b[off + 1] = (x >> 8) & 0xff;
+  }
+  // ★ ส่งคำสั่งวาร์ป: packet 0x40, [40][len:2 LE][mapname UTF-8][x:i16 LE][y:i16 LE][00]
+  //   x/y เป็น signed int16 (-999 = random) — format ยืนยันจากบอทหลักแล้ว
+  function sendTeleport(mapName, x, y) {
+    if (!activeWS || activeWS.readyState !== 1) return false;
+    if (!mapName) return false;
+    const mapBytes = new TextEncoder().encode(mapName);
+    const b = new Uint8Array(1 + 2 + mapBytes.length + 2 + 2 + 1);
+    let p = 0;
+    b[p++] = 0x40;
+    b[p++] = mapBytes.length & 0xff; b[p++] = (mapBytes.length >> 8) & 0xff;
+    b.set(mapBytes, p); p += mapBytes.length;
+    writeI16LE(b, p, Math.round(x)); p += 2;
+    writeI16LE(b, p, Math.round(y)); p += 2;
+    b[p] = 0x00;
     activeWS.send(b);
     return true;
   }
@@ -409,22 +452,25 @@
       recentDrops.set(d.dropId, d);
       tryClaim(d);
     }
-    // 0x52 PICKUP result
+    // 0x52 PICKUP result (เช็คทั้ง queue ปกติ + warpQueue)
     else if (op === 0x52 && u.length >= 9) {
       const picker = u32(u, 1), dropId = u32(u, 5);
       const it = queue.get(dropId);
-      if (!it) return;
+      const wit = warpQueue.get(dropId);   // ★ อาจมาจาก warpQueue หลังวาร์ปไปเก็บ
       if (picker !== FAIL) {
-        queue.delete(dropId);
+        if (it) { queue.delete(dropId); }
+        if (wit) { warpQueue.delete(dropId); log('✨ วาร์ปไปเก็บสำเร็จ:', nameOf(wit.itemId), 'drop', dropId); }
+        const itemId = (it || wit).itemId;
         stats.itemsLooted++;
-        stats.itemsByCount.set(it.itemId, (stats.itemsByCount.get(it.itemId) || 0) + 1);
-        log('✅ เก็บได้', nameOf(it.itemId), 'drop', dropId);
+        stats.itemsByCount.set(itemId, (stats.itemsByCount.get(itemId) || 0) + 1);
+        log('✅ เก็บได้', nameOf(itemId), 'drop', dropId);
       } else {
         stats.pickupFails++;
-        if (it.attempts >= CFG.maxAttempts) {
+        if (it && it.attempts >= CFG.maxAttempts) {
           queue.delete(dropId);
           log('🚫 ปล่อย', nameOf(it.itemId), 'drop', dropId, '(ล้มเหลว', it.attempts, 'ครั้ง)');
         }
+        // wit ไม่ delete ที่นี่ → warpLoop จะจัดการ offset ถัดไป
       }
     }
     // 0x24 DEATH: player ตาย → ล็อค isDead (ห้าม heal ตอนตาย) + รีเซ็ต HP
@@ -433,6 +479,28 @@
       hp.cur = 0;
       stats.deaths++;
       log('☠️ ตัวละครตาย — หยุด heal จนกว่าจะ respawn');
+    }
+    // 0x12 MAP_NAME: ชื่อแมปปัจจุบัน → เก็บไว้ใช้สำหรับ warp
+    //   format: [12][len:2 LE][mapname UTF-8]
+    else if (op === 0x12 && u.length >= 3) {
+      const len = u16(u, 1);
+      if (u.length >= 3 + len) {
+        const name = new TextDecoder().decode(u.slice(3, 3 + len));
+        if (name && name !== currentMap) { currentMap = name; log('🗺️ แมป:', name); }
+      }
+    }
+    // 0x2a WARP_FAIL: server บอกว่าพิกัดวาร์ป invalid (กำแพง/น้ำ) → warpLoop จะลอง offset ถัดไป
+    //   format: [2a][02]
+    else if (op === 0x2a && u.length >= 2) {
+      if (lastWarpTargetId != null) {
+        const wit = warpQueue.get(lastWarpTargetId);
+        if (wit) {
+          log('⚠️ วาร์ป fail (พิกัด invalid) → ลอง offset ถัดไป:', nameOf(wit.itemId));
+          wit.offsetIdx++;              // บังคับ offset ถัดไปใน warpLoop
+          wit.warpAt = 0;               // ให้ warpLoop วาร์ปใหม่ได้เลย (ผ่าน cooldown)
+        }
+        lastWarpTargetId = null;
+      }
     }
   }
   function handleOut(u) {
@@ -449,11 +517,17 @@
     }
     for (const [id, d] of recentDrops) if (now - d.t > 4000) recentDrops.delete(id);
 
-    // ทิ้งชิ้นที่ครบ maxAttempts (กัน server เงียบ → ส่งไม่รู้จบ)
+    // ทิ้งชิ้นที่ครบ maxAttempts — ถ้าเปิด warpLoot ให้ย้ายไป warpQueue แทนที่จะปล่อยทิ้ง
     for (const [id, it] of queue) {
       if (it.attempts >= CFG.maxAttempts) {
         queue.delete(id);
-        log('🚫 ปล่อย', nameOf(it.itemId), 'drop', id, '(ล้มเหลว', it.attempts, 'ครั้ง ไม่มีผลจาก server)');
+        if (CFG.warpLootEnabled && currentMap) {
+          // ★ ย้ายไป warpQueue เพื่อวาร์ปไปเก็บ (น่าจะติดกำแพง/หน้าผา)
+          warpQueue.set(id, { dropId: id, itemId: it.itemId, x: it.x, y: it.y, offsetIdx: 0, warpAt: 0, pickupSentAt: 0 });
+          log('🌀 เก็บไม่ได้ครบ', it.attempts, 'ครั้ง → วาร์ปไปเก็บ:', nameOf(it.itemId), 'drop', id);
+        } else {
+          log('🚫 ปล่อย', nameOf(it.itemId), 'drop', id, '(ล้มเหลว', it.attempts, 'ครั้ง ไม่มีผลจาก server)');
+        }
       }
     }
 
@@ -469,6 +543,59 @@
     if (sendPickup(it.dropId)) {
       it.lastAttemptAt = now; it.attempts++; lastSendAt = now;
       log('📨 ลองเก็บ', nameOf(it.itemId), 'drop', it.dropId, '(ครั้ง', it.attempts + '/' + CFG.maxAttempts + ')');
+    }
+  }, CFG.lootTickMs);
+
+  // ============================================================
+  //  WARP-TO-LOOT loop — วาร์ปไปเก็บของที่เก็บไม่ได้ (ติดกำแพง/หน้าผา)
+  // ============================================================
+  //  offset pattern: กลาง → เหนือ3 → ตอ3 → ใต้3 → ตต3 (เหมือนบอทหลัก)
+  const WARP_OFFSETS = [[0,0,'กลาง'], [0,-3,'เหนือ3'], [3,0,'ตอ3'], [0,3,'ใต้3'], [-3,0,'ตต3']];
+  const warpLoop = setInterval(() => {
+    if (!CFG.warpLootEnabled) return;
+    if (!currentMap) return;                          // ไม่รู้แมป → ไม่วาร์ป (กัน packet ผิด)
+    const now = Date.now();
+
+    for (const [id, wit] of warpQueue) {
+      // ครบ offset ทั้งหมดแล้วยัง fail → ปล่อยทิ้ง
+      if (wit.offsetIdx >= Math.min(CFG.warpLootMaxOffsets, WARP_OFFSETS.length)) {
+        warpQueue.delete(id);
+        log('🚫 ปล่อย', nameOf(wit.itemId), 'drop', id, '(วาร์ปครบ', wit.offsetIdx, 'offset แล้วยังไม่ได้)');
+        continue;
+      }
+
+      // ถ้ายังไม่ได้วาร์ปในรอบนี้ และผ่าน cooldown แล้ว → วาร์ป
+      if (wit.warpAt === 0 && now - lastWarpAt >= CFG.warpLootCooldownMs) {
+        const off = WARP_OFFSETS[wit.offsetIdx] || [0, 0, '?'];
+        const tx = Math.round(wit.x + off[0]);
+        const ty = Math.round(wit.y + off[1]);
+        if (sendTeleport(currentMap, tx, ty)) {
+          wit.warpAt = now;
+          wit.pickupSentAt = 0;
+          lastWarpAt = now;
+          lastWarpTargetId = id;
+          log('🌀 วาร์ปไปเก็บ', nameOf(wit.itemId), '@(', tx, ty, ') offset', off[2]);
+        }
+        return;   // วาร์ปทีละชิ้นต่อรอบ
+      }
+
+      // หลังวาร์ปแล้วรอ warpLootPickupDelayMs → ส่ง pickup อีกครั้ง
+      if (wit.warpAt !== 0 && wit.pickupSentAt === 0 && now - wit.warpAt >= CFG.warpLootPickupDelayMs) {
+        if (sendPickup(id)) {
+          wit.pickupSentAt = now;
+          log('📨 ลองเก็บหลังวาร์ป', nameOf(wit.itemId), 'drop', id);
+        }
+        return;
+      }
+
+      // ถ้าส่ง pickup ไปแล้ว แต่รอนานเกินไป (server เงียบ = วาร์ปไปที่ไม่ดี) → offset ถัดไป
+      if (wit.pickupSentAt !== 0 && now - wit.pickupSentAt > 3000) {
+        wit.offsetIdx++;
+        wit.warpAt = 0;
+        wit.pickupSentAt = 0;
+        log('⏭️', nameOf(wit.itemId), 'ยังไม่ได้หลังวาร์ป → offset ถัดไป');
+        return;
+      }
     }
   }, CFG.lootTickMs);
 
@@ -595,6 +722,20 @@
       if (!['all', 'only', 'except'].includes(mode)) { console.warn('โหมดต้องเป็น all/only/except'); return; }
       CFG.filter.mode = mode; log('📦 loot mode =', mode);
     },
+    // ---------- Warp-to-Loot (ฟีเจอร์รุนแรง) ----------
+    warpLootOn() {
+      CFG.warpLootEnabled = true;
+      if (!currentMap) console.warn('⚠️ ยังไม่รู้ชื่อแมป — warp จะทำงานหลังเข้าแมป');
+      log('🌀 Warp-to-Loot: ON (เก็บไม่ได้ครบ', CFG.maxAttempts, 'ครั้ง → วาร์ปไปเก็บ)');
+    },
+    warpLootOff() {
+      CFG.warpLootEnabled = false;
+      warpQueue.clear();
+      log('🌀 Warp-to-Loot: OFF');
+    },
+    warpLootQueue() {
+      return [...warpQueue.values()].map(w => ({ item: nameOf(w.itemId), x: w.x, y: w.y, offsetIdx: w.offsetIdx }));
+    },
     addLootOnly(...ids) {
       for (const id of ids) if (!CFG.filter.onlyItems.includes(id)) CFG.filter.onlyItems.push(id);
       log('📦 onlyItems =', CFG.filter.onlyItems);
@@ -627,7 +768,7 @@
     getLogs() { return logBuf.slice(); },
     clearLogs() { logBuf.length = 0; log('🧹 ล้าง log'); },
     stopAll() {
-      clearInterval(healLoop); clearInterval(lootLoop);
+      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop);
       if (typeof uiLoop !== 'undefined') clearInterval(uiLoop);
       log('⏹ หยุดระบบทั้งหมดแล้ว');
     },
@@ -722,6 +863,7 @@
         <div class="hpbar"><div class="hpfill" style="width:0%"></div></div>
         <span class="pill off" data-loot>Loot</span>
         <span class="pill off" data-heal>Heal</span>
+        <span class="pill off" data-warp>Warp</span>
         <span class="expand">⚙</span>
       </div>
       <div id="__assist_popup">
@@ -750,6 +892,7 @@
           <div class="btns">
             <button id="__assist_lootbtn" class="on">Loot: ?</button>
             <button id="__assist_healbtn" class="off">Heal: ?</button>
+            <button id="__assist_warpbtn" class="off">Warp: ?</button>
           </div>
           <div class="field"><label>HP% เริ่มใช้ยา (healAt)</label><input type="number" id="__assist_healat" min="1" max="100"></div>
           <div class="field"><label>item id ที่จะใช้ heal (คั่นด้วยจุลภาค)</label><input type="text" id="__assist_healitems" placeholder="เช่น 501,502,503"></div>
@@ -793,6 +936,10 @@
       if (pill) {
         if (pill.hasAttribute('data-loot')) CFG.lootEnabled ? ASSIST.lootOff() : ASSIST.lootOn();
         if (pill.hasAttribute('data-heal')) CFG.healEnabled ? ASSIST.healOff() : ASSIST.healOn();
+        if (pill.hasAttribute('data-warp')) {
+          if (!CFG.warpLootEnabled && !confirm('เปิด Warp-to-Loot?\n\nเป็นฟีเจอร์ที่ส่ง packet วาร์ปจริง — เก็บไม่ได้ครบ ' + CFG.maxAttempts + ' ครั้งจะวาร์ปไปที่ไอเท็ม\nใช้ในความรับผิดชอบของคุณ')) return;
+          CFG.warpLootEnabled ? ASSIST.warpLootOff() : ASSIST.warpLootOn();
+        }
         return;
       }
       popup.classList.toggle('open');
@@ -810,6 +957,10 @@
     // config tab buttons
     root.querySelector('#__assist_lootbtn').addEventListener('click', () => CFG.lootEnabled ? ASSIST.lootOff() : ASSIST.lootOn());
     root.querySelector('#__assist_healbtn').addEventListener('click', () => CFG.healEnabled ? ASSIST.healOff() : ASSIST.healOn());
+    root.querySelector('#__assist_warpbtn').addEventListener('click', () => {
+      if (!CFG.warpLootEnabled && !confirm('เปิด Warp-to-Loot?\n\nส่ง packet วาร์ปจริง — เก็บไม่ได้ครบ ' + CFG.maxAttempts + ' ครั้งจะวาร์ปไปที่ไอเท็ม\nใช้ในความรับผิดชอบของคุณ')) return;
+      CFG.warpLootEnabled ? ASSIST.warpLootOff() : ASSIST.warpLootOn();
+    });
 
     root.querySelector('#__assist_applyheal').addEventListener('click', () => {
       const pct = parseInt(root.querySelector('#__assist_healat').value, 10);
@@ -862,9 +1013,13 @@
       fill.className = 'hpfill' + (w < 25 ? '' : w < 50 ? ' warn' : ' good');
     }
     root.querySelectorAll('.pill').forEach(p => {
-      const on = p.hasAttribute('data-loot') ? CFG.lootEnabled : CFG.healEnabled;
+      let on, label;
+      if (p.hasAttribute('data-loot')) { on = CFG.lootEnabled; label = 'Loot'; }
+      else if (p.hasAttribute('data-heal')) { on = CFG.healEnabled; label = 'Heal'; }
+      else if (p.hasAttribute('data-warp')) { on = CFG.warpLootEnabled; label = 'Warp'; }
+      else return;
       p.className = 'pill ' + (on ? 'on' : 'off');
-      p.textContent = (p.hasAttribute('data-loot') ? 'Loot' : 'Heal') + ': ' + (on ? 'ON' : 'OFF');
+      p.textContent = label + ': ' + (on ? 'ON' : 'OFF');
     });
     if (isDead) root.querySelector('#__assist_bar').classList.add('__assist_dead');
     else root.querySelector('#__assist_bar').classList.remove('__assist_dead');
@@ -891,8 +1046,10 @@
     // config page — ซิงค์ค่าปัจจุบันเข้า input (กันเขียนทับเวลา user กำลังพิมพ์)
     const lootBtn = root.querySelector('#__assist_lootbtn');
     const healBtn = root.querySelector('#__assist_healbtn');
+    const warpBtn = root.querySelector('#__assist_warpbtn');
     if (lootBtn) { lootBtn.textContent = 'Loot: ' + (CFG.lootEnabled ? 'ON' : 'OFF'); lootBtn.className = CFG.lootEnabled ? 'on' : 'off'; }
     if (healBtn) { healBtn.textContent = 'Heal: ' + (CFG.healEnabled ? 'ON' : 'OFF'); healBtn.className = CFG.healEnabled ? 'on' : 'off'; }
+    if (warpBtn) { warpBtn.textContent = 'Warp: ' + (CFG.warpLootEnabled ? 'ON' : 'OFF') + (warpQueue.size ? ` (${warpQueue.size})` : ''); warpBtn.className = CFG.warpLootEnabled ? 'on' : 'off'; }
     const ha = root.querySelector('#__assist_healat');
     if (ha && document.activeElement !== ha) ha.value = CFG.healAtPercent;
     const hi = root.querySelector('#__assist_healitems');
