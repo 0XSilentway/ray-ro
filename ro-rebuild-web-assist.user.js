@@ -828,6 +828,7 @@
   let lastWanderAt = 0;
   let lastFleeAt = 0;
   let lastWarpFindAt = 0;        // throttle warpFind กัน spam
+  let lastTargetSwitchAt = 0;    // throttle การสลับ target (กันสลับบ่อย)
 
   // ---------- combat target state ----------
   let target = null;             // {id, x, y, acquiredAt, engageAt, lastAttackAt, lastAttackResultAt, pendingAttacks, stuckCount, warpCount}
@@ -990,6 +991,8 @@
     return false;
   }
   function acquireTarget(now) {
+    // ★ cooldown: กันสลับ target บ่อยเกินไป (สลับได้ทุก 1.5s)
+    if (now - lastTargetSwitchAt < 1500) return null;
     // whitelist ว่าง = ตีทุกมอน kind=1 (ตามความหมายของ whitelist); ตั้งค่า = ตีเฉพาะที่ match
     const mobCount = getMobAttackerCount();
     let found;
@@ -1007,6 +1010,7 @@
       lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0,
       stuckCount: 0, warpCount: 0,
     };
+    lastTargetSwitchAt = now;
     return target;
   }
   // เดินไปหามอน — เดินเส้นตรงไปทางมอน + stuck detection ดูระยะลดลง
@@ -1063,18 +1067,47 @@
     if (CFG.fleeOnAggroCount > 0 && getAggroCount() >= CFG.fleeOnAggroCount) { doFlee('aggro ' + getAggroCount() + ' ตัว'); return; }
     if (CFG.fleeOnProximityCount > 0 && countMonsters(CFG.fleeOnProximityRadius) >= CFG.fleeOnProximityCount) { doFlee('มอนรอบ ' + countMonsters(CFG.fleeOnProximityRadius) + ' ตัว'); return; }
 
+    // === 1b. Defensive retarget === ถ้าโดนมอนตี (ที่ไม่ใช่ target ปัจจุบัน) → สลับมาตีตัวนั้น
+    //   สำคัญ: ถ้ามอน aggro เรา ต้องสู้กลับ ไม่ใช่เดินหาตัวอื่น
+    if (player.x != null) {
+      let attacker = null, attackerDist = Infinity;
+      for (const [aid, at] of mobAttackers) {
+        if (now - at > CFG.fleeMobWindowMs) { mobAttackers.delete(aid); continue; }
+        if (target && aid === target.id) continue;   // ตัวที่กำลังตีอยู่แล้ว → ข้าม
+        const am = entities.get(aid);
+        if (!am || !am.alive || am.x == null) continue;
+        if (!isTargetable(am, now)) continue;         // ตัวที่ตีเราต้อง targetable ด้วย
+        const d = Math.hypot(am.x - player.x, am.y - player.y);
+        if (d < attackerDist) { attackerDist = d; attacker = am; }
+      }
+      if (attacker) {
+        if (target) abandonTarget('defensive → ตีตัวที่รุม', false);
+        target = { id: attacker.id, x: attacker.x, y: attacker.y, acquiredAt: now, engageAt: 0, lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, stuckCount: 0, warpCount: 0 };
+        lastTargetSwitchAt = now;
+        log('🛡️ สลับเป้า: ตีตัวที่กำลังตีเรา', attacker.name || attacker.id.toString(16));
+        return;
+      }
+    }
+
     // === 2. Target validation / abandon ===
     if (target) {
       const m = entities.get(target.id);
       if (!m || !m.alive) { abandonTarget('ตาย/หาย', false); target = null; }
       else {
         target.x = m.x; target.y = m.y;
-        // abandon ถ้า engage นานเกิน
+        // ★ ถ้ากำลังเข้าใกล้ขึ้น (dist ลด) → อย่า abandon (กำลังทำงานถูกต้อง)
+        const curDist = (player.x != null) ? Math.hypot(m.x - player.x, m.y - player.y) : Infinity;
+        if (target._lastDist != null && curDist < target._lastDist - 0.5) {
+          target.pendingAttacks = 0;   // เข้าใกล้ขึ้น → reset pending (ไม่ใช่ stuck)
+        }
+        target._lastDist = curDist;
+        // abandon เฉพาะเคสจริง: engage นานเกิน หรือ pending สูง (server เงียบ)
         const engageAge = target.engageAt ? (now - target.engageAt) / 1000 : 0;
         const acquireAge = (now - target.acquiredAt) / 1000;
         if (target.engageAt && engageAge > CFG.maxEngageSec) { abandonTarget('engage นาน ' + engageAge.toFixed(0) + 's', true); target = null; }
         else if (!target.engageAt && acquireAge > CFG.maxEngageSec) { abandonTarget('ไม่ได้ตี ' + acquireAge.toFixed(0) + 's', true); target = null; }
-        else if (target.pendingAttacks >= 3) { abandonTarget('pending ' + target.pendingAttacks, true); target = null; }
+        // pending ≥3 abandon เฉพาะถ้าไม่ได้กำลังเข้าใกล้ (เดินอยู่ไม่นับ)
+        else if (target.pendingAttacks >= 3 && !(curDist < (target._lastDist || Infinity))) { abandonTarget('pending ' + target.pendingAttacks, true); target = null; }
       }
       // stuck warp escalation
       if (!target && CFG.stuckWarpOnAbandon > 0 && stuckAbandonCount >= CFG.stuckWarpOnAbandon) {
