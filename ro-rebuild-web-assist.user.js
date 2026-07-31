@@ -554,47 +554,75 @@
     }
     // ============== COMBAT packets ==============
     // 0x06 SPAWN: สร้าง/อัปเดต entity (kind=0 player/1 monster/2 NPC)
-    //   format ซับซ้อน: scan หา name end (00 00) + kind byte เพราะ nameLen unreliable (UTF-8/ไทย)
-    else if (op === 0x06 && u.length >= 25) {
+    //   layout: [06][flag:1][type:4][0f][id:4][sub:4][?:4][z:i32][nameLen:4][name][kind:1][class:2][x:i32][y:i32][hp:u32][hpMax:u32]
+    //   ★ name เริ่มที่ offset 27 (หลัง z@19-22 + nameLen@23-26) ไม่ใช่ 19!
+    //   nameLen (u32 @23) ใช้ได้สำหรับ ASCII แต่ผิดสำหรับ UTF-8 ไทย → scan สำรอง
+    else if (op === 0x06 && u.length >= 27) {
       try {
         const flag = u[1];
-        const entityType = u32(u, 2);
-        const id = u32(u, 7);            // offset 7 (ข้าม marker 0x0f ที่ offset 6)
-        const sub = u32(u, 11);
-        // scan หา name end: หา pattern [00 00][kind<=2] หลัง offset 19
-        let nameEnd = -1, kind = -1;
-        for (let i = 19; i < u.length - 2; i++) {
-          if (u[i] === 0 && u[i + 1] === 0 && u[i + 2] <= 2) { nameEnd = i; kind = u[i + 2]; break; }
-        }
-        if (nameEnd > 19 && kind >= 0) {
-          const nameBytes = u.slice(19, nameEnd);
-          let name = '';
-          try { name = new TextDecoder('utf8', { fatal: false }).decode(nameBytes); } catch (e) { name = ''; }
-          const baseX = nameEnd + 3, baseY = nameEnd + 7;
-          let x = null, y = null, hp = null, hpMax = null;
-          if (kind === 1 || kind === 0) {
-            if (u.length >= baseY + 4) {
-              x = (u[baseX]) | (u[baseX+1] << 8) | (u[baseX+2] << 16) | (u[baseX+3] << 24);   // i32
-              x = x > 0x7fffffff ? x - 0x100000000 : x;
-              y = (u[baseY]) | (u[baseY+1] << 8) | (u[baseY+2] << 16) | (u[baseY+3] << 24);
-              y = y > 0x7fffffff ? y - 0x100000000 : y;
-              // hp/hpMax ที่ offset nameEnd+12/+16 (ถ้ามี)
-              if (u.length >= nameEnd + 20) {
-                const v3 = u32(u, nameEnd + 12);
-                const v4 = u32(u, nameEnd + 16);
-                if (v3 > 0 && v3 <= v4) { hp = v3; hpMax = v4; }
-              }
-            }
-          } else if (kind === 2) {
-            if (u.length >= baseY + 4) {
-              x = (u[baseX]) | (u[baseX+1] << 8) | (u[baseX+2] << 16) | (u[baseX+3] << 24);
-              x = x > 0x7fffffff ? x - 0x100000000 : x;
-              y = (u[baseY]) | (u[baseY+1] << 8) | (u[baseY+2] << 16) | (u[baseY+3] << 24);
-              y = y > 0x7fffffff ? y - 0x100000000 : y;
+        const id = u32(u, 7);            // offset 7 (ข้าม marker 0x0f @6)
+        const sub = u32(u, 11);          // offset 11
+        // z @ 19-22 (i32 signed) — ข้าม
+        const nameLenField = u32(u, 23); // nameLen @ 23 (u32 — น่าเชื่อถือไม่ได้สำหรับ UTF-8 ไทย)
+        // หา nameEnd: เริ่มจาก 27+nameLenField ถ้าดูเหมือน ASCII, ไม่งั้น scan จาก offset 27
+        let nameEnd = 27 + nameLenField;
+        let name = '';
+        if (nameLenField > 0 && nameLenField < 32) {
+          const candidate = u.slice(27, 27 + nameLenField);
+          const lastByte = candidate[candidate.length - 1];
+          const looksTruncated = (lastByte >= 0x80);   // ถ้า byte สุดท้ายเป็น UTF-8 continuation → ตัดกลางคัน
+          if (looksTruncated) {
+            // scan หา [00 00][kind<=2] จาก offset 27 (ข้าม z + nameLen)
+            for (let i = 27; i < u.length - 2; i++) {
+              if (u[i] === 0 && u[i + 1] === 0 && u[i + 2] <= 2) { nameEnd = i; break; }
             }
           }
+          try { name = new TextDecoder('utf8', { fatal: false }).decode(u.slice(27, nameEnd)); } catch (e) { name = ''; }
+        } else {
+          // nameLen ผิดปกติ → scan หา [00 00][kind<=2] จาก offset 27
+          nameEnd = -1;
+          for (let i = 27; i < u.length - 2; i++) {
+            if (u[i] === 0 && u[i + 1] === 0 && u[i + 2] <= 2) { nameEnd = i; break; }
+          }
+          if (nameEnd < 0) nameEnd = u.length;   // ไม่เจอ → ใช้ท้าย packet
+          try { name = new TextDecoder('utf8', { fatal: false }).decode(u.slice(27, nameEnd)); } catch (e) { name = ''; }
+        }
+        // kind @ nameEnd + 2 (หลัง 00 00 ตัวที่ 2) — เหมือนบอทหลักที่ scan pattern หา kind
+        // จริงๆ nameEnd ใน path scan = index ของ 00 ตัวแรก → kind อยู่ที่ nameEnd+2
+        // ใน path nameLen (ไม่ scan) → nameEnd = 27+nameLenField → kind @ nameEnd ตรงๆ
+        // แก้โดยใช้ logic เดียวกับบอทหลัก: kind = byte หลัง name
+        let kind = -1;
+        // ถ้า nameEnd มาจาก scan (มี 00 00 ก่อน) → kind @ nameEnd+2
+        if (u[nameEnd] === 0 && u[nameEnd + 1] === 0) kind = u[nameEnd + 2];
+        else kind = u[nameEnd];   // nameEnd = จุดสิ้นสุดชื่อ (path nameLen)
+        if (kind < 0 || kind > 2) {
+          // kind ไม่ valid → scan ใหม่หา pattern [00 00][0-2]
+          for (let i = 27; i < u.length - 2; i++) {
+            if (u[i] === 0 && u[i + 1] === 0 && u[i + 2] <= 2) { nameEnd = i; kind = u[i + 2]; break; }
+          }
+        }
+        if (kind >= 0 && kind <= 2) {
+          let x = null, y = null, hp = null, hpMax = null;
+          // x/y/hp/hpMax relative to nameEnd (kind @ nameEnd+2 → data เริ่ม nameEnd+3)
+          // ★ บอทหลัก: x @ nameEnd+3, y @ nameEnd+7 (i32 signed), hp @ +12, hpMax @ +16
+          if (u.length >= nameEnd + 20) {
+            x = u32(u, nameEnd + 3); x = x > 0x7fffffff ? x - 0x100000000 : x;
+            y = u32(u, nameEnd + 7); y = y > 0x7fffffff ? y - 0x100000000 : y;
+            const v3 = u32(u, nameEnd + 12);
+            const v4 = u32(u, nameEnd + 16);
+            if (v3 > 0 && v3 <= v4) { hp = v3; hpMax = v4; }
+          }
           const existing = entities.get(id) || {};
-          entities.set(id, { id, kind, sub, name, x: x != null ? x : (existing.x || null), y: y != null ? y : (existing.y || null), hp: hp != null ? hp : existing.hp, hpMax: hpMax != null ? hpMax : existing.hpMax, alive: true, _lastEngagedByOtherAt: existing._lastEngagedByOtherAt || 0, _lastDamageAt: existing._lastDamageAt || 0 });
+          entities.set(id, {
+            id, kind, sub, name,
+            x: x != null ? x : (existing.x != null ? existing.x : null),
+            y: y != null ? y : (existing.y != null ? existing.y : null),
+            hp: hp != null ? hp : existing.hp,
+            hpMax: hpMax != null ? hpMax : existing.hpMax,
+            alive: true,
+            _lastEngagedByOtherAt: existing._lastEngagedByOtherAt || 0,
+            _lastDamageAt: existing._lastDamageAt || 0,
+          });
         }
       } catch (e) { /* SPAWN parse error ข้าม */ }
     }
