@@ -158,6 +158,8 @@
     attackRange: 2,               // ระยะโจมตี (ช่อง) — ใกล้กว่านี้สั่งตี, ไกลกว่าเดินไป
     rangedAttackRange: 8,         // 0 = ใช้ attackRange; >0 = นักธนูตีไกลได้ N ช่อง
     maxAcquireDistance: 20,       // ★ เลือกเป้า + ส่ง ATTACK ได้ในระยะนี้ (server เดินเข้าไปตีเอง)
+    maxChaseDistance: 40,         // ★ เดินไล่ตามมอนได้สูงสุด N ช่อง (ไกลกว่านี้ abandon หาตัวอื่น)
+    walkStepDistance: 20,         // ★ สั่งเดินทีละ N ช่อง (game click-walk cap ~20)
     maxWalkDistance: 15,          // (legacy — ใช้น้อย เพราะ server walk-and-attack เอง)
     combatTickMs: 200,            // tick loop (มี jitter ±25% เหมือนบอทหลัก)
     attackReIssueMs: 2500,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้
@@ -929,23 +931,25 @@
   }
   // คำนวณ HP% (default 1.0 ถ้าไม่รู้)
   function monsterHpPct(m) { return (m.hpMax && m.hpMax > 0 && m.hp != null) ? m.hp / m.hpMax : 1.0; }
-  // เลือกมอนใกล้สุด
+  // เลือกมอนใกล้สุด (cap ระยะ maxAcquireDistance — กันเลือกมอนไกลเกินไป)
   function findNearestMonster(now) {
     if (player.x == null) return null;
     let best = null, bestD = Infinity;
     for (const m of getMonsters(now)) {
       const d = Math.hypot(m.x - player.x, m.y - player.y);
+      if (d > CFG.maxAcquireDistance) continue;   // ★ เกินระยะ acquire → ข้าม
       if (d < bestD) { bestD = d; best = m; }
     }
     return best ? { m: best, dist: bestD } : null;
   }
-  // เลือกมอน HP% ต่ำสุด (tiebreak = ระยะ)
+  // เลือกมอน HP% ต่ำสุด (tiebreak = ระยะ) — cap ระยะเหมือนกัน
   function findLowestHpMonster(now) {
     if (player.x == null) return null;
     let best = null, bestHp = 2, bestD = Infinity;
     for (const m of getMonsters(now)) {
       const hp = monsterHpPct(m);
       const d = Math.hypot(m.x - player.x, m.y - player.y);
+      if (d > CFG.maxAcquireDistance) continue;   // ★ เกินระยะ acquire → ข้าม
       if (hp < bestHp || (hp === bestHp && d < bestD)) { bestHp = hp; bestD = d; best = m; }
     }
     return best ? { m: best, dist: bestD, hpPct: bestHp } : null;
@@ -1054,15 +1058,15 @@
 
     if (now - lastWalkToTargetAt < 800) return false;
     lastWalkToTargetAt = now;
-    // เดินเส้นตรงไปทางมอน (step = min(ระยะที่เหลือ, 12) กันเดินเกิน)
+    // เดินเส้นตรงไปทางมอน (step = min(ระยะที่เหลือ, walkStepDistance) — สั่งทีละ ≤20 ช่อง)
     let angle = Math.atan2(m.y - player.y, m.x - player.x);
     // ถ้า stuck (ระยะไม่ลด) → เปลี่ยนทิศตั้งฉากบ้างเพื่อหาทางอ้อม
     if (noProgressTicks >= 3) angle += (Math.random() < 0.5 ? 1 : -1) * (Math.PI / 2);
     else angle += (Math.random() * 2 - 1) * (Math.PI / 12);   // ±15° jitter เล็กน้อย
-    const step = Math.min(dist, 12);
+    const step = Math.min(dist, CFG.walkStepDistance);
     const tx = player.x + Math.cos(angle) * step;
     const ty = player.y + Math.sin(angle) * step;
-    if (sendMove(tx, ty)) { log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', Math.round(tx), Math.round(ty) + ') dist=' + dist.toFixed(1) + ' stuck=' + noProgressTicks); return 'WALKING'; }
+    if (sendMove(tx, ty)) { log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', Math.round(tx), Math.round(ty) + ') dist=' + dist.toFixed(1) + ' step=' + Math.round(step) + ' stuck=' + noProgressTicks); return 'WALKING'; }
     return false;
     return false;
   }
@@ -1147,8 +1151,16 @@
           }
           return;
         }
+        // ★ dist > maxChaseDistance → abandon ทันที (มอนไกลเกินไป ไม่สมควรไล่ตาม)
+        if (dist > CFG.maxChaseDistance) {
+          log('📏 abandon: มอนไกล', dist.toFixed(0), 'ช่อง (เกิน maxChase ' + CFG.maxChaseDistance + ')');
+          abandonCooldown.set(target.id, now + 10000);
+          abandonTarget('ไกลเกิน ' + CFG.maxChaseDistance, false);
+          target = null;
+          return;
+        }
         // dist > maxAcquireDistance → เดินเข้าไปเองจนถึงระยะ acquire
-        //   ถ้าติดกำแพงนาน (stuck) → warpToMonster (ถ้าเปิด) หรือ abandon
+        //   สั่งเดินทีละ walkStepDistance ช่อง (≤20) ถ้าติดกำแพงนาน → warpToMonster/abandon
         const stuck = walkToTarget(now, m);
         if (stuck === 'STUCK') {
           if (CFG.warpToMonster && (warpToMonsterCount.get(target.id) || 0) < CFG.warpToMonsterMaxPerEntity) {
