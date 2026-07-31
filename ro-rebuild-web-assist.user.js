@@ -677,6 +677,7 @@
       else return;
       const now = nowMs();
       // เราตีมอน → ลด HP มอน + reset pending + mark combat
+      //   ★ reset pending ถ้า victimId = target ปัจจุบัน (แม้ attacker ไม่ตรง playerId — กัน playerId ผิด)
       if (attacker === playerId && victimId !== playerId && victimId !== 0) {
         const m = entities.get(victimId);
         if (m) {
@@ -684,6 +685,14 @@
           if (damage > 0 && m.hp != null && m.hpMax != null) m.hp = Math.max(0, m.hp - damage);
         }
         if (target && target.id === victimId) { target.lastAttackResultAt = now; target.pendingAttacks = 0; stuckAbandonCount = 0; stuckAbandonHistory = []; }
+        markCombat();
+      }
+      // ★ fallback reset: ถ้า target ปัจจุบันโดนตี (victimId === target.id) ให้ reset pending ด้วย
+      //   กันเคส attacker !== playerId (playerId อาจผิด) → pending ค้าง
+      else if (target && victimId === target.id && victimId !== 0 && victimId !== playerId) {
+        const m = entities.get(victimId);
+        if (m) { m._lastDamageAt = now; if (damage > 0 && m.hp != null && m.hpMax != null) m.hp = Math.max(0, m.hp - damage); }
+        target.lastAttackResultAt = now; target.pendingAttacks = 0;
         markCombat();
       }
       // มอนตีเรา → mark mobAttacker
@@ -1108,9 +1117,8 @@
         const acquireAge = (now - target.acquiredAt) / 1000;
         if (target.engageAt && engageAge > CFG.maxEngageSec) { abandonTarget('engage นาน ' + engageAge.toFixed(0) + 's', true); target = null; }
         else if (!target.engageAt && acquireAge > CFG.maxEngageSec) { abandonTarget('ไม่ได้ตี ' + acquireAge.toFixed(0) + 's', true); target = null; }
-        // pending ≥3 abandon เฉพาะถ้าไม่ได้กำลังเข้าใกล้ (เดินอยู่ไม่นับ)
-        //   + ต้องเคยส่ง attack แล้ว ≥8s (กัน abandon ก่อน server ตอบ)
-        else if (target.pendingAttacks >= 3 && target.lastAttackAt && (now - target.lastAttackAt > 8000)) {
+        // pending ≥4 abandon ถ้า dist คงที่ (server ไม่ตอบ หรือตีไม่เข้า) — ลดเวลารอจาก 8s เป็น 5s
+        else if (target.pendingAttacks >= 4 && target.lastAttackAt && (now - target.lastAttackAt > 5000)) {
           abandonTarget('pending ' + target.pendingAttacks + ' (server เงียบ)', true); target = null;
         }
       }
