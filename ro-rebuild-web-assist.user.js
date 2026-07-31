@@ -1247,6 +1247,7 @@
         }
         // ★ pending ≥4 abandon ถ้า server ไม่ตอบนานเกินไป — แต่ถ้ามอนยัง aggro เรา ข้าม (ยังสู้อยู่)
         else if (target.pendingAttacks >= 4 && target.firstAttackAt && (now - target.firstAttackAt > CFG.attackAbandonMs) && !isTargetStillEngaged) {
+          abandonCooldown.set(target.id, now + 10000);   // ★ กันเลือกตัวเดิมซ้ำ 10s
           abandonTarget('pending ' + target.pendingAttacks + ' (server เงียบ)', true); target = null;
         }
       }
