@@ -163,6 +163,7 @@
     maxWalkDistance: 15,          // (legacy — ใช้น้อย เพราะ server walk-and-attack เอง)
     combatTickMs: 200,            // tick loop (มี jitter ±25% เหมือนบอทหลัก)
     attackReIssueMs: 2500,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้
+    attackAbandonMs: 6000,        // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (กัน pending สะสม)
     maxEngageSec: 30,             // abandon target ถ้า engage นานกว่านี้
     // flee (วาร์ปหนี)
     fleeOnMobCount: 3,            // มอนรุม N ตัว (ที่ตีเรา) → วาร์ปหนี (0=off)
@@ -701,7 +702,7 @@
           m._lastDamageAt = now;
           if (damage > 0 && m.hp != null && m.hpMax != null) m.hp = Math.max(0, m.hp - damage);
         }
-        if (target && target.id === victimId) { target.lastAttackResultAt = now; target.pendingAttacks = 0; stuckAbandonCount = 0; stuckAbandonHistory = []; }
+        if (target && target.id === victimId) { target.lastAttackResultAt = now; target.pendingAttacks = 0; target.firstAttackAt = 0; stuckAbandonCount = 0; stuckAbandonHistory = []; }
         markCombat();
       }
       // ★ fallback reset: ถ้า target ปัจจุบันโดนตี (victimId === target.id) ให้ reset pending ด้วย
@@ -709,7 +710,7 @@
       else if (target && victimId === target.id && victimId !== 0 && victimId !== playerId) {
         const m = entities.get(victimId);
         if (m) { m._lastDamageAt = now; if (damage > 0 && m.hp != null && m.hpMax != null) m.hp = Math.max(0, m.hp - damage); }
-        target.lastAttackResultAt = now; target.pendingAttacks = 0;
+        target.lastAttackResultAt = now; target.pendingAttacks = 0; target.firstAttackAt = 0;
         markCombat();
       }
       // มอนตีเรา → mark mobAttacker
@@ -1040,7 +1041,7 @@
     const m = found.m;
     target = {
       id: m.id, x: m.x, y: m.y, acquiredAt: now, engageAt: 0,
-      lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0,
+      lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, firstAttackAt: 0,
       stuckCount: 0, warpCount: 0,
     };
     lastTargetSwitchAt = now;
@@ -1112,7 +1113,7 @@
       }
       if (attacker) {
         if (target) abandonTarget('defensive → ตีตัวที่รุม', false);
-        target = { id: attacker.id, x: attacker.x, y: attacker.y, acquiredAt: now, engageAt: 0, lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, stuckCount: 0, warpCount: 0 };
+        target = { id: attacker.id, x: attacker.x, y: attacker.y, acquiredAt: now, engageAt: 0, lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, firstAttackAt: 0, stuckCount: 0, warpCount: 0 };
         lastTargetSwitchAt = now;
         log('🛡️ สลับเป้า: ตีตัวที่กำลังตีเรา', attacker.name || attacker.id.toString(16));
         return;
@@ -1136,8 +1137,10 @@
         const acquireAge = (now - target.acquiredAt) / 1000;
         if (target.engageAt && engageAge > CFG.maxEngageSec) { abandonTarget('engage นาน ' + engageAge.toFixed(0) + 's', true); target = null; }
         else if (!target.engageAt && acquireAge > CFG.maxEngageSec) { abandonTarget('ไม่ได้ตี ' + acquireAge.toFixed(0) + 's', true); target = null; }
-        // pending ≥4 abandon ถ้า dist คงที่ (server ไม่ตอบ หรือตีไม่เข้า) — ลดเวลารอจาก 8s เป็น 5s
-        else if (target.pendingAttacks >= 4 && target.lastAttackAt && (now - target.lastAttackAt > 5000)) {
+        // ★ pending ≥4 abandon ถ้า server ไม่ตอบนานเกินไป
+        //   ใช้เวลาตั้งแต่ครั้งแรกที่ส่ง attack (firstAttackAt) ไม่ใช่ lastAttackAt
+        //   เพราะ lastAttackAt อัปเดตทุกครั้งที่ re-issue → ไม่มีทางถึงเงื่อนไข
+        else if (target.pendingAttacks >= 4 && target.firstAttackAt && (now - target.firstAttackAt > CFG.attackAbandonMs)) {
           abandonTarget('pending ' + target.pendingAttacks + ' (server เงียบ)', true); target = null;
         }
       }
@@ -1160,6 +1163,7 @@
           if (now - target.lastAttackAt > CFG.attackReIssueMs || target.lastAttackAt === 0) {
             if (sendAttack(target.id)) {
               target.lastAttackAt = now; target.pendingAttacks++;
+              if (!target.firstAttackAt) { target.firstAttackAt = now; }   // ★ จดเวลาส่งครั้งแรก
               if (!target.engageAt) { target.engageAt = now; }
               log('⚔️ ตี', m.name || m.id.toString(16), target.id.toString(16), '@ dist', dist.toFixed(1), '(pending', target.pendingAttacks + ')');
             }
@@ -1404,6 +1408,9 @@
     setFleeProximity(n, radius) { CFG.fleeOnProximityCount = n; if (radius != null) CFG.fleeOnProximityRadius = radius; log('🏃 flee มอนรอบ', n, 'ตัวในระยะ', CFG.fleeOnProximityRadius); },
     setRanged(range) { CFG.rangedAttackRange = range; log('🏹 ranged range =', range, range ? '' : '(ใช้ attackRange)'); },
     setAttackRange(r) { CFG.attackRange = r; log('⚔️ attackRange =', r); },
+    // ★ ปรับ re-issue/abandon timing (pending spam)
+    setAttackReissue(ms) { CFG.attackReIssueMs = ms; log('⚔️ re-issue attack ทุก', ms + 'ms'); },
+    setAttackAbandon(ms) { CFG.attackAbandonMs = ms; log('⚔️ abandon ถ้า server เงียบ', ms + 'ms'); },
     // toggle helpers สำหรับ UI
     toggleAntiKS(on) { CFG.antiKS = !!on; log('⚔️ antiKS =', CFG.antiKS); },
     toggleAvoidPlayers(on) { CFG.avoidOtherPlayers = !!on; log('⚔️ avoidOtherPlayers =', CFG.avoidOtherPlayers); },
