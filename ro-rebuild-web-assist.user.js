@@ -1201,14 +1201,14 @@
         }
         return;
       }
-      // wander
+      // wander — สุ่มเดิน ≤ walkStepDistance ช่องจากตำแหน่งปัจจุบัน
       if (CFG.wanderEnabled && now - lastWanderAt > CFG.wanderCooldownMs && player.x != null) {
         lastWanderAt = now;
         const angle = Math.random() * Math.PI * 2;
-        const step = 3 + Math.random() * (CFG.wanderMaxStep - 3);
+        const step = 3 + Math.random() * Math.min(CFG.wanderMaxStep, CFG.walkStepDistance) - 3;
         const tx = player.x + Math.cos(angle) * step;
         const ty = player.y + Math.sin(angle) * step;
-        if (sendMove(tx, ty)) log('🚶 สุ่มเดินหามอน @(', tx.toFixed(0), ty.toFixed(0) + ')');
+        if (sendMove(tx, ty)) log('🚶 สุ่มเดิน @(', Math.round(tx), Math.round(ty) + ') | จาก player(', player.x.toFixed(0), player.y.toFixed(0) + ') step=' + Math.round(step));
       }
     }
   }, CFG.combatTickMs);
@@ -1421,6 +1421,10 @@
         }
       }
       console.log('entities total:', entities.size, '| fromSPAWN:', spawnCount, '| ghost:', ghostCount, '| monsters:', monsterCount, '| targetable:', targetableCount);
+      // ★ debug playerId vs entity: ดูว่า player entity มีพิกัดตรงกับ player.x/y ไหม
+      const playerEntity = playerId ? entities.get(playerId) : null;
+      console.log('playerId:', playerId ? playerId.toString(16) : 'NULL', '| player.x/y:', player.x, player.y,
+        '| playerEntity:', playerEntity ? `{x:${playerEntity.x}, y:${playerEntity.y}, kind:${playerEntity.kind}, name:${playerEntity.name}}` : 'NOT IN ENTITIES');
       console.table(sample);
       return { total: entities.size, spawnCount, ghostCount, monsterCount, targetableCount, sample, player: { ...player }, playerId: playerId ? playerId.toString(16) : null };
     },
