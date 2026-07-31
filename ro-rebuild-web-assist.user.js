@@ -1094,10 +1094,17 @@
     if (!activeWS || activeWS.readyState !== 1) return;
     const now = nowMs();
 
-    // === 1. Flee checks (priority) ===
+    // === 1. Flee checks (priority สูงสุด — ต้องทำก่อนเก็บของ) ===
     if (CFG.fleeOnMobCount > 0 && getMobAttackerCount() >= CFG.fleeOnMobCount) { doFlee('รุม ' + getMobAttackerCount() + ' ตัว'); return; }
     if (CFG.fleeOnAggroCount > 0 && getAggroCount() >= CFG.fleeOnAggroCount) { doFlee('aggro ' + getAggroCount() + ' ตัว'); return; }
     if (CFG.fleeOnProximityCount > 0 && countMonsters(CFG.fleeOnProximityRadius) >= CFG.fleeOnProximityCount) { doFlee('มอนรอบ ' + countMonsters(CFG.fleeOnProximityRadius) + ' ตัว'); return; }
+
+    // === 1b. ★ ถ้ามีของรอเก็บ → หยุด combat ชั่วคราว ให้ loot ทำงานก่อน ===
+    //   เหตุผล: ฆ่ามอนได้ → เก็บของก่อน แล้วค่อยไปตีตัวใหม่ (เหมือนบอทหลัก _lootBlockingFarm)
+    //   ยกเว้น: ถ้ากำลังโดนรุม (mobAttackers ≥1) → ยังตีต่อเพื่อป้องกันตัวเอง
+    if (CFG.lootEnabled && queue.size > 0 && getMobAttackerCount() === 0) {
+      return;   // มีของรอเก็บ + ไม่โดนรุม → รอ lootLoop เก็บก่อน
+    }
 
     // === 1b. Defensive retarget === ถ้าโดนมอนตี (ที่ไม่ใช่ target ปัจจุบัน) → สลับมาตีตัวนั้น
     //   สำคัญ: ถ้ามอน aggro เรา ต้องสู้กลับ ไม่ใช่เดินหาตัวอื่น
