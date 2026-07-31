@@ -148,8 +148,33 @@
   let activeWS = null;                 // game socket (ใช้ส่งคำสั่ง)
   let playerId = null;                 // ไอดีตัวเรา
   const player = { x: null, y: null }; // ตำแหน่งตัวเรา
-  function log(...a) { if (CFG.verbose) console.log('[ASSIST]', ...a); }
+
+  // ---------- log buffer (สำหรับ panel log console) ----------
+  const LOG_BUF_MAX = 200;
+  const logBuf = [];
+  function log(...a) {
+    const msg = a.map(x => (typeof x === 'object' ? (() => { try { return JSON.stringify(x); } catch (e) { return String(x); } })() : String(x))).join(' ');
+    logBuf.push({ t: Date.now(), msg });
+    while (logBuf.length > LOG_BUF_MAX) logBuf.shift();
+    if (CFG.verbose) console.log('[ASSIST]', ...a);
+  }
   const nameOf = (id) => CFG.itemNames[id] ? `${CFG.itemNames[id]}(${id})` : `item_${id}`;
+
+  // ---------- สถิติการฟาร์ม ----------
+  const stats = {
+    startTime: Date.now(),
+    kills: 0,              // จำนวนที่ฆ่าได้ (นับจาก EXP gain)
+    itemsLooted: 0,        // จำนวนชิ้นที่เก็บได้
+    expGained: 0,          // EXP รวมที่ได้ (base+job delta)
+    itemsByCount: new Map(), // itemId -> จำนวนที่เก็บได้
+    pickupFails: 0,        // ครั้งที่พยายามเก็บแล้วล้มเหลว
+    deaths: 0,             // ครั้งที่ตาย
+  };
+  function resetStats() {
+    stats.startTime = Date.now();
+    stats.kills = 0; stats.itemsLooted = 0; stats.expGained = 0;
+    stats.itemsByCount = new Map(); stats.pickupFails = 0; stats.deaths = 0;
+  }
 
   // ---------- HP tracking ----------
   //  ★ protocol: ทุก STAT(0x25) packet ของ player อาจเป็น HP/SP/stat อื่น (statType เปลี่ยนทุก session)
@@ -363,9 +388,18 @@
     else if (op === 0x0b && u.length >= 9) {
       if (playerId != null && u32(u, 1) === playerId) markCombat();
     }
-    // 0x22 EXP: เราฆ่ามอนได้
+    // 0x22 EXP: เราฆ่ามอนได้ → นับ stats
+    //   format: [22][baseTotal:4][baseDelta:4][jobTotal:4][jobDelta:4] (17 bytes)
     else if (op === 0x22) {
       lastExpAt = Date.now(); markCombat();
+      stats.kills++;
+      // parse EXP delta อย่างปลอดภัย (signed — delta อาจเป็นลบได้ในบางเซิร์ฟ)
+      if (u.length >= 17) {
+        const baseDelta = u32(u, 5) | 0;   // offset 5 = baseDelta, |0 = แปลงเป็น signed
+        const jobDelta  = u32(u, 13) | 0;  // offset 13 = jobDelta
+        const gain = Math.max(0, baseDelta) + Math.max(0, jobDelta);
+        if (gain > 0) stats.expGained += gain;
+      }
       for (const d of recentDrops.values()) tryClaim(d);
     }
     // 0x51 ITEM_DROP: ของตก
@@ -381,8 +415,11 @@
       if (!it) return;
       if (picker !== FAIL) {
         queue.delete(dropId);
+        stats.itemsLooted++;
+        stats.itemsByCount.set(it.itemId, (stats.itemsByCount.get(it.itemId) || 0) + 1);
         log('✅ เก็บได้', nameOf(it.itemId), 'drop', dropId);
       } else {
+        stats.pickupFails++;
         if (it.attempts >= CFG.maxAttempts) {
           queue.delete(dropId);
           log('🚫 ปล่อย', nameOf(it.itemId), 'drop', dropId, '(ล้มเหลว', it.attempts, 'ครั้ง)');
@@ -393,6 +430,7 @@
     else if (op === 0x24 && u.length >= 5 && playerId != null && u32(u, 1) === playerId) {
       isDead = true;
       hp.cur = 0;
+      stats.deaths++;
       log('☠️ ตัวละครตาย — หยุด heal จนกว่าจะ respawn');
     }
   }
@@ -570,11 +608,318 @@
     // ---------- ทั่วไป ----------
     name(id, label) { CFG.itemNames[id] = label; log('🏷️', id, '=', label); },
     config() { return CFG; },
+    // ---------- สถิติ + log (สำหรับ panel) ----------
+    getStats() {
+      const elapsed = Math.max(1, Date.now() - stats.startTime);
+      const elapsedMin = elapsed / 60000;
+      return {
+        ...stats,
+        itemsByCount: [...stats.itemsByCount.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([id, n]) => ({ id, name: nameOf(id), count: n })),
+        elapsedMs: elapsed,
+        expPerMin: elapsedMin > 0 ? Math.round(stats.expGained / elapsedMin) : 0,
+        killsPerMin: elapsedMin > 0 ? +(stats.kills / elapsedMin).toFixed(1) : 0,
+      };
+    },
+    resetStats() { resetStats(); log('📊 รีเซ็ตสถิติแล้ว'); },
+    getLogs() { return logBuf.slice(); },
+    clearLogs() { logBuf.length = 0; log('🧹 ล้าง log'); },
     stopAll() {
       clearInterval(healLoop); clearInterval(lootLoop);
+      if (typeof uiLoop !== 'undefined') clearInterval(uiLoop);
       log('⏹ หยุดระบบทั้งหมดแล้ว');
     },
   };
+
+  // ============================================================
+  //  UI — mini-bar + popup panel (ฝังในหน้าเกม)
+  // ============================================================
+  let uiLoop;          // render interval (clear ใน stopAll)
+  function buildUI() {
+    if (document.getElementById('__assist_root')) return;   // สร้างแล้ว
+
+    // ---------- CSS ----------
+    const css = `
+      #__assist_root, #__assist_root * { box-sizing: border-box; margin: 0; padding: 0; }
+      #__assist_root {
+        position: fixed; top: 10px; right: 10px; z-index: 2147483647;
+        font-family: 'Segoe UI', system-ui, sans-serif; font-size: 12px;
+        color: #e8e8e8; user-select: none;
+      }
+      /* mini-bar */
+      #__assist_bar {
+        background: rgba(20,22,28,.92); border: 1px solid #3a3f4b; border-radius: 8px;
+        padding: 6px 10px; display: flex; align-items: center; gap: 10px;
+        cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.4); transition: opacity .15s;
+        max-width: 360px;
+      }
+      #__assist_bar:hover { opacity: .85; }
+      #__assist_bar .hpbar { width: 80px; height: 8px; background: #2a2d35; border-radius: 4px; overflow: hidden; }
+      #__assist_bar .hpfill { height: 100%; background: linear-gradient(90deg,#e53935,#ef5350); transition: width .3s; }
+      #__assist_bar .hpfill.warn { background: linear-gradient(90deg,#fb8c00,#ffa726); }
+      #__assist_bar .hpfill.good { background: linear-gradient(90deg,#43a047,#66bb6a); }
+      #__assist_bar .pill { font-size: 10px; padding: 1px 6px; border-radius: 8px; font-weight: 600; }
+      #__assist_bar .pill.on  { background: #1b5e20; color: #a5d6a7; }
+      #__assist_bar .pill.off { background: #4a2020; color: #ef9a9a; }
+      #__assist_bar .expand { color: #8ab4f8; font-weight: 700; }
+      /* popup */
+      #__assist_popup {
+        display: none; margin-top: 6px; width: 340px; max-height: 70vh;
+        background: rgba(20,22,28,.97); border: 1px solid #3a3f4b; border-radius: 10px;
+        box-shadow: 0 8px 32px rgba(0,0,0,.6); overflow: hidden; flex-direction: column;
+      }
+      #__assist_popup.open { display: flex; }
+      #__assist_tabs { display: flex; background: #15171c; border-bottom: 1px solid #3a3f4b; }
+      #__assist_tabs .tab {
+        flex: 1; padding: 8px 4px; text-align: center; cursor: pointer; font-size: 11px;
+        color: #9aa0a6; border-bottom: 2px solid transparent;
+      }
+      #__assist_tabs .tab:hover { background: rgba(255,255,255,.04); }
+      #__assist_tabs .tab.active { color: #8ab4f8; border-bottom-color: #8ab4f8; }
+      .__assist_page { display: none; padding: 10px; overflow-y: auto; }
+      .__assist_page.active { display: block; }
+      .__assist_page .row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+      .__assist_page .row .k { color: #9aa0a6; }
+      .__assist_page .row .v { color: #e8e8e8; font-weight: 600; }
+      .__assist_page h4 { margin: 8px 0 4px; color: #8ab4f8; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+      .__assist_page .field { margin: 6px 0; }
+      .__assist_page .field label { display: block; color: #9aa0a6; font-size: 10px; margin-bottom: 2px; }
+      .__assist_page .field input, .__assist_page .field select {
+        width: 100%; background: #15171c; border: 1px solid #3a3f4b; border-radius: 5px;
+        color: #e8e8e8; padding: 5px 7px; font-size: 12px; font-family: inherit;
+      }
+      .__assist_page .field input:focus, .__assist_page .field select:focus { outline: none; border-color: #8ab4f8; }
+      .__assist_page .btns { display: flex; gap: 6px; margin-top: 8px; }
+      .__assist_page button {
+        flex: 1; background: #2a3441; border: 1px solid #3a3f4b; border-radius: 5px;
+        color: #e8e8e8; padding: 6px; cursor: pointer; font-size: 11px; font-family: inherit;
+      }
+      .__assist_page button:hover { background: #34465a; }
+      .__assist_page button.on  { background: #1b5e20; border-color: #2e7d32; }
+      .__assist_page button.off { background: #4a2020; border-color: #6a3030; }
+      .__assist_page button.danger { background: #4a2020; }
+      .__assist_page .logbox {
+        background: #0f1115; border: 1px solid #2a2d35; border-radius: 5px; padding: 6px;
+        height: 240px; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 10.5px; line-height: 1.5;
+      }
+      .__assist_page .logline { color: #b0b0b0; padding: 1px 0; border-bottom: 1px solid rgba(255,255,255,.03); white-space: pre-wrap; word-break: break-word; }
+      .__assist_page .logline .ts { color: #5f6368; }
+      .__assist_dead { animation: __assist_blink 1s infinite; }
+      @keyframes __assist_blink { 50% { opacity: .4; } }
+    `;
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.appendChild(style);
+
+    // ---------- DOM ----------
+    const root = document.createElement('div');
+    root.id = '__assist_root';
+    root.innerHTML = `
+      <div id="__assist_bar">
+        <span class="hptext">HP ?</span>
+        <div class="hpbar"><div class="hpfill" style="width:0%"></div></div>
+        <span class="pill off" data-loot>Loot</span>
+        <span class="pill off" data-heal>Heal</span>
+        <span class="expand">⚙</span>
+      </div>
+      <div id="__assist_popup">
+        <div id="__assist_tabs">
+          <div class="tab active" data-page="stats">📊 สถิติ</div>
+          <div class="tab" data-page="config">⚙️ ตั้งค่า</div>
+          <div class="tab" data-page="log">📋 Log</div>
+        </div>
+        <div class="__assist_page active" data-page="stats">
+          <div class="row"><span class="k">HP</span><span class="v" data-hp>?</span></div>
+          <div class="row"><span class="k">ตำแหน่ง</span><span class="v" data-pos>?</span></div>
+          <div class="row"><span class="k">player_id</span><span class="v" data-pid>?</span></div>
+          <div class="row"><span class="k">สถานะ</span><span class="v" data-state>?</span></div>
+          <h4>การฟาร์ม</h4>
+          <div class="row"><span class="k">ฆ่าได้</span><span class="v" data-kills>0</span></div>
+          <div class="row"><span class="k">เก็บของได้</span><span class="v" data-looted>0</span></div>
+          <div class="row"><span class="k">EXP รวม</span><span class="v" data-exp>0</span></div>
+          <div class="row"><span class="k">EXP/นาที</span><span class="v" data-expmin>0</span></div>
+          <div class="row"><span class="k">เวลาทำงาน</span><span class="v" data-elapsed>0s</span></div>
+          <div class="row"><span class="k">ตาย</span><span class="v" data-deaths>0</span></div>
+          <h4>ของที่เก็บได้ (ล่าสุด)</h4>
+          <div data-items style="font-size:11px;color:#9aa0a6">(ยังไม่มี)</div>
+          <div class="btns"><button class="danger" id="__assist_resetstats">รีเซ็ตสถิติ</button></div>
+        </div>
+        <div class="__assist_page" data-page="config">
+          <div class="btns">
+            <button id="__assist_lootbtn" class="on">Loot: ?</button>
+            <button id="__assist_healbtn" class="off">Heal: ?</button>
+          </div>
+          <div class="field"><label>HP% เริ่มใช้ยา (healAt)</label><input type="number" id="__assist_healat" min="1" max="100"></div>
+          <div class="field"><label>item id ที่จะใช้ heal (คั่นด้วยจุลภาค)</label><input type="text" id="__assist_healitems" placeholder="เช่น 501,502,503"></div>
+          <div class="btns"><button id="__assist_applyheal">ใช้ค่า heal</button></div>
+          <div class="field"><label>โหมด heal</label><select id="__assist_healmode"><option value="order">order (ใช้ตัวเดิมจนหมด)</option><option value="random">random (สุ่ม)</option></select></div>
+          <div class="field"><label>โหมด loot</label><select id="__assist_lootmode"><option value="all">all (เก็บหมด)</option><option value="only">only (เก็บเฉพาะ)</option><option value="except">except (ยกเว้น)</option></select></div>
+          <div class="field"><label>item id ที่จะเก็บเท่านั้น / ยกเว้น (คั่นจุลภาค)</label><input type="text" id="__assist_lootfilter" placeholder="เช่น 909,512"></div>
+          <div class="btns">
+            <button id="__assist_applylootonly">ตั้ง only</button>
+            <button id="__assist_applylootexcept">ตั้ง except</button>
+            <button id="__assist_clearfilter">ล้าง</button>
+          </div>
+        </div>
+        <div class="__assist_page" data-page="log">
+          <div class="logbox" id="__assist_logbox"></div>
+          <div class="btns"><button id="__assist_clearlog">ล้าง log</button></div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(root);
+
+    // ---------- wire events ----------
+    const bar = root.querySelector('#__assist_bar');
+    const popup = root.querySelector('#__assist_popup');
+    bar.addEventListener('click', (e) => {
+      // กดที่ pill loot/heal ใน mini-bar = toggle ทันที (ไม่เปิด popup)
+      const pill = e.target.closest('.pill');
+      if (pill) {
+        if (pill.hasAttribute('data-loot')) CFG.lootEnabled ? ASSIST.lootOff() : ASSIST.lootOn();
+        if (pill.hasAttribute('data-heal')) CFG.healEnabled ? ASSIST.healOff() : ASSIST.healOn();
+        return;
+      }
+      popup.classList.toggle('open');
+    });
+
+    // tab switching
+    root.querySelectorAll('#__assist_tabs .tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const page = tab.getAttribute('data-page');
+        root.querySelectorAll('#__assist_tabs .tab').forEach(t => t.classList.toggle('active', t === tab));
+        root.querySelectorAll('.__assist_page').forEach(p => p.classList.toggle('active', p.getAttribute('data-page') === page));
+      });
+    });
+
+    // config tab buttons
+    root.querySelector('#__assist_lootbtn').addEventListener('click', () => CFG.lootEnabled ? ASSIST.lootOff() : ASSIST.lootOn());
+    root.querySelector('#__assist_healbtn').addEventListener('click', () => CFG.healEnabled ? ASSIST.healOff() : ASSIST.healOn());
+
+    root.querySelector('#__assist_applyheal').addEventListener('click', () => {
+      const pct = parseInt(root.querySelector('#__assist_healat').value, 10);
+      if (!isNaN(pct)) ASSIST.setHealAt(pct);
+      const ids = root.querySelector('#__assist_healitems').value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+      if (ids.length) ASSIST.setHealItems(...ids);
+    });
+    root.querySelector('#__assist_healmode').addEventListener('change', e => ASSIST.setHealMode(e.target.value));
+    root.querySelector('#__assist_lootmode').addEventListener('change', e => ASSIST.setLootMode(e.target.value));
+    root.querySelector('#__assist_applylootonly').addEventListener('click', () => {
+      const ids = root.querySelector('#__assist_lootfilter').value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+      ASSIST.clearLootOnly();
+      if (ids.length) ASSIST.addLootOnly(...ids);
+    });
+    root.querySelector('#__assist_applylootexcept').addEventListener('click', () => {
+      const ids = root.querySelector('#__assist_lootfilter').value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+      ASSIST.clearLootExcept();
+      if (ids.length) ASSIST.addLootExcept(...ids);
+    });
+    root.querySelector('#__assist_clearfilter').addEventListener('click', () => { ASSIST.clearLootOnly(); ASSIST.clearLootExcept(); });
+    root.querySelector('#__assist_resetstats').addEventListener('click', () => ASSIST.resetStats());
+    root.querySelector('#__assist_clearlog').addEventListener('click', () => ASSIST.clearLogs());
+
+    log('🖥️ แสดง panel แล้ว (คลิกที่แถบมุมขวาบนเพื่อเปิด)');
+  }
+
+  // ---------- render loop ----------
+  function fmtMs(ms) {
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return s + 's';
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + 'm ' + (s % 60) + 's';
+    const h = Math.floor(m / 60);
+    return h + 'h ' + (m % 60) + 'm';
+  }
+  function renderUI() {
+    const root = document.getElementById('__assist_root');
+    if (!root) return;
+    const pct = hpPct();
+    const pctNum = pct == null ? null : pct;
+    const hpText = hp.cur != null ? `${hp.cur}/${hp.max} (${pctNum != null ? pctNum.toFixed(0) : '?'}%)` : 'HP ?';
+
+    // mini-bar
+    const hpEl = root.querySelector('.hptext');
+    const fill = root.querySelector('.hpfill');
+    if (hpEl) hpEl.textContent = hpText;
+    if (fill) {
+      const w = pctNum != null ? Math.max(0, Math.min(100, pctNum)) : 0;
+      fill.style.width = w + '%';
+      fill.className = 'hpfill' + (w < 25 ? '' : w < 50 ? ' warn' : ' good');
+    }
+    root.querySelectorAll('.pill').forEach(p => {
+      const on = p.hasAttribute('data-loot') ? CFG.lootEnabled : CFG.healEnabled;
+      p.className = 'pill ' + (on ? 'on' : 'off');
+      p.textContent = (p.hasAttribute('data-loot') ? 'Loot' : 'Heal') + ': ' + (on ? 'ON' : 'OFF');
+    });
+    if (isDead) root.querySelector('#__assist_bar').classList.add('__assist_dead');
+    else root.querySelector('#__assist_bar').classList.remove('__assist_dead');
+
+    // stats page
+    const s = ASSIST.getStats();
+    const set = (sel, val) => { const el = root.querySelector(sel); if (el) el.textContent = val; };
+    set('[data-hp]', hpText);
+    set('[data-pos]', player.x != null ? `(${player.x.toFixed(1)}, ${player.y.toFixed(1)})` : '?');
+    set('[data-pid]', playerId ? playerId.toString(16) : '?');
+    set('[data-state]', isDead ? '☠️ ตาย' : (activeWS && activeWS.readyState === 1 ? '🟢 เชื่อมต่อ' : '🔴 ไม่ได้ต่อ'));
+    set('[data-kills]', s.kills);
+    set('[data-looted]', s.itemsLooted);
+    set('[data-exp]', s.expGained.toLocaleString());
+    set('[data-expmin]', s.expPerMin.toLocaleString());
+    set('[data-elapsed]', fmtMs(s.elapsedMs));
+    set('[data-deaths]', s.deaths);
+    const itemsEl = root.querySelector('[data-items]');
+    if (itemsEl) {
+      const top = s.itemsByCount.slice(0, 8);
+      itemsEl.innerHTML = top.length ? top.map(i => `<div>${i.name} ×${i.count}</div>`).join('') : '(ยังไม่มี)';
+    }
+
+    // config page — ซิงค์ค่าปัจจุบันเข้า input (กันเขียนทับเวลา user กำลังพิมพ์)
+    const lootBtn = root.querySelector('#__assist_lootbtn');
+    const healBtn = root.querySelector('#__assist_healbtn');
+    if (lootBtn) { lootBtn.textContent = 'Loot: ' + (CFG.lootEnabled ? 'ON' : 'OFF'); lootBtn.className = CFG.lootEnabled ? 'on' : 'off'; }
+    if (healBtn) { healBtn.textContent = 'Heal: ' + (CFG.healEnabled ? 'ON' : 'OFF'); healBtn.className = CFG.healEnabled ? 'on' : 'off'; }
+    const ha = root.querySelector('#__assist_healat');
+    if (ha && document.activeElement !== ha) ha.value = CFG.healAtPercent;
+    const hi = root.querySelector('#__assist_healitems');
+    if (hi && document.activeElement !== hi) hi.value = CFG.healItems.join(',');
+    const hm = root.querySelector('#__assist_healmode');
+    if (hm && document.activeElement !== hm) hm.value = CFG.healMode;
+    const lm = root.querySelector('#__assist_lootmode');
+    if (lm && document.activeElement !== lm) lm.value = CFG.filter.mode;
+    const lf = root.querySelector('#__assist_lootfilter');
+    if (lf && document.activeElement !== lf) {
+      lf.value = (CFG.filter.mode === 'only' ? CFG.filter.onlyItems : CFG.filter.mode === 'except' ? CFG.filter.exceptItems : []).join(',');
+      lf.placeholder = CFG.filter.mode === 'only' ? 'item id ที่จะเก็บเท่านั้น' : CFG.filter.mode === 'except' ? 'item id ที่จะไม่เก็บ' : 'เลือกโหมดก่อน';
+    }
+
+    // log page (อัปเดตเฉพาะถ้าเปิดอยู่ เพื่อประหยัด)
+    const logPage = root.querySelector('.__assist_page[data-page="log"]');
+    if (logPage && logPage.classList.contains('active')) {
+      const box = root.querySelector('#__assist_logbox');
+      if (box) {
+        const logs = ASSIST.getLogs();
+        const wasNearBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+        // rebuild เฉพาะถ่ายจำนวนเปลี่ยน (กัน thrash)
+        if (box.childElementCount !== logs.length) {
+          box.innerHTML = logs.map(l => {
+            const d = new Date(l.t);
+            const ts = d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')+':'+d.getSeconds().toString().padStart(2,'0');
+            return `<div class="logline"><span class="ts">${ts}</span> ${l.msg.replace(/</g,'&lt;')}</div>`;
+          }).join('');
+          if (wasNearBottom) box.scrollTop = box.scrollHeight;
+        }
+      }
+    }
+  }
+
+  // ---------- bootstrap UI (รอ DOM ready) ----------
+  function startUI() {
+    buildUI();
+    uiLoop = setInterval(renderUI, 400);
+  }
+  if (document.body) startUI();
+  else document.addEventListener('DOMContentLoaded', startUI, { once: true });
 
   log('✅ ติดตั้งแล้ว — เล่นเกมตามปกติ ระบบจะเก็บของและใช้ยาให้เอง');
   log('   พิมพ์ ASSIST.help() เพื่อดูคำสั่งทั้งหมด, ASSIST.status() เพื่อดูสถานะ');
