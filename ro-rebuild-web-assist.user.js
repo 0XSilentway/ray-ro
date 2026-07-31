@@ -1036,15 +1036,11 @@
     }
     lastDistToTarget = dist;
 
-    // ★ stuck จริงๆ (ระยะไม่ลด ≥10 tick ≈ 8s+) → abandon + cooldown กันเลือกใหม่ทันที
+    // ★ stuck จริงๆ (ระยะไม่ลด ≥10 tick ≈ 8s+) → return 'STUCK' ให้ caller ตัดสินใจ (warpToMonster/abandon)
+    //   ไม่ abandon เองที่นี่ เพื่อให้ caller ควบคุม (เช่น warpToMonster อาจช่วยได้)
     if (noProgressTicks >= 10) {
-      log('🚫 abandon target', target.id.toString(16), '(ไม่เข้าใกล้ ' + noProgressTicks + ' tick @ dist ' + dist.toFixed(1) + ')');
-      abandonCooldown.set(target.id, now + 15000);   // ข้ามมอนตัวนี้ 15s
-      abandonTarget('ติดกำแพง', true);
-      target = null;
-      lastDistToTarget = null;
-      noProgressTicks = 0;
-      return false;
+      log('🚧 stuck: ไม่เข้าใกล้ ' + noProgressTicks + ' tick @ dist ' + dist.toFixed(1));
+      return 'STUCK';
     }
 
     if (now - lastWalkToTargetAt < 800) return false;
@@ -1057,7 +1053,8 @@
     const step = Math.min(dist, 12);
     const tx = player.x + Math.cos(angle) * step;
     const ty = player.y + Math.sin(angle) * step;
-    if (sendMove(tx, ty)) { log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', Math.round(tx), Math.round(ty) + ') dist=' + dist.toFixed(1) + ' stuck=' + noProgressTicks); return true; }
+    if (sendMove(tx, ty)) { log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', Math.round(tx), Math.round(ty) + ') dist=' + dist.toFixed(1) + ' stuck=' + noProgressTicks); return 'WALKING'; }
+    return false;
     return false;
   }
 
@@ -1126,7 +1123,7 @@
 
     // === 3. Attack ===
     //   ★ server ทำ walk-and-attack เอง: ส่ง ATTACK ในระยะ maxAcquireDistance → server เดินตัวละครเข้าไปตี
-    //     ไม่ต้องส่ง MOVE เอง (เหมือน walk-and-pickup ของ loot)
+    //     dist > maxAcquireDistance → บอทเดินเข้าไปเอง (MOVE) จนถึง ≤maxAcquireDistance แล้วค่อยส่ง ATTACK
     if (target) {
       const m = entities.get(target.id);
       if (m && player.x != null) {
@@ -1142,20 +1139,25 @@
           }
           return;
         }
-        // ไกลเกิน maxAcquireDistance → warpToMonster (ถ้าเปิด) หรือ abandon
-        if (CFG.warpToMonster && (warpToMonsterCount.get(target.id) || 0) < CFG.warpToMonsterMaxPerEntity) {
-          const wc = warpToMonsterCount.get(target.id) || 0;
-          if (now - (target._lastWarpAt || 0) > CFG.warpToMonsterCooldownMs) {
-            if (sendTeleport(currentMap, m.x, m.y)) {
-              target._lastWarpAt = now; warpToMonsterCount.set(target.id, wc + 1);
-              log('🌀 วาร์ปไปหา', m.name || target.id.toString(16), '@(', m.x, m.y + ')', '(warp', wc + 1 + ')');
+        // dist > maxAcquireDistance → เดินเข้าไปเองจนถึงระยะ acquire
+        //   ถ้าติดกำแพงนาน (stuck) → warpToMonster (ถ้าเปิด) หรือ abandon
+        const stuck = walkToTarget(now, m);
+        if (stuck === 'STUCK') {
+          if (CFG.warpToMonster && (warpToMonsterCount.get(target.id) || 0) < CFG.warpToMonsterMaxPerEntity) {
+            const wc = warpToMonsterCount.get(target.id) || 0;
+            if (now - (target._lastWarpAt || 0) > CFG.warpToMonsterCooldownMs) {
+              if (sendTeleport(currentMap, m.x, m.y)) {
+                target._lastWarpAt = now; warpToMonsterCount.set(target.id, wc + 1);
+                log('🌀 วาร์ปไปหา', m.name || target.id.toString(16), '@(', m.x, m.y + ')', '(warp', wc + 1 + ')');
+              }
+              return;
             }
           }
-          return;
+          // ไม่เปิด warpToMonster หรือ warp ครบแล้ว → abandon + cooldown กันเลือกตัวเดิม
+          abandonCooldown.set(target.id, now + 15000);
+          abandonTarget('ติดกำแพง (stuck)', true);
+          target = null;
         }
-        // ไกลเกินไป + ไม่เปิด warpToMonster → abandon (หาตัวใกล้กว่า)
-        abandonTarget('ไกลเกิน ' + CFG.maxAcquireDistance + ' @' + dist.toFixed(0), false);
-        target = null;
         return;
       }
     }
