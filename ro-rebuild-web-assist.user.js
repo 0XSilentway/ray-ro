@@ -538,6 +538,18 @@
         if (name && name !== currentMap) { currentMap = name; log('🗺️ แมป:', name); }
       }
     }
+    // 0x03 SELECT_CHAR: server ตอบหลังเลือกตัวละคร — ★ ฝัง mapName (MAP_NAME ไม่ส่งตอน login ครั้งแรก)
+    //   format: [03][eid:4][len:2][mapname null-terminated]
+    else if (op === 0x03 && u.length >= 7) {
+      const eid = u32(u, 1);
+      if (playerId == null && eid) { playerId = eid; log('👤 player_id =', eid.toString(16), '(จาก SELECT_CHAR)'); }
+      const mapLen = u16(u, 5);
+      if (u.length >= 7 + mapLen && mapLen > 0) {
+        let name = new TextDecoder().decode(u.slice(7, 7 + mapLen));
+        name = name.split('\0')[0];   // ตัดที่ null terminator
+        if (name && name !== currentMap) { currentMap = name; log('🗺️ แมป:', name, '(จาก SELECT_CHAR)'); }
+      }
+    }
     // 0x2a WARP_FAIL: server บอกว่าพิกัดวาร์ป invalid (กำแพง/น้ำ) → warpLoop จะลอง offset ถัดไป
     //   format: [2a][02]
     else if (op === 0x2a && u.length >= 2) {
@@ -815,6 +827,7 @@
   let noMonsterSince = 0;        // timestamp ที่เริ่มไม่เจอมอน
   let lastWanderAt = 0;
   let lastFleeAt = 0;
+  let lastWarpFindAt = 0;        // throttle warpFind กัน spam
 
   // ---------- combat target state ----------
   let target = null;             // {id, x, y, acquiredAt, engageAt, lastAttackAt, lastAttackResultAt, pendingAttacks, stuckCount, warpCount}
@@ -1113,10 +1126,16 @@
       // ไม่เจอมอน
       if (!noMonsterSince) noMonsterSince = now;
       const noMonSec = (now - noMonsterSince) / 1000;
-      // warp-find
-      if (CFG.warpFindEnabled && noMonSec >= CFG.noMonsterWarpSec) {
-        log('🌀 ไม่เจอมอน', noMonSec.toFixed(0) + 's → วาร์ปสุ่ม');
-        if (sendRandomWarp()) noMonsterSince = now;
+      // warp-find — มี cooldown กัน spam (วาร์ป fail ก็ต้องรอ ไม่ยิงทุก tick)
+      if (CFG.warpFindEnabled && noMonSec >= CFG.noMonsterWarpSec && now - lastWarpFindAt > 3000) {
+        lastWarpFindAt = now;
+        if (currentMap) {
+          log('🌀 ไม่เจอมอน', noMonSec.toFixed(0) + 's → วาร์ปสุ่ม');
+          if (sendRandomWarp()) noMonsterSince = now;   // สำเร็จ → reset (เริ่มนับใหม่ในแมปใหม่)
+          // fail → ไม่ reset noMonsterSince แต่ lastWarpFindAt คุม cooldown แล้ว ไม่ spam
+        } else {
+          log('⚠️ warpFind: ยังไม่รู้ชื่อแมป — รอ SELECT_CHAR/MAP_NAME');
+        }
         return;
       }
       // wander
