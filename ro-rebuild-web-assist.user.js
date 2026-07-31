@@ -172,8 +172,9 @@
     maxWalkDistance: 15,          // (legacy — ใช้น้อย เพราะ server walk-and-attack เอง)
     combatTickMs: 200,            // tick loop (มี jitter ±25% เหมือนบอทหลัก)
     postCombatDelayMs: 1000,      // ★ รอ N ms หลังสู้เสร็จ/เก็บของเสร็จ ก่อนทำอย่างอื่น (ดูเป็นธรรมชาติ)
-    attackReIssueMs: 2500,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้
-    attackAbandonMs: 8000,        // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (นักธนูช้า ใช้ 8s)
+    attackReIssueMs: 3000,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้ (เพิ่มจาก 2500 → pending เพิ่มช้าลง)
+    attackAbandonMs: 20000,       // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (เพิ่มจาก 8s → 20s รองรับ reset ล่าช้า)
+    attackPendingMax: 8,          // ★ abandon ถ้า pending ≥ N (เพิ่มจาก 4 → 8 รองรับ reset ไม่ทำงานชั่วคราว)
     aggroKeepAliveMs: 15000,      // ★ มอน aggro เรา → ถือว่ายังสู้อยู่ N ms (กัน abandon ตอนมอนเดินมาหา)
     maxEngageSec: 30,             // abandon target ถ้า engage นานกว่านี้
     // flee (วาร์ปหนี)
@@ -1252,8 +1253,8 @@
         else if (!target.engageAt && acquireAge > CFG.maxEngageSec && !isTargetStillEngaged) {
           abandonTarget('ไม่ได้ตี ' + acquireAge.toFixed(0) + 's', true); target = null;
         }
-        // ★ pending ≥4 abandon ถ้า server ไม่ตอบนานเกินไป — แต่ถ้ามอนยัง aggro เรา ข้าม (ยังสู้อยู่)
-        else if (target.pendingAttacks >= 4 && target.firstAttackAt && (now - target.firstAttackAt > CFG.attackAbandonMs) && !isTargetStillEngaged) {
+        // ★ pending ≥ attackPendingMax abandon ถ้า server ไม่ตอบนานเกินไป — แต่ถ้ามอนยัง aggro เรา ข้าม (ยังสู้อยู่)
+        else if (target.pendingAttacks >= CFG.attackPendingMax && target.firstAttackAt && (now - target.firstAttackAt > CFG.attackAbandonMs) && !isTargetStillEngaged) {
           abandonCooldown.set(target.id, now + 10000);   // ★ กันเลือกตัวเดิมซ้ำ 10s
           abandonTarget('pending ' + target.pendingAttacks + ' (server เงียบ)', true); target = null;
         }
@@ -1274,13 +1275,7 @@
         const dist = Math.hypot(m.x - player.x, m.y - player.y);
         // ในระยะ acquire → ส่ง ATTACK ตรงๆ (server เดินเข้าไปตีเอง)
         if (dist <= CFG.maxAcquireDistance) {
-          // ★ FALLBACK: ถ้า pending ≥ 2 (ส่ง ATTACK แล้ว server เงียบ = walk-and-attack ไม่ทำงาน)
-          //   → เดินเข้าไปใกล้ขึ้นเอง แล้วตีใหม่ (บางมอน เช่น ไข่ server ไม่เดินเข้าให้ ต้องเดินเอง)
-          if (target.pendingAttacks >= 2 && now - target.lastAttackAt > 1000) {
-            log('🚶 server เงียบ → เดินเข้าใกล้เอง', m.name || m.id.toString(16), '(pending', target.pendingAttacks + ')');
-            walkToTarget(now, m);
-            return;
-          }
+          // (ลบ fallback เดินเข้า — server walk-and-attack ทำงานจริง แค่ reset ไม่ทำงานชั่วคราว)
           if (now - target.lastAttackAt > CFG.attackReIssueMs || target.lastAttackAt === 0) {
             if (sendAttack(target.id)) {
               target.lastAttackAt = now; target.pendingAttacks++;
