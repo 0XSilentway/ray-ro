@@ -162,6 +162,7 @@
     walkStepDistance: 20,         // ★ สั่งเดินทีละ N ช่อง (game click-walk cap ~20)
     maxWalkDistance: 15,          // (legacy — ใช้น้อย เพราะ server walk-and-attack เอง)
     combatTickMs: 200,            // tick loop (มี jitter ±25% เหมือนบอทหลัก)
+    postCombatDelayMs: 1000,      // ★ รอ N ms หลังสู้เสร็จ/เก็บของเสร็จ ก่อนทำอย่างอื่น (ดูเป็นธรรมชาติ)
     attackReIssueMs: 2500,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้
     attackAbandonMs: 8000,        // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (นักธนูช้า ใช้ 8s)
     aggroKeepAliveMs: 15000,      // ★ มอน aggro เรา → ถือว่ายังสู้อยู่ N ms (กัน abandon ตอนมอนเดินมาหา)
@@ -528,6 +529,10 @@
         stats.itemsLooted++;
         stats.itemsByCount.set(itemId, (stats.itemsByCount.get(itemId) || 0) + 1);
         log('✅ เก็บได้', nameOf(itemId), 'drop', dropId);
+        // ★ ถ้าเก็บหมดแล้ว (queue ว่าง) → trigger cooldown ก่อน combatLoop acquire ใหม่
+        if (queue.size === 0 && warpQueue.size === 0) {
+          combatCooldownUntil = nowMs() + CFG.postCombatDelayMs;
+        }
       } else {
         stats.pickupFails++;
         if (it && it.attempts >= CFG.maxAttempts) {
@@ -736,7 +741,11 @@
       const e = entities.get(id);
       if (e) { e.alive = false; }
       entities.delete(id);
-      if (target && target.id === id) abandonTarget('ฆ่าได้', false), target = null;
+      if (target && target.id === id) {
+        abandonTarget('ฆ่าได้', false); target = null;
+        // ★ trigger post-combat cooldown (รอก่อน acquire ใหม่ — ถ้ามีของ loot-blocking จะเก็บก่อน)
+        combatCooldownUntil = nowMs() + CFG.postCombatDelayMs;
+      }
     }
     // 0x1b DESPAWN: entity หาย (มี false-despawn guard)
     else if (op === 0x1b && u.length >= 5) {
@@ -1088,14 +1097,21 @@
     return false;
   }
 
+  let combatCooldownUntil = 0;   // ★ หยุด combat ชั่วคราวจนกว่าจะถึงเวลานี้ (post-combat delay)
   const combatLoop = setInterval(() => {
     if (!CFG.combatEnabled) return;
     if (isDead) { return; }
     if (!activeWS || activeWS.readyState !== 1) return;
     const now = nowMs();
 
-    // === 1. Flee checks (priority สูงสุด — ต้องทำก่อนเก็บของ) ===
-    if (CFG.fleeOnMobCount > 0 && getMobAttackerCount() >= CFG.fleeOnMobCount) { doFlee('รุม ' + getMobAttackerCount() + ' ตัว'); return; }
+    // === 0. post-combat cooldown — รอหลังสู้เสร็จ/เก็บของเสร็จ ก่อนทำอย่างอื่น ===
+    //   ยกเว้น flee (ต้องทำทันทีเสมอเพื่อความปลอดภัย)
+    const inCooldown = now < combatCooldownUntil;
+    const mobCount = getMobAttackerCount();
+    if (CFG.fleeOnMobCount > 0 && mobCount >= CFG.fleeOnMobCount) { doFlee('รุม ' + mobCount + ' ตัว'); return; }
+    if (CFG.fleeOnAggroCount > 0 && getAggroCount() >= CFG.fleeOnAggroCount) { doFlee('aggro ' + getAggroCount() + ' ตัว'); return; }
+    if (CFG.fleeOnProximityCount > 0 && countMonsters(CFG.fleeOnProximityRadius) >= CFG.fleeOnProximityCount) { doFlee('มอนรอบ ' + countMonsters(CFG.fleeOnProximityRadius) + ' ตัว'); return; }
+    if (inCooldown && mobCount === 0) return;   // อยู่ใน cooldown + ไม่โดนรุม → รอ
     if (CFG.fleeOnAggroCount > 0 && getAggroCount() >= CFG.fleeOnAggroCount) { doFlee('aggro ' + getAggroCount() + ' ตัว'); return; }
     if (CFG.fleeOnProximityCount > 0 && countMonsters(CFG.fleeOnProximityRadius) >= CFG.fleeOnProximityCount) { doFlee('มอนรอบ ' + countMonsters(CFG.fleeOnProximityRadius) + ' ตัว'); return; }
 
@@ -1427,6 +1443,7 @@
     // ★ ปรับ re-issue/abandon timing (pending spam)
     setAttackReissue(ms) { CFG.attackReIssueMs = ms; log('⚔️ re-issue attack ทุก', ms + 'ms'); },
     setAttackAbandon(ms) { CFG.attackAbandonMs = ms; log('⚔️ abandon ถ้า server เงียบ', ms + 'ms'); },
+    setPostCombatDelay(ms) { CFG.postCombatDelayMs = ms; log('⚔️ รอ', ms + 'ms หลังสู้เสร็จ/เก็บของเสร็จ'); },
     // toggle helpers สำหรับ UI
     toggleAntiKS(on) { CFG.antiKS = !!on; log('⚔️ antiKS =', CFG.antiKS); },
     toggleAvoidPlayers(on) { CFG.avoidOtherPlayers = !!on; log('⚔️ avoidOtherPlayers =', CFG.avoidOtherPlayers); },
