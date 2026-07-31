@@ -471,11 +471,19 @@
     }
     // 0x07 MOVE: ตำแหน่ง entity (ทั้ง player + monster/NPC)
     //   ★ player ใช้ i16 (offset 5/7) เหมือน monster เพื่อให้ระบบพิกัดตรงกัน (combat คำนวณระยะ/ทิศได้แม่น)
+    //   ★ VALID_COORD: พิกัด Ragnarok อยู่ในช่วง [-500, 1000] — ค่านอกนี้ = parse ผิด → ปฏิเสธ
     else if (op === 0x07 && u.length >= 9) {
       const id = u32(u, 1);
       const x = i16(u, 5), y = i16(u, 7);
+      // sanity check: พิกัดต้องอยู่ในช่วงแผนที่ (-500 ถึง 1000) — กัน garbage จาก parse ผิด
+      const valid = (x >= -500 && x <= 1000 && y >= -500 && y <= 1000);
+      if (!valid) return;   // พิกัดผิดปกติ → ข้ามทั้ง packet
       if (playerId != null && id === playerId) {
         player.x = x; player.y = y;
+        // ★ ซิงค์ entities[playerId] ให้ตรง player.x/y (กัน entity ค้างที่ค่าผิด)
+        const pe = entities.get(playerId);
+        if (pe) { pe.x = x; pe.y = y; pe.kind = 0; pe.alive = true; }
+        else { entities.set(playerId, { id, kind: 0, x, y, alive: true }); }
       } else {
         const e = entities.get(id);
         if (e) { e.x = x; e.y = y; }
@@ -624,8 +632,10 @@
           // x/y/hp/hpMax relative to nameEnd (kind @ nameEnd+2 → data เริ่ม nameEnd+3)
           // ★ บอทหลัก: x @ nameEnd+3, y @ nameEnd+7 (i32 signed), hp @ +12, hpMax @ +16
           if (u.length >= nameEnd + 20) {
-            x = u32(u, nameEnd + 3); x = x > 0x7fffffff ? x - 0x100000000 : x;
-            y = u32(u, nameEnd + 7); y = y > 0x7fffffff ? y - 0x100000000 : y;
+            let rx = u32(u, nameEnd + 3); rx = rx > 0x7fffffff ? rx - 0x100000000 : rx;
+            let ry = u32(u, nameEnd + 7); ry = ry > 0x7fffffff ? ry - 0x100000000 : ry;
+            // ★ VALID_COORD: พิกัดต้องอยู่ในช่วงแผนที่ [-500, 1000] — ถ้าไม่ใช่ = nameEnd ผิด → ไม่รับ
+            if (rx >= -500 && rx <= 1000 && ry >= -500 && ry <= 1000) { x = rx; y = ry; }
             const v3 = u32(u, nameEnd + 12);
             const v4 = u32(u, nameEnd + 16);
             if (v3 > 0 && v3 <= v4) { hp = v3; hpMax = v4; }
@@ -652,10 +662,13 @@
       for (let i = 0; i < count && p + 9 <= u.length; i++) {
         const id = u32(u, p);
         const x = i16(u, p + 4), y = i16(u, p + 6);
-        if (id !== playerId) {
-          const e = entities.get(id);
-          if (e) { e.x = x; e.y = y; }
-          else { entities.set(id, { id, kind: 1, x, y, alive: true }); }
+        // sanity check พิกัด (กัน garbage)
+        if (x >= -500 && x <= 1000 && y >= -500 && y <= 1000) {
+          if (id !== playerId) {
+            const e = entities.get(id);
+            if (e) { e.x = x; e.y = y; }
+            else { entities.set(id, { id, kind: 1, x, y, alive: true }); }
+          } else { player.x = x; player.y = y; }   // ★ player ด้วย
         }
         p += 9;
       }
@@ -663,11 +676,13 @@
     // 0x14 ENTITY_POS: [14][id:4][x:2][y:2][flag:1]
     else if (op === 0x14 && u.length >= 9) {
       const id = u32(u, 1);
-      if (id !== playerId) {
-        const x = i16(u, 5), y = i16(u, 7);
-        const e = entities.get(id);
-        if (e) { e.x = x; e.y = y; }
-        else { entities.set(id, { id, kind: 1, x, y, alive: true }); }
+      const x = i16(u, 5), y = i16(u, 7);
+      if (x >= -500 && x <= 1000 && y >= -500 && y <= 1000) {   // sanity
+        if (id !== playerId) {
+          const e = entities.get(id);
+          if (e) { e.x = x; e.y = y; }
+          else { entities.set(id, { id, kind: 1, x, y, alive: true }); }
+        } else { player.x = x; player.y = y; }
       }
     }
     // 0x0b ATTACK_RESULT IN: [0b][attacker:4][target:4][count:2]...[damage:4]
