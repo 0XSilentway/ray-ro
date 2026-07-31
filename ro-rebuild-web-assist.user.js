@@ -37,11 +37,16 @@
    ⭐ ที่ใช้บ่อย (พิมพ์ใน console)
    --------------------------------------------------------------------------
      ASSIST.status()           // ดูสถานะทั้งหมด (HP%, คิวของ, ค่าที่ตั้งไว้)
-     ASSIST.setHealAt(50)      // เลือดต่ำกว่า 50% → ใช้ยา
-     ASSIST.setHealItems(501,502,503)   // ไอเทมที่จะใช้ (Red/Yellow/White Potion)
-     ASSIST.healOn()  /  ASSIST.healOff()   // เปิด/ปิด auto-heal
-     ASSIST.lootOn()  /  ASSIST.lootOff()   // เปิด/ปิด auto-loot
      ASSIST.help()             // ดูคำสั่งทั้งหมด
+
+     // Auto-Loot (เปิดอยู่ default)
+     ASSIST.lootOn()  /  ASSIST.lootOff()
+
+     // Auto-Heal ★ DEFAULT = OFF (ยังไม่สมบูรณ์ อาจถูกตรวจจับ)
+     //   ต้องตั้ง item ก่อน แล้วเปิดเอง:
+     ASSIST.setHealItems(501,502,503)   // ตั้งไอเทม (จะเปิด auto-heal ให้อัตโนมัติ)
+     ASSIST.setHealAt(50)               // เลือดต่ำกว่า 50% → ใช้ยา
+     ASSIST.healOn()  /  ASSIST.healOff()
 
    ==========================================================================
    ส่วนที่ 1 — AUTO-HEAL
@@ -106,9 +111,11 @@
   // ============================================================
   const CFG = {
     // ---------- AUTO-HEAL ----------
-    healEnabled: true,            // เปิดใช้ตอนเริ่มหรือไม่
+    //  ★★ DEFAULT = OFF — ระบบยังไม่สมบูรณ์ อาจส่ง packet แปลกปลอมถ้าไม่มี item heal
+    //     เปิดใช้เองด้วย ASSIST.healOn() หรือ ASSIST.setHealItems(...) (จะเปิดให้อัตโนมัติ)
+    healEnabled: false,           // เปิดใช้ตอนเริ่มหรือไม่
     healAtPercent: 60,            // HP% ที่จะเริ่มใช้ยา (เช่น 60 = ต่ำกว่า 60% ใช้ยา)
-    healItems: [512, 501, 502],        // item id ที่จะใช้ (เรียงจากอ่อน → แรง)
+    healItems: [],                // ★ DEFAULT = ว่าง → จะไม่ส่ง packet heal ใด ๆ จนกว่าจะตั้ง item
     healMode: 'order',            // 'order' = ใช้ตัวเดิมจนหมดแล้วค่อยข้าม, 'random' = สุ่มทุกครั้ง
     healDelayMs: 200,             // ดีเลย์ขั้นต่ำระหว่างการใช้ item แต่ละครั้ง
     healCheckMs: 100,             // ความถี่ในการเช็ค HP
@@ -228,6 +235,8 @@
   // ตัวเช็ค HP และใช้ยา
   const healLoop = setInterval(() => {
     if (!CFG.healEnabled) return;
+    // ★★ GUARD สำคัญ: ถ้าไม่มี item heal เลย → ห้ามทำอะไร (กันส่ง packet 0x2f ปลอม → ถูกตรวจจับเป็นบอท)
+    if (!CFG.healItems.length) return;
     const now = Date.now();
     const pct = hpPct();
     if (pct == null || hp.cur == null) return;            // ยังไม่รู้ HP
@@ -497,17 +506,24 @@
     },
 
     // ---------- Auto-Heal ----------
-    healOn()  { CFG.healEnabled = true;  log('💉 Auto-Heal: ON'); },
+    healOn() {
+      if (!CFG.healItems.length) {
+        console.warn('⚠️ ยังไม่มี item heal — ตั้งก่อนด้วย ASSIST.setHealItems(...) ไม่งั้นจะไม่ทำงาน');
+      }
+      CFG.healEnabled = true; log('💉 Auto-Heal: ON');
+    },
     healOff() { CFG.healEnabled = false; log('💉 Auto-Heal: OFF'); },
     setHealAt(pct) {
       if (typeof pct !== 'number' || pct < 1 || pct > 100) { console.warn('ต้องเป็นเลข 1-100'); return; }
-      CFG.healAtPercent = pct; CFG.healEnabled = true;
-      log('💉 threshold =', pct + '% (auto-heal ON)');
+      CFG.healAtPercent = pct;
+      log('💉 threshold =', pct + '%');
     },
     setHealItems(...ids) {
       CFG.healItems = ids.filter(x => typeof x === 'number');
       heal.clearExhausted();
-      log('💉 healItems =', CFG.healItems.map(nameOf).join(', '));
+      // ★ ตั้ง item = เจตนาเปิดใช้ → เปิด auto-heal ให้อัตโนมัติ (default ปิดอยู่)
+      CFG.healEnabled = true;
+      log('💉 healItems =', CFG.healItems.map(nameOf).join(', '), '→ auto-heal ON');
     },
     addHealItem(...ids) {
       for (const id of ids) if (!CFG.healItems.includes(id)) CFG.healItems.push(id);
