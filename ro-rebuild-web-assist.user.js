@@ -1210,11 +1210,15 @@
         // abandon เฉพาะเคสจริง: engage นานเกิน หรือ pending สูง (server เงียบ)
         const engageAge = target.engageAt ? (now - target.engageAt) / 1000 : 0;
         const acquireAge = (now - target.acquiredAt) / 1000;
-        // ★ มอน aggro เราอยู่ (กำลังเดินมา/ตีอยู่) → ยกเลิก abandon จาก pending/server เงียบ
-        //   เพราะนักธนู ATTACK_RESULT อาจล่าช้า 3+ วิ (มอนเดินมาหา) แต่ MONSTER_SKILL/โดนตี บอกว่ายังสู้อยู่
+        // ★ มอนยัง "กำลังสู้กับเรา" → ยกเลิก abandon จาก pending/server เงียบ
+        //   สัญญาณ 3 อย่าง (อย่างน้อย 1 อย่างล่าสุด):
+        //   1. monsterAggro (0x18) — มอนเลือกเราเป็นเป้า
+        //   2. mobAttackers — มอนตีเรา
+        //   3. _lastDamageAt — เราสร้าง damage ให้มอนได้จริง (สำคัญสำหรับมอนนิ่ง เช่น ไข่/เห็ด ที่ไม่ตีกลับ)
         const targetAggro = monsterAggro.get(target.id);
         const targetHitUs = mobAttackers.get(target.id);
-        const lastCombatSignal = Math.max(targetAggro || 0, targetHitUs || 0);
+        const targetDamaged = m._lastDamageAt;   // ★ เราตีมอนแล้วโดน (HP ลด)
+        const lastCombatSignal = Math.max(targetAggro || 0, targetHitUs || 0, targetDamaged || 0);
         const isTargetStillEngaged = lastCombatSignal && (now - lastCombatSignal < CFG.aggroKeepAliveMs);
         if (target.engageAt && engageAge > CFG.maxEngageSec && !isTargetStillEngaged) {
           abandonTarget('engage นาน ' + engageAge.toFixed(0) + 's', true); target = null;
