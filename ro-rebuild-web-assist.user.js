@@ -128,6 +128,15 @@
     healExhaustedMs: 3000,        // ★ item ที่ "หมด" จะรออีก N ms ก่อนลองใหม่ (เผื่อเก็บ/ซื้อมาเพิ่ม)
     healItemEffectCheckMs: 300,   // รอ server ส่ง HP กลับ N ms หลังใช้ item แล้วค่อยเช็คผล
 
+    // ---------- AUTO-REST (★ default OFF — นั่งพักเสี่ยงถ้ามีมอนรอบตัว) ----------
+    //  เมื่อ HP ต่ำกว่า restHpPercent และไม่โดนรุม → นั่งพัก
+    //  ฟื้นถึง restUntilPercent หรือหมดเวลา restMaxSec → ลุกยืนกลับฟาร์ม
+    //  ★ โดนรุมระหว่างนั่ง → ลุกทันทีเพื่อตีตอบ
+    restEnabled: false,
+    restHpPercent: 30,            // HP ต่ำกว่า 30% → นั่งพัก
+    restUntilPercent: 90,         // ฟื้นถึง 90% → ลุก
+    restMaxSec: 60,               // นั่งนานสุด 60 วิ (กันค้าง — HP ไม่ขยับ = มีปัญหา)
+
     // ---------- AUTO-LOOT ----------
     lootEnabled: true,
     pickRadius: 2,                // ระยะ (ช่อง) จากตัวเรา ที่จะถือว่าของเป็นของเรา
@@ -275,6 +284,10 @@
   //     ถ้า HP ไม่ขยับ = หมด → mark exhaustedUntil + ข้าม delay → ใช้ตัวถัดไปทันที
   //   - ตอนตาย (isDead) → หยุด heal ทั้งหมด (กันนึกว่ายาหมดทั้งหมด)
   let isDead = false;
+
+  // ---------- AUTO-REST state ----------
+  let isResting = false;          // กำลังนั่งพักอยู่
+  let restUntil = 0;              // timestamp ที่จะลุก (กันค้าง — restMaxSec)
   const heal = {
     exhaustedUntil: new Map(),    // itemId -> timestamp ที่จะลองใช้ใหม่ได้
     lastUseAt: 0,                 // เวลาที่ใช้ item ครั้งล่าสุด
@@ -321,12 +334,13 @@
   // ตัวเช็ค HP และใช้ยา
   const healLoop = setInterval(() => {
     if (!CFG.healEnabled) return;
-    // ★★ GUARD สำคัญ: ถ้าไม่มี item heal เลย → ห้ามทำอะไร (กันส่ง packet 0x2f ปลอม)
+    // ★★ GUARD สำคัญ: ถ้าไม่มี item heal เลย → ห้ามทำอะไร (กันส่ง packet 0x2f ปลอม → ถูกตรวจจับเป็นบอท)
     if (!CFG.healItems.length) return;
     const now = Date.now();
     const pct = hpPct();
     if (pct == null || hp.cur == null) return;            // ยังไม่รู้ HP
     if (isDead) return;                                   // ★ ตายอยู่ → ห้าม heal
+    if (isResting) return;                                // ★ กำลังนั่งพัก → ข้าม heal (ใช้ regen แทน ประหยัดยา)
 
     // ★ เช็คผลของ item ที่ใช้ครั้งก่อน (รอ server ส่ง HP กลับมาก่อน)
     if (heal.pendingItemId != null && heal.pendingHpBefore != null &&
@@ -1007,6 +1021,17 @@
     if (!currentMap) { log('⚠️ วาร์ปหนี: ยังไม่รู้ชื่อแมป'); return false; }
     return sendTeleport(currentMap, -999, -999);
   }
+  // SIT/STAND OUT: [0e][state:1] (1=นั่ง, 0=ยืน) — format ยืนยันจากบอทหลัก protocol.js:381
+  function sendSit() {
+    if (!activeWS || activeWS.readyState !== 1) return false;
+    activeWS.send(new Uint8Array([0x0e, 0x01]));
+    return true;
+  }
+  function sendStand() {
+    if (!activeWS || activeWS.readyState !== 1) return false;
+    activeWS.send(new Uint8Array([0x0e, 0x00]));
+    return true;
+  }
   function clearCombatThreat() { monsterAggro.clear(); mobAttackers.clear(); }
 
   // ---------- combat state machine ----------
@@ -1094,7 +1119,6 @@
     const ty = player.y + Math.sin(angle) * step;
     if (sendMove(tx, ty)) { log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', Math.round(tx), Math.round(ty) + ') dist=' + dist.toFixed(1) + ' step=' + Math.round(step) + ' stuck=' + noProgressTicks); return 'WALKING'; }
     return false;
-    return false;
   }
 
   let combatCooldownUntil = 0;   // ★ หยุด combat ชั่วคราวจนกว่าจะถึงเวลานี้ (post-combat delay)
@@ -1103,17 +1127,44 @@
     if (isDead) { return; }
     if (!activeWS || activeWS.readyState !== 1) return;
     const now = nowMs();
+    const pct = hpPct();
+    const mobCount = getMobAttackerCount();
+
+    // === -1. AUTO-REST (priority สูงสุด — ก่อน flee) ===
+    //   ถ้า HP ต่ำ + ไม่โดนรุม → นั่งพัก; ถ้ากำลังนั่งอยู่ → จัดการลุก/นั่งต่อ
+    if (CFG.restEnabled && pct != null && hp.cur != null) {
+      if (!isResting && pct < CFG.restHpPercent && mobCount === 0) {
+        // เริ่มนั่งพัก
+        if (sendSit()) {
+          isResting = true;
+          restUntil = now + CFG.restMaxSec * 1000;
+          log('🪑 นั่งพัก: HP', pct.toFixed(0) + '% < ' + CFG.restHpPercent + '% (นานสุด ' + CFG.restMaxSec + 's หรือจนถึง ' + CFG.restUntilPercent + '%)');
+        }
+        return;
+      }
+      if (isResting) {
+        // โดนรุมระหว่างนั่ง → ลุกทันทีเพื่อตีตอบ (ไม่ return — ให้ flee/defensive ทำงานต่อ)
+        if (mobCount > 0) {
+          if (sendStand()) { log('⚠️ โดนรุมระหว่างนั่ง → ลุกทันที'); }
+          isResting = false;
+        }
+        // ฟื้นถึง restUntilPercent หรือหมดเวลา → ลุก
+        else if (pct >= CFG.restUntilPercent || now >= restUntil) {
+          if (sendStand()) { log('🪑 ลุกยืน: HP', pct.toFixed(0) + '% (≥ ' + CFG.restUntilPercent + '%)'); }
+          isResting = false;
+          combatCooldownUntil = now + CFG.postCombatDelayMs;   // พักเล็กน้อยก่อนเริ่ม
+        }
+        else { return; }   // ยังนั่งอยู่ → หยุดทุกอย่าง
+      }
+    }
 
     // === 0. post-combat cooldown — รอหลังสู้เสร็จ/เก็บของเสร็จ ก่อนทำอย่างอื่น ===
     //   ยกเว้น flee (ต้องทำทันทีเสมอเพื่อความปลอดภัย)
     const inCooldown = now < combatCooldownUntil;
-    const mobCount = getMobAttackerCount();
     if (CFG.fleeOnMobCount > 0 && mobCount >= CFG.fleeOnMobCount) { doFlee('รุม ' + mobCount + ' ตัว'); return; }
     if (CFG.fleeOnAggroCount > 0 && getAggroCount() >= CFG.fleeOnAggroCount) { doFlee('aggro ' + getAggroCount() + ' ตัว'); return; }
     if (CFG.fleeOnProximityCount > 0 && countMonsters(CFG.fleeOnProximityRadius) >= CFG.fleeOnProximityCount) { doFlee('มอนรอบ ' + countMonsters(CFG.fleeOnProximityRadius) + ' ตัว'); return; }
     if (inCooldown && mobCount === 0) return;   // อยู่ใน cooldown + ไม่โดนรุม → รอ
-    if (CFG.fleeOnAggroCount > 0 && getAggroCount() >= CFG.fleeOnAggroCount) { doFlee('aggro ' + getAggroCount() + ' ตัว'); return; }
-    if (CFG.fleeOnProximityCount > 0 && countMonsters(CFG.fleeOnProximityRadius) >= CFG.fleeOnProximityCount) { doFlee('มอนรอบ ' + countMonsters(CFG.fleeOnProximityRadius) + ' ตัว'); return; }
 
     // === 1b. ★ ถ้ามีของรอเก็บ → หยุด combat ชั่วคราว ให้ loot ทำงานก่อน ===
     //   เหตุผล: ฆ่ามอนได้ → เก็บของก่อน แล้วค่อยไปตีตัวใหม่ (เหมือนบอทหลัก _lootBlockingFarm)
@@ -1381,6 +1432,14 @@
     },
     setHealToFull(on) { CFG.healAtMax = !!on; log('💉 ใช้ยาจนเต็ม =', CFG.healAtMax); },
 
+    // ---------- Auto-Rest ----------
+    restOn()  { CFG.restEnabled = true;  log('🪑 Auto-Rest: ON (HP < ' + CFG.restHpPercent + '% → นั่งพัก)'); },
+    restOff() { CFG.restEnabled = false; if (isResting) { sendStand(); isResting = false; } log('🪑 Auto-Rest: OFF'); },
+    setRestHp(pct) { CFG.restHpPercent = pct; log('🪑 นั่งพักตอน HP <', pct + '%'); },
+    setRestUntil(pct) { CFG.restUntilPercent = pct; log('🪑 ลุกยืนตอน HP ≥', pct + '%'); },
+    setRestMaxSec(sec) { CFG.restMaxSec = sec; log('🪑 นั่งนานสุด', sec + 's'); },
+    isResting() { return isResting; },
+
     // ---------- Auto-Loot ----------
     lootOn()  { CFG.lootEnabled = true;  log('📦 Auto-Loot: ON'); },
     lootOff() { CFG.lootEnabled = false; log('📦 Auto-Loot: OFF'); },
@@ -1600,6 +1659,7 @@
         <div class="hpbar"><div class="hpfill" style="width:0%"></div></div>
         <span class="pill off" data-loot>Loot</span>
         <span class="pill off" data-heal>Heal</span>
+        <span class="pill off" data-rest>Rest</span>
         <span class="pill off" data-warp>Warp</span>
         <span class="pill off" data-combat>Combat</span>
         <span class="expand">⚙</span>
@@ -1669,6 +1729,13 @@
             <button id="__assist_t_warptomon" class="off">warpToMon</button>
           </div>
           <div class="btns"><button id="__assist_applycombat">ใช้ค่า flee + range</button></div>
+
+          <h4>🪑 Rest (นั่งพักฟื้น HP)</h4>
+          <div class="btns"><button id="__assist_restbtn" class="off">Rest: ?</button></div>
+          <div class="field"><label>HP% ที่จะนั่งพัก (ต่ำกว่านี้ → นั่ง)</label><input type="number" id="__assist_resthp" min="1" max="99"></div>
+          <div class="field"><label>HP% ที่จะลุกยืน (ฟื้นถึงนี้ → ลุก)</label><input type="number" id="__assist_restuntil" min="1" max="100"></div>
+          <div class="field"><label>นั่งนานสุด (วินาที) — กันค้าง</label><input type="number" id="__assist_restmaxsec" min="5" max="300"></div>
+          <div class="btns"><button id="__assist_applyrest">ใช้ค่า rest</button></div>
         </div>
         <div class="__assist_page" data-page="log">
           <div class="logbox" id="__assist_logbox"></div>
@@ -1725,6 +1792,7 @@
       if (pill) {
         if (pill.hasAttribute('data-loot')) CFG.lootEnabled ? ASSIST.lootOff() : ASSIST.lootOn();
         if (pill.hasAttribute('data-heal')) CFG.healEnabled ? ASSIST.healOff() : ASSIST.healOn();
+        if (pill.hasAttribute('data-rest')) CFG.restEnabled ? ASSIST.restOff() : ASSIST.restOn();
         if (pill.hasAttribute('data-warp')) {
           if (!CFG.warpLootEnabled && !confirm('เปิด Warp-to-Loot?\n\nเป็นฟีเจอร์ที่ส่ง packet วาร์ปจริง — เก็บไม่ได้ครบ ' + CFG.maxAttempts + ' ครั้งจะวาร์ปไปที่ไอเท็ม\nใช้ในความรับผิดชอบของคุณ')) return;
           CFG.warpLootEnabled ? ASSIST.warpLootOff() : ASSIST.warpLootOn();
@@ -1800,6 +1868,16 @@
       if (!isNaN(fa)) ASSIST.setFleeAggro(fa);
       if (!isNaN(fp)) ASSIST.setFleeProximity(fp);
     });
+    // ---- rest wires ----
+    root.querySelector('#__assist_restbtn').addEventListener('click', () => CFG.restEnabled ? ASSIST.restOff() : ASSIST.restOn());
+    root.querySelector('#__assist_applyrest').addEventListener('click', () => {
+      const hp = parseInt(root.querySelector('#__assist_resthp').value, 10);
+      const until = parseInt(root.querySelector('#__assist_restuntil').value, 10);
+      const sec = parseInt(root.querySelector('#__assist_restmaxsec').value, 10);
+      if (!isNaN(hp)) ASSIST.setRestHp(hp);
+      if (!isNaN(until)) ASSIST.setRestUntil(until);
+      if (!isNaN(sec)) ASSIST.setRestMaxSec(sec);
+    });
     const tBtn = (sel, fn, cfgKey) => root.querySelector(sel).addEventListener('click', () => { CFG[cfgKey] = !CFG[cfgKey]; fn(CFG[cfgKey]); });
     tBtn('#__assist_t_antiks', (v) => ASSIST.toggleAntiKS(v), 'antiKS');
     tBtn('#__assist_t_avoidp', (v) => ASSIST.toggleAvoidPlayers(v), 'avoidOtherPlayers');
@@ -1843,6 +1921,7 @@
       let on, label;
       if (p.hasAttribute('data-loot')) { on = CFG.lootEnabled; label = 'Loot'; }
       else if (p.hasAttribute('data-heal')) { on = CFG.healEnabled; label = 'Heal'; }
+      else if (p.hasAttribute('data-rest')) { on = CFG.restEnabled; label = isResting ? '🪑' : 'Rest'; }
       else if (p.hasAttribute('data-warp')) { on = CFG.warpLootEnabled; label = 'Warp'; }
       else if (p.hasAttribute('data-combat')) { on = CFG.combatEnabled; label = 'Combat'; }
       else return;
@@ -1858,7 +1937,7 @@
     set('[data-hp]', hpText);
     set('[data-pos]', player.x != null ? `(${player.x.toFixed(1)}, ${player.y.toFixed(1)})` : '?');
     set('[data-pid]', playerId ? playerId.toString(16) : '?');
-    set('[data-state]', isDead ? '☠️ ตาย' : (activeWS && activeWS.readyState === 1 ? '🟢 เชื่อมต่อ' : '🔴 ไม่ได้ต่อ'));
+    set('[data-state]', isDead ? '☠️ ตาย' : (isResting ? '🪑 นั่งพัก' : (activeWS && activeWS.readyState === 1 ? '🟢 เชื่อมต่อ' : '🔴 ไม่ได้ต่อ')));
     set('[data-kills]', s.kills);
     set('[data-looted]', s.itemsLooted);
     set('[data-exp]', s.expGained.toLocaleString());
@@ -1908,6 +1987,12 @@
     syncInput('#__assist_attackrange', CFG.rangedAttackRange > 0 ? CFG.rangedAttackRange : CFG.attackRange);
     syncInput('#__assist_fleemob', CFG.fleeOnMobCount);
     syncInput('#__assist_fleeaggro', CFG.fleeOnAggroCount);
+    // rest config sync
+    const restBtn = root.querySelector('#__assist_restbtn');
+    if (restBtn) { restBtn.textContent = 'Rest: ' + (CFG.restEnabled ? 'ON' : 'OFF') + (isResting ? ' 🪑' : ''); restBtn.className = CFG.restEnabled ? 'on' : 'off'; }
+    syncInput('#__assist_resthp', CFG.restHpPercent);
+    syncInput('#__assist_restuntil', CFG.restUntilPercent);
+    syncInput('#__assist_restmaxsec', CFG.restMaxSec);
     syncInput('#__assist_fleeprox', CFG.fleeOnProximityCount);
     const syncToggle = (sel, on) => { const el = root.querySelector(sel); if (el) el.className = on ? 'on' : 'off'; };
     syncToggle('#__assist_t_antiks', CFG.antiKS);
