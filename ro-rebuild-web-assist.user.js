@@ -1797,66 +1797,69 @@
     document.body.appendChild(root);
 
     // ---------- wire events ----------
-    // ★★ Unity WebGL (Emscripten) เรียก canvas.focus() ทุก frame + ดัก keyboard ที่ window
-    //   → ขโมย focus จาก input ของเราตลอดเวลา → พิมพ์ไม่ติด
-    //   วิธีแก้ที่ได้ผลจริง: ตอน input focus → ปิด canvas pointer-events + blur canvas
-    //   → Unity ไม่ได้รับ keyboard/pointer → input ของเราพิมพ์ได้ปกติ
+    // ★★ Unity WebGL (Emscripten) ดัก keyboard ที่ window ใน capture phase เหมือนกัน
+    //   + เรียก preventDefault ทำให้ input ไม่รับ key → พิมพ์ไม่ติด
+    //   วิธีแก้: intercept keydown ใน capture phase (ดักก่อน Unity) ถ้ามี input ของเรา active
+    //   → หยุด propagation + จัดการ input เอง (แทรก/ลบตัวอักษรตรงๆ)
     const ASSIST_INPUT_SEL = 'input, select, textarea';
     function isOurField(t) { return t && t.closest && root.contains(t) && t.matches && t.matches(ASSIST_INPUT_SEL); }
-    function getUnityCanvas() {
-      return document.querySelector('#unity-canvas, canvas') || null;
+    function ourActiveInput() {
+      const ae = document.activeElement;
+      return (ae && isOurField(ae)) ? ae : null;
     }
-    // ปิด/เปิด canvas ตามสถานะ input focus
-    let canvasWasDisabled = false;
-    function disableCanvasForInput() {
-      const c = getUnityCanvas();
-      if (c && c.style.pointerEvents !== 'none') {
-        canvasWasDisabled = true;
-        c.style.pointerEvents = 'none';
-        try { c.blur(); } catch (_) {}
+    // ดัก keyboard events ใน capture phase — ถ้ามี input ของเรา active ให้หยุดทุกอย่าง + จัดการเอง
+    window.addEventListener('keydown', (e) => {
+      const inp = ourActiveInput();
+      if (!inp) return;
+      // หยุด Unity รับ key นี้
+      e.stopPropagation();
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+      e.preventDefault();
+      // จัดการ input เอง (Unity กลืน key หมด แม้ input focus)
+      handleInputKey(inp, e);
+    }, true);
+    // ดัก paste ด้วย
+    window.addEventListener('paste', (e) => {
+      const inp = ourActiveInput();
+      if (!inp) return;
+      e.stopPropagation();
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+      e.preventDefault();
+      const text = (e.clipboardData || window.clipboardData).getData('text');
+      const s = inp.selectionStart, en = inp.selectionEnd;
+      inp.value = inp.value.slice(0, s) + text + inp.value.slice(en);
+      const pos = s + text.length;
+      inp.selectionStart = inp.selectionEnd = pos;
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+    }, true);
+    // จัดการ key ให้ input เอง (เพราะ Unity กลืน keydown)
+    function handleInputKey(inp, e) {
+      const k = e.key;
+      const s = inp.selectionStart, en = inp.selectionEnd;
+      if (k === 'Backspace') {
+        if (s === en && s > 0) { inp.value = inp.value.slice(0, s - 1) + inp.value.slice(en); inp.selectionStart = inp.selectionEnd = s - 1; }
+        else if (s !== en) { inp.value = inp.value.slice(0, s) + inp.value.slice(en); inp.selectionStart = inp.selectionEnd = s; }
+      } else if (k === 'Delete') {
+        if (s === en && s < inp.value.length) { inp.value = inp.value.slice(0, s) + inp.value.slice(en + 1); inp.selectionStart = inp.selectionEnd = s; }
+        else if (s !== en) { inp.value = inp.value.slice(0, s) + inp.value.slice(en); inp.selectionStart = inp.selectionEnd = s; }
+      } else if (k === 'ArrowLeft') { inp.selectionStart = inp.selectionEnd = Math.max(0, s - 1); }
+      else if (k === 'ArrowRight') { inp.selectionStart = inp.selectionEnd = Math.min(inp.value.length, s + 1); }
+      else if (k === 'Home') { inp.selectionStart = inp.selectionEnd = 0; }
+      else if (k === 'End') { inp.selectionStart = inp.selectionEnd = inp.value.length; }
+      else if (k === 'Enter') { inp.blur(); }
+      else if (k.length === 1) {   // ตัวอักษร 1 ตัว (รวมตัวเลข ภาษาอังกฤษ)
+        inp.value = inp.value.slice(0, s) + k + inp.value.slice(en);
+        inp.selectionStart = inp.selectionEnd = s + 1;
       }
+      // อื่นๆ (Shift/Ctrl/Alt/Tab ฯลฯ) ไม่ต้องทำอะไร
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
     }
-    function restoreCanvas() {
-      if (!canvasWasDisabled) return;
-      const c = getUnityCanvas();
-      if (c) { c.style.pointerEvents = ''; }
-      canvasWasDisabled = false;
-    }
-    // ดัก keyboard events ใน capture phase (ยังคงไว้ เผื่อกรณีอื่น)
-    ['keydown', 'keyup', 'keypress', 'beforeinput', 'input', 'compositionstart', 'compositionupdate', 'compositionend'].forEach(evType => {
-      window.addEventListener(evType, (e) => {
-        if (isOurField(e.target)) {
-          e.stopPropagation();
-          if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-        }
-      }, true);
-    });
-    // ★ คลิก input → disable canvas ทันที + focus input
+    // ★ คลิก input → focus ทันที (กัน Unity ขโมย)
     root.addEventListener('mousedown', (e) => {
       if (isOurField(e.target)) {
         e.stopPropagation();
-        disableCanvasForInput();
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
         setTimeout(() => { try { e.target.focus(); e.target.select && e.target.select(); } catch (_) {} }, 0);
-      }
-    }, true);
-    // ★ input focus → disable canvas; blur → restore
-    root.addEventListener('focusin', (e) => {
-      if (isOurField(e.target)) disableCanvasForInput();
-    }, true);
-    root.addEventListener('focusout', (e) => {
-      if (isOurField(e.target)) {
-        // รอเล็กน้อยก่อน restore (ถ้า focus ไป input อื่นของเรา ไม่ต้อง restore)
-        setTimeout(() => {
-          if (!document.activeElement || !isOurField(document.activeElement)) restoreCanvas();
-        }, 50);
-      }
-    }, true);
-    // ★ กัน Unity เรียก canvas.focus() แอบ — ถ้า canvas ได้ focus ขณะมี input active → คืน focus
-    document.addEventListener('focusin', (e) => {
-      const active = document.activeElement;
-      const ourInput = root.querySelector(ASSIST_INPUT_SEL + ':focus');
-      if (ourInput && active && (active.tagName === 'CANVAS' || active.tagName === 'EMBED' || active.tagName === 'OBJECT')) {
-        try { ourInput.focus(); } catch (_) {}
       }
     }, true);
 
