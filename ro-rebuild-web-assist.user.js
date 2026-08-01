@@ -204,7 +204,7 @@
     noMonsterWarpSec: 30,
 
     // โหมดกรองของ: 'all' = เก็บหมด, 'only' = เก็บเฉพาะ, 'except' = ยกเว้น
-    filter: { mode: 'except', onlyItems: [], exceptItems: [909,916] },
+    filter: { mode: 'except', onlyItems: [], exceptItems: [909,916,1302,1602,2302] },
 
     // ---------- ทั่วไป ----------
     verbose: true,
@@ -394,6 +394,8 @@
   let currentMap = null;               // ชื่อแมปปัจจุบัน (จาก opcode 0x12) — จำเป็นสำหรับ warp
   const warpQueue = new Map();         // dropId -> {dropId,itemId,x,y,offsetIdx,warpAt,pickupSentAt}
   let lastWarpAt = 0;                  // throttle การวาร์ป
+  let warpGuardUntil = 0;              // ★ ระยะหลังวาร์ป — รอ player pos อัปเดตก่อนคำนวณ dist
+  let lastWarpPlayerPos = null;        // ★ player.x/y ก่อนวาร์ป (เช็คว่า pos เปลี่ยนไหม)
   let lastWarpTargetId = null;         // dropId ที่กำลังวาร์ปไป (เช็คผลจาก 0x2a)
 
   const u16 = (u, o) => u[o] | (u[o + 1] << 8);
@@ -454,6 +456,10 @@
     writeI16LE(b, p, Math.round(y)); p += 2;
     b[p] = 0x00;
     activeWS.send(b);
+    // ★ ตั้ง warp guard — หลังวาร์ป player.x/y จะค้างจนกว่า server จะส่ง MOVE_UPDATE ใหม่
+    //   combatLoop จะรอจนกว่า player pos จะเปลี่ยนจากก่อนวาร์ป ก่อนคำนวณ dist/ตี
+    warpGuardUntil = nowMs() + 3000;          // หมดเวลา 3s กันค้าง (ถ้า server ไม่ส่ง pos ใหม่)
+    lastWarpPlayerPos = (player.x != null) ? { x: player.x, y: player.y } : null;
     return true;
   }
 
@@ -1062,9 +1068,12 @@
   function clearCombatThreat() { monsterAggro.clear(); mobAttackers.clear(); }
 
   // ---------- combat state machine ----------
-  function abandonTarget(reason, stuck) {
+  // abandon target + (ถ้าเป็น stuck/ล้มเหลว) ตั้ง cooldown กันเลือกตัวเดิมซ้ำทันที
+  //   cooldownMs: 0 = ไม่ตั้ง (เช่น ฆ่าได้/defensive ที่เป็นการเปลี่ยนเป้าปกติ)
+  function abandonTarget(reason, stuck, cooldownMs = 0) {
     if (target) {
       log('🚫 abandon target', target.id, '(' + reason + ')');
+      if (cooldownMs > 0) abandonCooldown.set(target.id, nowMs() + cooldownMs);
       if (stuck) {
         stuckAbandonHistory.push(nowMs());
         stuckAbandonHistory = stuckAbandonHistory.filter(t => nowMs() - t < 60000);
@@ -1200,6 +1209,18 @@
       return;   // มีของรอเก็บ + ไม่โดนรุม → รอ lootLoop เก็บก่อน
     }
 
+    // === 1c. ★ warp guard — หลังวาร์ป player.x/y ค้างจนกว่า server จะส่ง MOVE_UPDATE ใหม่
+    //   ถ้าคำนวณ dist ตอนนี้จะได้ค่าผิด (dist 0.0 หลอก) → ตีไม่ได้ → pending ขึ้น
+    //   แก้: รอจนกว่า player pos จะเปลี่ยนจากก่อนวาร์ป (หรือหมดเวลา 3s)
+    if (now < warpGuardUntil && lastWarpPlayerPos) {
+      if (player.x === lastWarpPlayerPos.x && player.y === lastWarpPlayerPos.y) {
+        return;   // pos ยังไม่เปลี่ยน → รอ (dist จะผิดถ้าคำนวณตอนนี้)
+      }
+      // pos เปลี่ยนแล้ว → เคลียร์ guard
+      warpGuardUntil = 0;
+      lastWarpPlayerPos = null;
+    }
+
     // === 1b. Defensive retarget === ถ้าโดนมอนตี (ที่ไม่ใช่ target ปัจจุบัน) → สลับมาตีตัวนั้น
     //   สำคัญ: ถ้ามอน aggro เรา ต้องสู้กลับ ไม่ใช่เดินหาตัวอื่น
     if (player.x != null) {
@@ -1248,15 +1269,14 @@
         const lastCombatSignal = Math.max(targetAggro || 0, targetHitUs || 0, targetDamaged || 0);
         const isTargetStillEngaged = lastCombatSignal && (now - lastCombatSignal < CFG.aggroKeepAliveMs);
         if (target.engageAt && engageAge > CFG.maxEngageSec && !isTargetStillEngaged) {
-          abandonTarget('engage นาน ' + engageAge.toFixed(0) + 's', true); target = null;
+          abandonTarget('engage นาน ' + engageAge.toFixed(0) + 's', true, 10000); target = null;
         }
         else if (!target.engageAt && acquireAge > CFG.maxEngageSec && !isTargetStillEngaged) {
-          abandonTarget('ไม่ได้ตี ' + acquireAge.toFixed(0) + 's', true); target = null;
+          abandonTarget('ไม่ได้ตี ' + acquireAge.toFixed(0) + 's', true, 10000); target = null;
         }
         // ★ pending ≥ attackPendingMax abandon ถ้า server ไม่ตอบนานเกินไป — แต่ถ้ามอนยัง aggro เรา ข้าม (ยังสู้อยู่)
         else if (target.pendingAttacks >= CFG.attackPendingMax && target.firstAttackAt && (now - target.firstAttackAt > CFG.attackAbandonMs) && !isTargetStillEngaged) {
-          abandonCooldown.set(target.id, now + 10000);   // ★ กันเลือกตัวเดิมซ้ำ 10s
-          abandonTarget('pending ' + target.pendingAttacks + ' (server เงียบ)', true); target = null;
+          abandonTarget('pending ' + target.pendingAttacks + ' (server เงียบ)', true, 10000); target = null;
         }
       }
       // stuck warp escalation
@@ -1301,8 +1321,7 @@
         // ★ dist > maxChaseDistance → abandon ทันที (มอนไกลเกินไป ไม่สมควรไล่ตาม)
         if (dist > CFG.maxChaseDistance) {
           log('📏 abandon: มอนไกล', dist.toFixed(0), 'ช่อง (เกิน maxChase ' + CFG.maxChaseDistance + ')');
-          abandonCooldown.set(target.id, now + 10000);
-          abandonTarget('ไกลเกิน ' + CFG.maxChaseDistance, false);
+          abandonTarget('ไกลเกิน ' + CFG.maxChaseDistance, false, 10000);
           target = null;
           return;
         }
@@ -1321,8 +1340,7 @@
             }
           }
           // ไม่เปิด warpToMonster หรือ warp ครบแล้ว → abandon + cooldown กันเลือกตัวเดิม
-          abandonCooldown.set(target.id, now + 15000);
-          abandonTarget('ติดกำแพง (stuck)', true);
+          abandonTarget('ติดกำแพง (stuck)', true, 15000);
           target = null;
         }
         return;
