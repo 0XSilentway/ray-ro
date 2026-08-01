@@ -1797,41 +1797,66 @@
     document.body.appendChild(root);
 
     // ---------- wire events ----------
-    // ★★ ดัก keyboard events ใน capture phase ที่ window → ถ้ากำลังพิมพ์ใน panel ของเรา
-    //   ให้หยุด propagation ก่อนถึง Unity (มิฉะนั้น Unity กลืน input ทำให้พิมพ์ไม่ติด)
+    // ★★ Unity WebGL (Emscripten) เรียก canvas.focus() ทุก frame + ดัก keyboard ที่ window
+    //   → ขโมย focus จาก input ของเราตลอดเวลา → พิมพ์ไม่ติด
+    //   วิธีแก้ที่ได้ผลจริง: ตอน input focus → ปิด canvas pointer-events + blur canvas
+    //   → Unity ไม่ได้รับ keyboard/pointer → input ของเราพิมพ์ได้ปกติ
     const ASSIST_INPUT_SEL = 'input, select, textarea';
     function isOurField(t) { return t && t.closest && root.contains(t) && t.matches && t.matches(ASSIST_INPUT_SEL); }
+    function getUnityCanvas() {
+      return document.querySelector('#unity-canvas, canvas') || null;
+    }
+    // ปิด/เปิด canvas ตามสถานะ input focus
+    let canvasWasDisabled = false;
+    function disableCanvasForInput() {
+      const c = getUnityCanvas();
+      if (c && c.style.pointerEvents !== 'none') {
+        canvasWasDisabled = true;
+        c.style.pointerEvents = 'none';
+        try { c.blur(); } catch (_) {}
+      }
+    }
+    function restoreCanvas() {
+      if (!canvasWasDisabled) return;
+      const c = getUnityCanvas();
+      if (c) { c.style.pointerEvents = ''; }
+      canvasWasDisabled = false;
+    }
+    // ดัก keyboard events ใน capture phase (ยังคงไว้ เผื่อกรณีอื่น)
     ['keydown', 'keyup', 'keypress', 'beforeinput', 'input', 'compositionstart', 'compositionupdate', 'compositionend'].forEach(evType => {
       window.addEventListener(evType, (e) => {
         if (isOurField(e.target)) {
           e.stopPropagation();
           if (e.stopImmediatePropagation) e.stopImmediatePropagation();
         }
-      }, true);   // ← capture phase = ดักก่อน Unity
+      }, true);
     });
-    // ★★ บังคับ focus กลับเข้า input ของเราเมื่อคลิก (Unity canvas ขโมย focus)
-    //   + ดัก mousedown ที่ canvas ก่อน Unity (capture) กัน blur ตอนกำลังพิมพ์
+    // ★ คลิก input → disable canvas ทันที + focus input
     root.addEventListener('mousedown', (e) => {
       if (isOurField(e.target)) {
         e.stopPropagation();
+        disableCanvasForInput();
         setTimeout(() => { try { e.target.focus(); e.target.select && e.target.select(); } catch (_) {} }, 0);
       }
     }, true);
-    document.addEventListener('mousedown', (e) => {
-      // ถ้ากำลังโฟกัส input ของเราอยู่ และคลิกอยู่บน panel → กัน Unity canvas steal focus
-      if (document.activeElement && isOurField(document.activeElement) && root.contains(e.target)) {
-        e.stopPropagation();
+    // ★ input focus → disable canvas; blur → restore
+    root.addEventListener('focusin', (e) => {
+      if (isOurField(e.target)) disableCanvasForInput();
+    }, true);
+    root.addEventListener('focusout', (e) => {
+      if (isOurField(e.target)) {
+        // รอเล็กน้อยก่อน restore (ถ้า focus ไป input อื่นของเรา ไม่ต้อง restore)
+        setTimeout(() => {
+          if (!document.activeElement || !isOurField(document.activeElement)) restoreCanvas();
+        }, 50);
       }
     }, true);
-    // กัน Unity เรียก canvas.focus() ตีตื้น: ถ้า focus หายไปจาก input ของเราโดยไม่ได้ตั้งใจ → คืน
-    // (ใช้ focusin capture เพื่อ intercept)
+    // ★ กัน Unity เรียก canvas.focus() แอบ — ถ้า canvas ได้ focus ขณะมี input active → คืน focus
     document.addEventListener('focusin', (e) => {
       const active = document.activeElement;
-      if (active && (active.tagName === 'CANVAS' || active.tagName === 'EMBED' || active.tagName === 'OBJECT')) {
-        // canvas ได้ focus — แต่ถ้ามี input ของเราที่พึ่งถูกคลิก ให้คืน focus
-        if (root._justClickedInput) {
-          try { root._justClickedInput.focus(); } catch (_) {}
-        }
+      const ourInput = root.querySelector(ASSIST_INPUT_SEL + ':focus');
+      if (ourInput && active && (active.tagName === 'CANVAS' || active.tagName === 'EMBED' || active.tagName === 'OBJECT')) {
+        try { ourInput.focus(); } catch (_) {}
       }
     }, true);
 
