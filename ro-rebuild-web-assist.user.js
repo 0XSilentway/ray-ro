@@ -1711,7 +1711,6 @@
         <span class="pill off" data-loot>Loot</span>
         <span class="pill off" data-heal>Heal</span>
         <span class="pill off" data-rest>Rest</span>
-        <span class="pill off" data-warp>Warp</span>
         <span class="pill off" data-combat>Combat</span>
         <span class="expand">⚙</span>
       </div>
@@ -1744,7 +1743,6 @@
           <div class="btns">
             <button id="__assist_lootbtn" class="on">Loot: ?</button>
             <button id="__assist_healbtn" class="off">Heal: ?</button>
-            <button id="__assist_warpbtn" class="off">Warp: ?</button>
           </div>
           <div class="field"><label>HP% เริ่มใช้ยา (healAt)</label><input type="number" id="__assist_healat" min="1" max="100"></div>
           <div class="field"><label>item id ที่จะใช้ heal (คั่นด้วยจุลภาค)</label><input type="text" id="__assist_healitems" placeholder="เช่น 501,502,503"></div>
@@ -1759,6 +1757,9 @@
           </div>
           <div class="field"><label>ดีเลย์ก่อนเก็บ (ms หลังของตก) — 0 = เก็บทันที</label><input type="number" id="__assist_lootdelay" min="0" step="100"></div>
           <div class="btns"><button id="__assist_applylootdelay">ตั้งดีเลย์</button></div>
+
+          <h4>🌀 Warp-to-Loot (วาร์ปไปเก็บของที่ติดกำแพง)</h4>
+          <div class="btns"><button id="__assist_warpbtn" class="off">วาร์ปไปเก็บของ: ?</button></div>
 
           <h4>⚔️ Combat (ส่ง attack packet จริง)</h4>
           <div class="btns"><button id="__assist_combatbtn" class="off">Combat: ?</button></div>
@@ -1775,9 +1776,9 @@
             <button id="__assist_t_lowhp" class="on">lowestHP</button>
           </div>
           <div class="btns">
-            <button id="__assist_t_wander" class="on">wander</button>
-            <button id="__assist_t_warpfind" class="off">warpFind</button>
-            <button id="__assist_t_warptomon" class="off">warpToMon</button>
+            <button id="__assist_t_wander" class="on">เดินหามอน</button>
+            <button id="__assist_t_warpfind" class="off">วาร์ปหามอน</button>
+            <button id="__assist_t_warptomon" class="off">วาร์ปไปหามอนที่ตี</button>
           </div>
           <div class="btns"><button id="__assist_applycombat">ใช้ค่า flee + range</button></div>
 
@@ -1872,10 +1873,6 @@
         if (pill.hasAttribute('data-loot')) CFG.lootEnabled ? ASSIST.lootOff() : ASSIST.lootOn();
         if (pill.hasAttribute('data-heal')) CFG.healEnabled ? ASSIST.healOff() : ASSIST.healOn();
         if (pill.hasAttribute('data-rest')) CFG.restEnabled ? ASSIST.restOff() : ASSIST.restOn();
-        if (pill.hasAttribute('data-warp')) {
-          if (!CFG.warpLootEnabled && !confirm('เปิด Warp-to-Loot?\n\nเป็นฟีเจอร์ที่ส่ง packet วาร์ปจริง — เก็บไม่ได้ครบ ' + CFG.maxAttempts + ' ครั้งจะวาร์ปไปที่ไอเท็ม\nใช้ในความรับผิดชอบของคุณ')) return;
-          CFG.warpLootEnabled ? ASSIST.warpLootOff() : ASSIST.warpLootOn();
-        }
         if (pill.hasAttribute('data-combat')) {
           if (!CFG.combatEnabled && !confirm('เปิด Auto-Combat?\n\nส่ง packet โจมตีจริง — ตั้ง whitelist ก่อน (เช่น ASSIST.setTargetWhitelist("Poring"))\nใช้ในความรับผิดชอบของคุณ')) return;
           CFG.combatEnabled ? ASSIST.combatOff() : ASSIST.combatOn();
@@ -2001,7 +1998,6 @@
       if (p.hasAttribute('data-loot')) { on = CFG.lootEnabled; label = 'Loot'; }
       else if (p.hasAttribute('data-heal')) { on = CFG.healEnabled; label = 'Heal'; }
       else if (p.hasAttribute('data-rest')) { on = CFG.restEnabled; label = isResting ? '🪑' : 'Rest'; }
-      else if (p.hasAttribute('data-warp')) { on = CFG.warpLootEnabled; label = 'Warp'; }
       else if (p.hasAttribute('data-combat')) { on = CFG.combatEnabled; label = 'Combat'; }
       else return;
       p.className = 'pill ' + (on ? 'on' : 'off');
@@ -2040,7 +2036,7 @@
     const warpBtn = root.querySelector('#__assist_warpbtn');
     if (lootBtn) { lootBtn.textContent = 'Loot: ' + (CFG.lootEnabled ? 'ON' : 'OFF'); lootBtn.className = CFG.lootEnabled ? 'on' : 'off'; }
     if (healBtn) { healBtn.textContent = 'Heal: ' + (CFG.healEnabled ? 'ON' : 'OFF'); healBtn.className = CFG.healEnabled ? 'on' : 'off'; }
-    if (warpBtn) { warpBtn.textContent = 'Warp: ' + (CFG.warpLootEnabled ? 'ON' : 'OFF') + (warpQueue.size ? ` (${warpQueue.size})` : ''); warpBtn.className = CFG.warpLootEnabled ? 'on' : 'off'; }
+    if (warpBtn) { warpBtn.textContent = 'วาร์ปไปเก็บของ: ' + (CFG.warpLootEnabled ? 'ON' : 'OFF') + (warpQueue.size ? ` (${warpQueue.size})` : ''); warpBtn.className = CFG.warpLootEnabled ? 'on' : 'off'; }
     const ha = root.querySelector('#__assist_healat');
     if (ha && document.activeElement !== ha) ha.value = CFG.healAtPercent;
     const hi = root.querySelector('#__assist_healitems');
