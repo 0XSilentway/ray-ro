@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      3.0.0
-// @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, และระบบช่วยเล่นอื่น ๆ (Unity WebGL / WebSocket)
+// @version      4.0.0
+// @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
 // @grant        none
@@ -112,6 +112,47 @@
   window.__ASSIST = true;
 
   // ============================================================
+  //  VERSION + config persistence (localStorage)
+  // ============================================================
+  const VERSION = '4.0.0';
+  const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
+  const CFG_STORAGE_KEY = 'roAssistConfig_v1';
+  // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
+  const PERSIST_KEYS = [
+    'healEnabled', 'healAtPercent', 'healItems', 'healMode', 'healDelayMs', 'healAtMax',
+    'lootEnabled', 'lootDelayAfterDropMs', 'filter',
+    'warpLootEnabled',
+    'combatEnabled', 'targetWhitelist', 'targetBlacklist', 'attackRange', 'rangedAttackRange',
+    'maxAcquireDistance', 'maxChaseDistance', 'antiKS', 'avoidOtherPlayers', 'targetLowestHpFirst',
+    'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius',
+    'wanderEnabled', 'warpFindEnabled', 'warpToMonster',
+    'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs',
+    'itemNames',
+  ];
+  function saveConfig() {
+    try {
+      const out = {};
+      for (const k of PERSIST_KEYS) if (k in CFG) out[k] = CFG[k];
+      localStorage.setItem(CFG_STORAGE_KEY, JSON.stringify(out));
+    } catch (e) { /* localStorage อาจถูกบล็อก — ข้าม */ }
+  }
+  function loadConfig() {
+    try {
+      const raw = localStorage.getItem(CFG_STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      for (const k of PERSIST_KEYS) if (k in saved) CFG[k] = saved[k];
+      log('💾 โหลดค่าที่บันทึกไว้จากเครื่อง (' + PERSIST_KEYS.filter(k => k in saved).length + ' รายการ)');
+    } catch (e) { /* parse fail — ใช้ default */ }
+  }
+  // debounce save (กันเขียนถี่เกินไป)
+  let saveTimer = null;
+  function saveConfigDebounced() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveConfig, 800);
+  }
+
+  // ============================================================
   //  ตั้งค่าเริ่มต้น — แก้ได้ที่นี่ หรือใช้คำสั่ง ASSIST.* จาก console
   // ============================================================
   const CFG = {
@@ -214,6 +255,9 @@
       909: 'Jellopy', 916: 'Bird Feather', 512: 'Apple',
     },
   };
+
+  // ★ โหลดค่าที่บันทึกไว้จาก localStorage (ทับ default)
+  loadConfig();
 
   // ---------- state ทั่วไป ----------
   let activeWS = null;                 // game socket (ใช้ส่งคำสั่ง)
@@ -1404,6 +1448,7 @@
     status() {
       const pct = hpPct();
       console.table([{
+        version: VERSION + (latestVersion && cmpVer(latestVersion, VERSION) > 0 ? ` → ${latestVersion} ⬆` : ''),
         loot: CFG.lootEnabled ? 'ON' : 'off',
         heal: CFG.healEnabled ? 'ON' : 'off',
         dead: isDead ? '☠️ YES' : 'no',
@@ -1637,6 +1682,11 @@
       if (typeof uiLoop !== 'undefined') clearInterval(uiLoop);
       log('⏹ หยุดระบบทั้งหมดแล้ว');
     },
+    // ---------- version + update ----------
+    version() { return { current: VERSION, latest: latestVersion, updateAvailable: latestVersion ? cmpVer(latestVersion, VERSION) > 0 : false }; },
+    checkVersion() { return checkVersion(); },
+    update() { return doUpdate(); },
+    saveConfig() { saveConfig(); log('💾 บันทึกการตั้งค่าลงเครื่องแล้ว'); },
   };
 
   // ============================================================
@@ -1739,6 +1789,11 @@
           <div class="tab" data-page="log">📋 Log</div>
         </div>
         <div class="__assist_page active" data-page="stats">
+          <div class="row" style="border-bottom:2px solid #3a3f4b;">
+            <span class="k">RO Assist</span>
+            <span class="v" data-version>v?</span>
+            <button id="__assist_updatebtn" style="display:none;background:#e67e22;color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer;font-family:inherit;margin-left:6px;">⬆ อัปเดต</button>
+          </div>
           <div class="row"><span class="k">HP</span><span class="v" data-hp>?</span></div>
           <div class="row"><span class="k">ตำแหน่ง</span><span class="v" data-pos>?</span></div>
           <div class="row"><span class="k">player_id</span><span class="v" data-pid>?</span></div>
@@ -1982,6 +2037,8 @@
 
     root.querySelector('#__assist_resetstats').addEventListener('click', () => ASSIST.resetStats());
     root.querySelector('#__assist_clearlog').addEventListener('click', () => ASSIST.clearLogs());
+    const updBtn = root.querySelector('#__assist_updatebtn');
+    if (updBtn) updBtn.addEventListener('click', () => { if (confirm('อัปเดตเป็นเวอร์ชั่นล่าสุด?\n(หลังอัปเดตต้อง reconnect เกม ปิด-เปิดหน้า)')) ASSIST.update(); });
 
     log('🖥️ แสดง panel แล้ว (คลิกที่แถบมุมขวาบนเพื่อเปิด)');
   }
@@ -2005,6 +2062,12 @@
     // mini-bar
     const hpEl = root.querySelector('.hptext');
     const fill = root.querySelector('.hpfill');
+    // version + update button
+    const verEl = root.querySelector('[data-version]');
+    const updAvail = latestVersion && cmpVer(latestVersion, VERSION) > 0;
+    if (verEl) verEl.textContent = 'v' + VERSION + (updAvail ? ' (มีใหม่ v' + latestVersion + ')' : '');
+    const updBtn = root.querySelector('#__assist_updatebtn');
+    if (updBtn) updBtn.style.display = updAvail ? '' : 'none';
     if (hpEl) hpEl.textContent = hpText;
     if (fill) {
       const w = pctNum != null ? Math.max(0, Math.min(100, pctNum)) : 0;
@@ -2115,10 +2178,84 @@
     }
   }
 
+  // ---------- version check + update ----------
+  let lastConfigSnapshot = null;
+  let lastAutoSaveAt = 0;
+  let lastVersionCheckAt = 0;
+  let latestVersion = null;          // เวอร์ชั่นล่าสุดจาก GitHub (null = ยังไม่ได้เช็ค)
+  let updateChecking = false;
+  function parseVersionFromHeader(src) {
+    const m = src.match(/@version\s+([\d.]+)/);
+    return m ? m[1] : null;
+  }
+  function cmpVer(a, b) {   // คืน >0 ถ้า a ใหม่กว่า b
+    const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+      const da = pa[i] || 0, db = pb[i] || 0;
+      if (da !== db) return da - db;
+    }
+    return 0;
+  }
+  async function checkVersion() {
+    if (updateChecking) return;
+    updateChecking = true;
+    try {
+      const res = await fetch(GITHUB_RAW, { cache: 'no-store' });
+      if (!res.ok) return;
+      const src = await res.text();
+      const remote = parseVersionFromHeader(src);
+      if (remote) {
+        latestVersion = remote;
+        if (cmpVer(remote, VERSION) > 0) {
+          log('🔔 มีเวอร์ชั่นใหม่!', VERSION, '→', remote, '(กดปุ่ม ⬆ อัปเดต หรือ ASSIST.update())');
+        } else {
+          log('✅ เวอร์ชั่นล่าสุดแล้ว (' + VERSION + ')');
+        }
+      }
+    } catch (e) { /* offline / CORS → ข้าม */ }
+    finally { updateChecking = false; }
+  }
+  async function doUpdate() {
+    log('⬆ กำลังดาวน์โหลดเวอร์ชั่นใหม่...');
+    try {
+      const res = await fetch(GITHUB_RAW, { cache: 'no-store' });
+      if (!res.ok) { log('❌ ดาวน์โหลดล้มเหลว'); return; }
+      let src = await res.text();
+      // ถ้าโหลดผ่าน console → eval แทนที่เลย (บันทึก config ก่อน)
+      saveConfig();
+      // ลบ re-entry guard ออก (window.__ASSIST) เพื่อให้ eval ใหม่ได้
+      // เก็บ activeWS ไว้ — สคริปต์ใหม่จะ patch ไม่ได้ socket เดิม (ต้อง reconnect)
+      try {
+        window.__ASSIST = false;
+        (0, eval)(src);
+        log('✅ อัปเดตสำเร็จ — รบกวน reconnect เกม (ปิด-เปิดหน้า) เพื่อให้ดัก WebSocket ใหม่');
+      } catch (e) {
+        log('⚠️ eval ล้มเหลว (อาจเป็น Tampermonkey) → เปิดลิงก์ raw URL เพื่อ copy เอง');
+        window.open(GITHUB_RAW, '_blank');
+      }
+    } catch (e) { log('❌ อัปเดตล้มเหลว:', e.message); }
+  }
+
   // ---------- bootstrap UI (รอ DOM ready) ----------
   function startUI() {
     buildUI();
-    uiLoop = setInterval(renderUI, 400);
+    uiLoop = setInterval(() => {
+      renderUI();
+      // auto-save config ทุก ~5 วิ ถ้าค่าเปลี่ยน
+      const now = Date.now();
+      if (now - lastAutoSaveAt > 5000) {
+        lastAutoSaveAt = now;
+        const snap = JSON.stringify(PERSIST_KEYS.map(k => CFG[k]));
+        if (snap !== lastConfigSnapshot) { lastConfigSnapshot = snap; saveConfig(); }
+      }
+      // ตรวจเวอร์ชั่นจาก GitHub ทุก ~10 นาที
+      if (!latestVersion && now - lastVersionCheckAt > 600000) {
+        lastVersionCheckAt = now;
+        checkVersion();
+      }
+    }, 400);
+    // ตรวจเวอร์ชั่นครั้งแรกหลังเข้าเกม 5 วิ
+    setTimeout(checkVersion, 5000);
   }
   if (document.body) startUI();
   else document.addEventListener('DOMContentLoaded', startUI, { once: true });
