@@ -1050,31 +1050,34 @@
     }
     return n;
   }
+  // นับมอนที่ aggro เรา (MONSTER_SKILL dstId=player) ที่ยังมีอยู่จริง — สำหรับ UI/แสดงผล
   function getAggroCount(radius) {
     const now = nowMs();
     let n = 0;
     for (const [id, t] of monsterAggro) {
-      // 1. หมดอายุ >10s → ลบ + ข้าม (mirror world.js:1024)
       if (now - t > 10000) { monsterAggro.delete(id); continue; }
-      // 2. entity หายจาก map (stale หลัง warp) → ลบ + ข้าม (mirror world.js:1026-1027)
       const m = entities.get(id);
       if (!m || !m.alive || m.x == null) { monsterAggro.delete(id); continue; }
-      // 3. stale player ID → ลบ + ข้าม (mirror world.js:1029-1031)
       if (isStaleId(id, now)) { monsterAggro.delete(id); continue; }
-      // 4. ต้องอยู่ในรัศมีจริง → นับเฉพาะมอนใกล้ (mirror world.js:1033-1036)
       if (player.x != null && radius && Math.hypot(m.x - player.x, m.y - player.y) > radius) continue;
       n++;
     }
-    // ★ คืนค่าที่มากกว่า: "ตีเรา" vs "อยู่ใกล้" (mirror world.js:1041-1043)
-    const nearby = radius ? countMonsters(radius) : 0;
-    return Math.max(n, nearby);
+    return n;
   }
-  function getMobAttackerCount() {
+  // ★ getThreatCount = max(aggro, nearby) — สำหรับ flee logic (mirror world.js:1018-1044)
+  function getThreatCount(radius) {
+    return Math.max(getAggroCount(radius), radius ? countMonsters(radius) : 0);
+  }
+  function getMobAttackerCount(radius) {
     const now = nowMs();
     let n = 0;
     for (const [id, t] of mobAttackers) {
       if (now - t >= CFG.fleeMobWindowMs) { mobAttackers.delete(id); continue; }   // หมดอายุ → ลบ
       if (isStaleId(id, now)) { mobAttackers.delete(id); continue; }              // stale player ID → ลบ
+      const m = entities.get(id);
+      if (!m || !m.alive || m.x == null) { mobAttackers.delete(id); continue; }   // entity หาย → ลบ
+      // ถ้าระบุ radius → นับเฉพาะในรัศมี (เหมือน aggro)
+      if (radius && player.x != null && Math.hypot(m.x - player.x, m.y - player.y) > radius) continue;
       n++;
     }
     return n;
@@ -1274,8 +1277,8 @@
     // === 0. post-combat cooldown — รอหลังสู้เสร็จ/เก็บของเสร็จ ก่อนทำอย่างอื่น ===
     //   ยกเว้น flee (ต้องทำทันทีเสมอเพื่อความปลอดภัย)
     const inCooldown = now < combatCooldownUntil;
-    if (CFG.fleeOnMobCount > 0 && mobCount >= CFG.fleeOnMobCount) { doFlee('รุม ' + mobCount + ' ตัว'); return; }
-    if (CFG.fleeOnAggroCount > 0 && getAggroCount() >= CFG.fleeOnAggroCount) { doFlee('aggro ' + getAggroCount() + ' ตัว'); return; }
+    if (CFG.fleeOnMobCount > 0 && getMobAttackerCount(CFG.fleeOnProximityRadius) >= CFG.fleeOnMobCount) { doFlee('รุม ' + getMobAttackerCount(CFG.fleeOnProximityRadius) + ' ตัว'); return; }
+    if (CFG.fleeOnAggroCount > 0 && getThreatCount(CFG.fleeOnProximityRadius) >= CFG.fleeOnAggroCount) { doFlee('aggro ' + getThreatCount(CFG.fleeOnProximityRadius) + ' ตัว'); return; }
     if (CFG.fleeOnProximityCount > 0 && countMonsters(CFG.fleeOnProximityRadius) >= CFG.fleeOnProximityCount) { doFlee('มอนรอบ ' + countMonsters(CFG.fleeOnProximityRadius) + ' ตัว'); return; }
     if (inCooldown && mobCount === 0) return;   // อยู่ใน cooldown + ไม่โดนรุม → รอ
 
@@ -1661,7 +1664,7 @@
       }));
     },
     getTarget() { return target ? { id: target.id.toString(16), pending: target.pendingAttacks, engageSec: target.engageAt ? ((nowMs()-target.engageAt)/1000).toFixed(0) : 0 } : null; },
-    getAggro() { return { mobAttackers: getMobAttackerCount(), aggro: getAggroCount(CFG.fleeOnProximityRadius), monstersNearby: countMonsters(CFG.fleeOnProximityRadius) }; },
+    getAggro() { return { mobAttackers: getMobAttackerCount(CFG.fleeOnProximityRadius), aggro: getAggroCount(CFG.fleeOnProximityRadius), threat: getThreatCount(CFG.fleeOnProximityRadius), monstersNearby: countMonsters(CFG.fleeOnProximityRadius) }; },
     // ★ debug: ดู entities ทั้งหมดเพื่อหาสาเหตุ acquire ไม่ติด
     debugEntities() {
       const now = nowMs();
@@ -2142,7 +2145,7 @@
     const tgt = ASSIST.getTarget();
     const agg = ASSIST.getAggro();
     set('[data-combat-target]', tgt ? (tgt.id + ' pending:' + tgt.pending) : '(none)');
-    set('[data-combat-aggro]', agg.mobAttackers + ' ตี / ' + agg.aggro + ' aggro / ' + agg.monstersNearby + ' รอบ');
+    set('[data-combat-aggro]', agg.mobAttackers + ' ตี / ' + agg.aggro + ' aggro / ' + agg.threat + ' threat / ' + agg.monstersNearby + ' รอบ');
 
     // config page — ซิงค์ค่าปัจจุบันเข้า input (กันเขียนทับเวลา user กำลังพิมพ์)
     const lootBtn = root.querySelector('#__assist_lootbtn');
