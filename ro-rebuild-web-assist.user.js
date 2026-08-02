@@ -1054,19 +1054,28 @@
     const now = nowMs();
     let n = 0;
     for (const [id, t] of monsterAggro) {
-      if (now - t > 10000) continue;                      // 10s TTL
+      // 1. หมดอายุ >10s → ลบ + ข้าม (mirror world.js:1024)
+      if (now - t > 10000) { monsterAggro.delete(id); continue; }
+      // 2. entity หายจาก map (stale หลัง warp) → ลบ + ข้าม (mirror world.js:1026-1027)
       const m = entities.get(id);
-      if (!m || !m.alive || m.x == null) continue;
+      if (!m || !m.alive || m.x == null) { monsterAggro.delete(id); continue; }
+      // 3. stale player ID → ลบ + ข้าม (mirror world.js:1029-1031)
+      if (isStaleId(id, now)) { monsterAggro.delete(id); continue; }
+      // 4. ต้องอยู่ในรัศมีจริง → นับเฉพาะมอนใกล้ (mirror world.js:1033-1036)
       if (player.x != null && radius && Math.hypot(m.x - player.x, m.y - player.y) > radius) continue;
       n++;
     }
-    return n;
+    // ★ คืนค่าที่มากกว่า: "ตีเรา" vs "อยู่ใกล้" (mirror world.js:1041-1043)
+    const nearby = radius ? countMonsters(radius) : 0;
+    return Math.max(n, nearby);
   }
   function getMobAttackerCount() {
     const now = nowMs();
     let n = 0;
     for (const [id, t] of mobAttackers) {
-      if (now - t < CFG.fleeMobWindowMs) n++; else mobAttackers.delete(id);
+      if (now - t >= CFG.fleeMobWindowMs) { mobAttackers.delete(id); continue; }   // หมดอายุ → ลบ
+      if (isStaleId(id, now)) { mobAttackers.delete(id); continue; }              // stale player ID → ลบ
+      n++;
     }
     return n;
   }
