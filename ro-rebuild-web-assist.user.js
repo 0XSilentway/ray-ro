@@ -207,7 +207,7 @@
     targetBlacklist: [],          // ไม่ตีมอนเหล่านี้ (ชื่อหรือ sprite id)
     attackRange: 2,               // ระยะโจมตี (ช่อง) — ใกล้กว่านี้สั่งตี, ไกลกว่าเดินไป
     rangedAttackRange: 8,         // 0 = ใช้ attackRange; >0 = นักธนูตีไกลได้ N ช่อง
-    maxAcquireDistance: 20,       // ★ เลือกเป้า + ส่ง ATTACK ได้ในระยะนี้ (server เดินเข้าไปตีเอง)
+    maxAcquireDistance: 30,       // ★ เลือกเป้า + ส่ง ATTACK ได้ในระยะนี้ (บอทหลัก search [5,10,20,30])
     maxChaseDistance: 40,         // ★ เดินไล่ตามมอนได้สูงสุด N ช่อง (ไกลกว่านี้ abandon หาตัวอื่น)
     walkStepDistance: 20,         // ★ สั่งเดินทีละ N ช่อง (game click-walk cap ~20)
     maxWalkDistance: 15,          // (legacy — ใช้น้อย เพราะ server walk-and-attack เอง)
@@ -215,9 +215,9 @@
     postCombatDelayMs: 1000,      // ★ รอ N ms หลังสู้เสร็จ/เก็บของเสร็จ ก่อนทำอย่างอื่น (ดูเป็นธรรมชาติ)
     attackReIssueMs: 3000,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้ (เพิ่มจาก 2500 → pending เพิ่มช้าลง)
     attackAbandonMs: 20000,       // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (เพิ่มจาก 8s → 20s รองรับ reset ล่าช้า)
-    attackPendingMax: 8,          // ★ abandon ถ้า pending ≥ N (เพิ่มจาก 4 → 8 รองรับ reset ไม่ทำงานชั่วคราว)
+    attackPendingMax: 4,          // ★ abandon ถ้า pending ≥ N (ลดจาก 8 → 4 ใกล้บอทหลัก ตัดมอนตีไม่ได้เร็วขึ้น)
     aggroKeepAliveMs: 15000,      // ★ มอน aggro เรา → ถือว่ายังสู้อยู่ N ms (กัน abandon ตอนมอนเดินมาหา)
-    maxEngageSec: 30,             // abandon target ถ้า engage นานกว่านี้
+    maxEngageSec: 20,             // abandon target ถ้า engage นานกว่านี้ (ลดจาก 30 → 20 ใกล้บอทหลัก)
     // flee (วาร์ปหนี)
     fleeOnMobCount: 3,            // มอนรุม N ตัว (ที่ตีเรา) → วาร์ปหนี (0=off)
     fleeOnAggroCount: 5,          // มอนจับเราเป็นเป้า N ตัว → วาร์ปหนี (0=off)
@@ -546,6 +546,8 @@
       // sanity check: พิกัดต้องอยู่ในช่วงแผนที่ (-500 ถึง 1000) — กัน garbage จาก parse ผิด
       const valid = (x >= -500 && x <= 1000 && y >= -500 && y <= 1000);
       if (!valid) return;   // พิกัดผิดปกติ → ข้ามทั้ง packet
+      // ★ (D) stalePlayerIds check — กัน phantom entity จาก oldPlayerId (mirror world.js:1562)
+      if (isStaleId(id, nowMs())) return;
       if (playerId != null && id === playerId) {
         player.x = x; player.y = y;
         // ★ ซิงค์ entities[playerId] ให้ตรง player.x/y (กัน entity ค้างที่ค่าผิด)
@@ -677,8 +679,20 @@
         const flag = u[1];
         const id = u32(u, 7);            // offset 7 (ข้าม marker 0x0f @6)
         const sub = u32(u, 11);          // offset 11
-        // ★ flag=1 = SPAWN ตัวเอง → ใช้หา playerId (สำรอง ถ้า SELECT_CHAR ไม่มา)
-        if (flag === 1 && playerId == null) { playerId = id; log('👤 player_id =', id.toString(16), '(จาก SPAWN flag=1)'); }
+        // ★ flag=1 = SPAWN ตัวเอง → ใช้หา/อัปเดต playerId (mirror world.js:1280)
+        //   ถ้า playerId เปลี่ยน (respawn/warp) → track oldId เป็น stale + clear entities
+        if (flag === 1) {
+          if (playerId == null) {
+            playerId = id; log('👤 player_id =', id.toString(16), '(จาก SPAWN flag=1)');
+          } else if (playerId !== id) {
+            // ID เปลี่ยน (respawn/warp) → track oldId + clear entities (mirror world.js:1250-1278)
+            log('🔄 player_id เปลี่ยน:', playerId.toString(16), '→', id.toString(16));
+            stalePlayerIds.set(playerId, nowMs() + 300000);  // stale 5 นาที
+            entities.clear();
+            monsterAggro.clear(); mobAttackers.clear();
+            playerId = id;
+          }
+        }
         // z @ 19-22 (i32 signed) — ข้าม
         const nameLenField = u32(u, 23); // nameLen @ 23 (u32 — น่าเชื่อถือไม่ได้สำหรับ UTF-8 ไทย)
         // หา nameEnd: เริ่มจาก 27+nameLenField ถ้าดูเหมือน ASCII, ไม่งั้น scan จาก offset 27
@@ -742,6 +756,8 @@
             _lastEngagedByOtherAt: existing._lastEngagedByOtherAt || 0,
             _lastDamageAt: existing._lastDamageAt || 0,
           });
+          // ★ (C) SPAWN อัปเดต player.x/y ด้วย (mirror world.js:1289-1292) — กัน stale หลังวาร์ป
+          if (id === playerId && x != null) { player.x = x; player.y = y; }
         }
       } catch (e) { /* SPAWN parse error ข้าม */ }
     }
@@ -749,17 +765,18 @@
     // 0x3c ENTITY_LIST: batch ตำแหน่ง [3c][count:2][eid:4][x:2][y:2][flag:1]...
     else if (op === 0x3c && u.length >= 3) {
       const count = u16(u, 1);
+      const now = nowMs();
       let p = 3;
       for (let i = 0; i < count && p + 9 <= u.length; i++) {
         const id = u32(u, p);
         const x = i16(u, p + 4), y = i16(u, p + 6);
         // sanity check พิกัด (กัน garbage)
         if (x >= -500 && x <= 1000 && y >= -500 && y <= 1000) {
-          if (id !== playerId) {
+          if (id !== playerId && !isStaleId(id, now)) {
             const e = entities.get(id);
             if (e) { e.x = x; e.y = y; }
             else { entities.set(id, { id, kind: 1, x, y, alive: true }); }
-          } else { player.x = x; player.y = y; }   // ★ player ด้วย
+          } else if (id === playerId) { player.x = x; player.y = y; }   // ★ player ด้วย
         }
         p += 9;
       }
@@ -769,11 +786,11 @@
       const id = u32(u, 1);
       const x = i16(u, 5), y = i16(u, 7);
       if (x >= -500 && x <= 1000 && y >= -500 && y <= 1000) {   // sanity
-        if (id !== playerId) {
+        if (id !== playerId && !isStaleId(id, nowMs())) {
           const e = entities.get(id);
           if (e) { e.x = x; e.y = y; }
           else { entities.set(id, { id, kind: 1, x, y, alive: true }); }
-        } else { player.x = x; player.y = y; }
+        } else if (id === playerId) { player.x = x; player.y = y; }
       }
     }
     // 0x0b ATTACK_RESULT IN: [0b][attacker:4][target:4]...[damage:4 @17 ถ้ามี]
@@ -798,6 +815,7 @@
         }
       }
       // เราตีมอน → ลด HP มอน + reset pending + mark combat
+      //   ★ reset pending เฉพาะ damage > 0 (miss ไม่ reset — กันค้างตีมอนที่ตีไม่ได้)
       //   ★ reset pending ถ้า victimId = target ปัจจุบัน (แม้ attacker ไม่ตรง playerId — กัน playerId ผิด)
       //   ★ ถ้าไม่มี entity ใน map → สร้างเลย (กัน _lastDamageAt ไม่ถูก stamp)
       const isOurAttack = (attacker === playerId && victimId !== playerId && victimId !== 0);
@@ -807,7 +825,8 @@
         if (!m) { m = { id: victimId, kind: 1, alive: true }; entities.set(victimId, m); }   // สร้างถ้าไม่มี
         m._lastDamageAt = now;
         if (damage > 0 && m.hp != null && m.hpMax != null) m.hp = Math.max(0, m.hp - damage);
-        if (target && target.id === victimId) { target.lastAttackResultAt = now; target.pendingAttacks = 0; target.firstAttackAt = 0; stuckAbandonCount = 0; stuckAbandonHistory = []; }
+        // ★ reset pending เฉพาะ damage > 0 (mirror bot.js:343) — miss (damage=0) ไม่ reset
+        if (damage > 0 && target && target.id === victimId) { target.lastAttackResultAt = now; target.pendingAttacks = 0; target.firstAttackAt = 0; stuckAbandonCount = 0; stuckAbandonHistory = []; }
         markCombat();
       }
       // มอนตีเรา → mark mobAttacker
@@ -956,6 +975,13 @@
   //  kind: 0=player, 1=monster, 2=NPC (จาก SPAWN)
   const entities = new Map();    // id -> {id,kind,sub,name,x,y,hp,hpMax,alive,_lastEngagedByOtherAt,_lastDamageAt}
   const monsterAggro = new Map(); // monsterId -> timestamp (มอนจับเราเป็นเป้า)
+  const stalePlayerIds = new Map(); // oldPlayerId -> expireAt (กัน phantom entity จาก ID เก่า, 5 นาที)
+  function isStaleId(id, now) {
+    const exp = stalePlayerIds.get(id);
+    if (!exp) return false;
+    if (now >= exp) { stalePlayerIds.delete(id); return false; }
+    return true;
+  }
   const mobAttackers = new Map(); // monsterId -> timestamp (มอนตีเรา)
   let noMonsterSince = 0;        // timestamp ที่เริ่มไม่เจอมอน
   let lastWanderAt = 0;
@@ -1004,7 +1030,8 @@
     // avoid players: ข้ามมอนที่อยู่ใกล้ผู้เล่นคนอื่น
     if (CFG.avoidOtherPlayers) {
       for (const e of entities.values()) {
-        if (e.kind === 0 && e.alive && e.id !== playerId && e.x != null) {
+        // ★ ต้องมี name ด้วย (mirror world.js:1777) — กัน ghost entity kind=0 ที่ไม่มีชื่อ
+        if (e.kind === 0 && e.alive && e.id !== playerId && e.x != null && e.name && !isStaleId(e.id, now)) {
           if (Math.hypot(e.x - m.x, e.y - m.y) <= CFG.playerProximityRadius) return false;
         }
       }
