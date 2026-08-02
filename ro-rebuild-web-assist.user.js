@@ -387,26 +387,26 @@
     if (isDead) return;                                   // ★ ตายอยู่ → ห้าม heal
     if (isResting) return;                                // ★ กำลังนั่งพัก → ข้าม heal (ใช้ regen แทน ประหยัดยา)
 
-    // ★ เช็คผลของ item ที่ใช้ครั้งก่อน (รอ server ส่ง HP กลับมาก่อน)
+    // ★ เช็คผลของ item ที่ใช้ครั้งก่อน (background — ไม่บล็อกการใช้ตัวถัดไป)
+    //   ถ้า HP ไม่ขยับ = หมด → mark exhausted (pickNext จะข้ามเอง)
+    //   แต่ไม่ return — ให้ด้านล่างใช้ยาตัวถัดไปได้เลยถ้า HP ยังต่ำ + ผ่าน delay
     if (heal.pendingItemId != null && heal.pendingHpBefore != null &&
         now - heal.pendingCheckAt >= CFG.healItemEffectCheckMs) {
       if (hp.cur <= heal.pendingHpBefore + 1) {
-        // HP แทบไม่ขยับ → item นี้หมด → mark ชั่วคราว + ข้าม delay ไปใช้ตัวถัดไปทันที
         log('💊', nameOf(heal.pendingItemId), 'หมด (ใช้แล้ว HP ไม่ขยับ) → ใช้ตัวถัดไป');
         heal.markExhausted(heal.pendingItemId, now);
-        heal.lastUseAt = 0;                              // ★ ข้าม delay ให้ใช้ตัวถัดไปทันที
+        heal.lastUseAt = 0;                              // ข้าม delay ให้ใช้ตัวถัดไปทันที
       }
-      // (ไม่ว่าจะหมดหรือมีอยู่ → ล้าง pending เพื่อเริ่มใช้ตัวถัดไป)
       heal.pendingItemId = null;
       heal.pendingHpBefore = null;
       heal.pendingCheckAt = 0;
     }
 
-    // เงื่อนไขการใช้ยา
+    // เงื่อนไขการใช้ยา — ใช้ได้เลยถ้า HP ยังต่ำ + ผ่าน delay (ไม่ต้องรอ pending เคลียร์)
     const belowThreshold = pct < CFG.healAtPercent;
     const notFull = CFG.healAtMax ? (hp.cur < hp.max) : belowThreshold;
     if (!notFull) return;
-    if (now - heal.lastUseAt < CFG.healDelayMs) return;   // throttle ดีเลย์
+    if (now - heal.lastUseAt < CFG.healDelayMs) return;   // throttle ดีเลย์เท่านั้น
 
     const id = heal.pickNext(now);
     if (id == null) {
