@@ -292,26 +292,23 @@
   }
 
   // ---------- HP tracking ----------
-  //  ★ protocol: ทุก STAT(0x25) packet ของ player อาจเป็น HP/SP/stat อื่น (statType เปลี่ยนทุก session)
-  //    กลยุทธ์: เก็บ max ที่พบสูงสุดเป็น hpMax ที่แท้จริง และรับ STAT ที่ max ใกล้ hpMax เท่านั้น
-  //    + รับ STAT แรกที่ max>0 ทันที (เพื่อให้รู้ HP ตั้งแต่เริ่ม) + sanity check (0≤cur≤max)
+  //  ★★★ ทุก STAT(0x25) packet ของ player = HP update (หลักฐานจากบอทหลัก world.js:1605-1643)
+  //    statType เป็นแค่ label วนๆ (83 ค่าต่อ session) ทุก packet มี (cur,max) อยู่ในช่วง HP เดียวกัน
+  //    → รับทุกตัวเลย แค่ sanity check (0 ≤ cur ≤ max)
+  //    (ก่อนหน้านี้ใช้เทคนิค "เก็บ max สูงสุด" → ผิด! ถ้า server ส่ง sub-stat ที่ max=6774 → ทับ hp.max
+  //     → แสดง 549/6774 ทั้งที่ HP จริง 408)
   const hp = { cur: null, max: null };
   function applyStat(id, cur, m) {
     if (id !== playerId) return;
-    if (!(m > 0) || cur < 0 || cur > m) return;          // sanity
-    // เก็บ max ที่สูงสุด = hpMax ที่แท้จริง (กัน SP/stat อื่นที่ max ต่ำกว่าทับ)
-    if (hp.max == null || m > hp.max) hp.max = m;
-    // รับเฉพาะ STAT ที่ max ตรงกับ (หรือใกล้) hpMax จริง → ปลอดภัยกว่ารับทุกตัว
-    if (m === hp.max) {
-      // ★ respawn detection: HP จาก 0/ตาย → กลับมา > 0 = เกิดใหม่แล้ว
-      if (isDead && cur > 0) {
-        isDead = false;
-        heal.clearExhausted();                            // ล้าง mark "หมด" ทั้งหมด เริ่มนับใหม่
-        heal.allExhaustedLogged = false;
-        log('💖 respawn แล้ว — เปิด heal อีกครั้ง');
-      }
-      hp.cur = cur;
+    if (!(m > 0) || cur < 0 || cur > m) return;          // sanity check
+    // ★ respawn detection: HP จาก 0/ตาย → กลับมา > 0 = เกิดใหม่แล้ว
+    if (isDead && cur > 0) {
+      isDead = false;
+      heal.clearExhausted();                            // ล้าง mark "หมด" ทั้งหมด เริ่มนับใหม่
+      heal.allExhaustedLogged = false;
     }
+    hp.cur = cur;
+    hp.max = m;
   }
   const hpPct = () => (hp.cur != null && hp.max > 0) ? (hp.cur / hp.max) * 100 : null;
 
