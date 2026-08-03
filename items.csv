@@ -1,1514 +1,950 @@
 id,name
 501,Red Potion
 502,Orange Potion
-503,White Potion
+503,Yellow Potion
+504,White Potion
+505,Blue Potion
 507,Red Herb
+508,Yellow Herb
+509,White Herb
+510,Blue Herb
 511,Green Herb
+512,Apple
+513,Banana
+514,Grape
+515,Carrot
+516,Potato
 517,Meat
+518,Honey
+519,Milk
+520,Hinalle Leaflet
+521,Aloe Leaflet
+522,Mastela Fruit
+523,Holy Water
+525,Panacea
+526,Royal Jelly
 528,Monster's Feed
-623,Eathworm the Dude
+529,Candy
+530,Candy Cane
+531,Apple Juice
+532,Banana Juice
+533,Grape Juice
+534,Carrot Juice
+535,Pumpkin
+537,Pet Food
+538,Well-baked Cookie
+539,Piece of Cake
+549,Yam
+568,Lemon
+578,Strawberry
+582,Orange
+601,Fly Wing
+602,Butterfly Wing
+603,Old Blue Box
+604,Dead Branch
+605,Anodyne
+606,Aloevera
+607,Yggdrasil Berry  / Yggdrasilberry
+608,Yggdrasil Seed
+609,Amulet
+610,Yggdrasil Leaf
+611,Magnifier
+616,Old Card Album
+617,Old Purple Box
+618,Worn Out Scroll
+619,Unripe Apple
+620,Orange Juice
+621,Bitter Herb
+622,Rainbow Carrot
+623,Earthworm the Dude
+625,Rusty Iron
 630,Dew Laden Moss
 631,Deadly Noxious Herb
-645,Concentration Potion
-713,Empty Bottle
-717,Blue Gemstone
-757,Rough Elunium
-908,Spawn
-909,Jellopy
-910,Garlet
-911,Scell
-918,Sticky Webfoot
-919,Animal Skin
-920,Wolf Claw
-921,Mushroom Spore
-924,Powder of Butterfly
-926,ISnake Scale
-928,Insect Feeler
-938,Sticky Mucus
-940,Grasshopper's Leg
-943,Solid Shell
-946,Snail's Shell
-949,Soft Fluff
-950,Heart of Mermaid
-951,Fin
-955,Insect Peeling
-960,Nipper
-961,Conch
-962,Tentacle
-971,Detrimindexta
-991,Crystal Blue
-995,Mystic Frozen
-1011,Emveretarcon
-1024,Squid Ink
-1052,Single Cell
-4027,Kukre Card
-4035,Hydra Card
-4055,Marina Card
-4079,Mantis Card
-7033,Poison Spore
-4024,Plankton Card
-935,Shell
-2221,Hat
-1002,Iron Ore
-990,Red Blood
-512,Apple
-514,Grape
-4048,Poison Spore Card
-510,Blue Herb
-912,Zargon
-712,Flower
-915,Chrysalis
-913,Tooth of Bat
-957,Decayed Nail
-907,Resin
-7032,Piece of Egg Shell
-643,Pet Incubator
-1067,Solid Trunk
-902,Tree Root
-1068,Barren Trunk
-948,Bear's Footskin
-516,Potato
-1021,Dokebi Horn
-604,Dead Branch
-945,Raccoon Leaf
-518,Honey
-740,Puppet
-906,Pointed Scale
-2289,Poo Poo Hat
-4037,Snake Card
-937,Venom Canine
-578,Strawberry
-905,Stem
-993,Green Live
-704,Aloe
-621,Bitter Herb
-1117,Katana
-5033,Raccoon Hat
-508,Yellow Herb
-756,Rough Oridecon
-4034,Wormtail Card
-4033,Poporing Card  / PoPoring Card
-4074,Bigfoot Card
-2220,Hat
-1207,Main Gauche
-4022,Spore Card
-4049,Vadon Card
-521,Aloe Leaflet
-754,Raccoon Doll  / Racoon Doll
-2213,Kitty Band
-509,White Herb
-1020,Black Hair
-1066,Fine-grained Trunk
-2308,Mantle
-1019,Trunk
-743,Spore Doll
-954,Shining Scale
-972,Karvodailnirol
-4029,Wolf Card
-963,Sharp Scale
-748,Witherless Rose
-720,Aquamarine
-4095,Marse Card
-5014,Fin Helm
-2326,Saint's Robe
-525,Panacea
-970,Alcohol
-705,Clover
-656,Awakening Potion
-1259,Katar of Piercing Wind
-1715,Arbalest  / Arbalest Bow
-2234,Tiara
-2000,Staff of Destruction
-2256,Majestic Goat  / Magestic Goat
-1220,Gladius
-2525,Ancient Cape
-2235,Crown
-4082,Desert Wolf Card
-1466,Crescent Scythe
-4005,Santa Poring Card
-1602,Rod
-1136,Solar Sword
-4013,Andre Egg Card
-2315,Chain Mail
-2318,Lord's Clothes
-1158,Two-Handed Sword  / Two-handed Sword
-2245,Sweet Gent
-2236,Santa Hat
-1164,Muramasa
-2264,Munak Hat
-2266,Iron Cain
-1120,Tsurugi
-2311,Mink Coat
-2506,Manteau
-2217,Biretta
-1611,Arc Wand
-1253,Katar
-2339,Pantie
-1257,Katar of Quaking
-1260,Sharpened Legbone of Ghoul
-2322,Silk Robe
-2333,Silver Robe
-2102,Guard
-2331,Tights
-4053,Vitata Card
-4052,Elder Willow Card
-2621,Ring
-2274,Ghost Bandana
-2255,Evil Wing
-2607,Clip
-4126,Minorous Card
-1255,Jamadhar
-2624,Glove
-2618,Matyr's Leash
-5040,Blush
-2602,Earring
-1162,Broad Sword
-2254,Angel Wing
-4081,Hode Card
-4004,Drops Card
-1217,Stiletto
-999,Steel
-2338,Wedding Dress
-2206,Wedding Veil
-2263,Zorro Masque
-2267,Cigarette
-4094,Archer Skeleton Card
-2268,Pipe
-1223,Fortune Sword
-1464,Halberd  / Hallberd
-4140,Abysmal Knight Card
-7297,Biotite
-4250,Executioner Card
-7290,Phlogopite
-2317,Full Plate
-7292,Muscovite
-1004,Chivalry Emblem
-2229,Helm
-2104,Buckler
-4059,Soldier Andre Card
-2250,Cute Ribbon
-4100,Sohee Card
-2253,Sunflower
-4044,Smokie Card
-5009,Safety Helmet
-4010,Willow Card
-2522,Undershirt
-5027,Mage Hat
-2258,Spiky Band
-4160,Firelock Soldier Card
-2108,Mirror Shield
-2334,Mage Coat
-1127,Saber
-2504,Muffler
-1473,Wizardry Staff
-1261,Infiltrator
-5017,Bone Helm
-2285,Apple of Archer
-4086,Soldier Skeleton Card
-2404,Shoes
-4107,Verit Card
-2407,Crystal Pumps
-4122,Deviruchi Card
-1258,Katar of Raging Blaze
-4040,Creamy Card
-4136,Khalitzburg Card
-2269,Romantic Flower
-985,Elunium
-2320,Formal Suit
-1520,Chain
-2654,Shinobi Sash
-2502,Hood
-5002,Jewel Crown
-2246,Golden Gear
-4133,Raydric Card
-7510,Valhalla's Flower  / Valhala's Flower
-968,Heroic Emblem
-4097,Matyr Card
-4012,Thief Bug Egg Card  / Thiefbug Egg Card
-4127,Nightmare Card
-4066,Orc Warrior Card
-4026,Female Thief Bug Card  / Female Thiefbug Card
-4057,Metaller Card
-4208,Miyabi Doll Card
-4120,Sky Petite Card
-4105,Marc Card
-4299,Clock Card
-750,Baphomet Doll
-751,Osiris Doll
-5019,Corsair
-1129,Flamberge
-4071,Orc Zombie Card
-4161,Grand Peco Card
-4221,Skeleton General Card
-4205,Mimic Card
-714,Emperium
-984,Oridecon
-4115,Hunter Fly Card
-4279,Earth Deleter Card
-4230,Shinobi Card
-4106,Mummy Card
-4129,Bapho Jr. Card
-4069,Drainliar Card
-4041,Coco Card
-2619,Bow Thimble
-5141,Marionette Doll
-4141,Evil Druid Card
-4092,Skeleton Worker Card  / Skel Worker Card
-1237,Grimtooth
-1135,Cutlus
-2297,Goblin Mask
-5089,Annoyed Mask
-2275,Red Bandana
-2244,Big Ribbon
-2313,Padded Armor
-4085,Orc Skeleton Card
-1411,Lance
-5007,Grand Circlet
-5053,Sphinx Hat
-4077,Phen Card
-2625,Brooch
-1141,Immaterial Sword
-5022,Hat of the Sun God
-1226,Damascus
-4089,Swordfish Card
-4058,Thara Frog Card
-4070,Eggyra Card
-4016,Thief Bug Card
-4280,Geographer Card
-4006,Lunatic Card
-1208,Main Gauche
-2406,Boots
-1705,Composite Bow
-4020,Familiar Card
-4255,Orc Lady Card
-2623,Necklace
-2617,Celebrant's Mitten
-11500,Light Yellow Potion
-0,RateMyServer.Net
-2337,Ninja Suit
-5042,Bao Bao
-5096,Assassin Mask
-505,Blue Potion
-5032,Sunday Hat
-4246,Assaulter Card
-2287,Pirate Bandana
-4091,Kobold Card
-2336,Thief Clothes
-4117,Sidewinder Card
-4211,Vocal Card
-1615,Evil Bone Wand
-5094,Helmet of Orc Hero
-1417,Pole Axe  / Poll Axe
-2214,Bunny Band
-4158,Sky Deleter Card
-4174,Deviling Card
-4043,Andre Card
-4051,Yoyo Card
-4203,Mutant Dragonoid Card
-1405,Spear
-1455,Glaive
-969,Gold
-616,Old Card Album
-4102,Whisper Card
-1608,Staff
-2233,Circlet
-1216,Stiletto
-2310,Coat
-4239,Iron Fist Card
-4112,Marduk Card
-4098,Dokebi Card
-5045,Magician Hat
-4237,Owl Duke Card
-1232,Assassin Dagger
-5016,Boy's Cap
-4238,Owl Baron Card
-7020,Mother's Nightmare
-1133,Fireblend
-2304,Jacket
-4248,Ancient Mummy Card
-4025,Skeleton Card
-1505,Mace
-4038,Zombie Card
-4031,Peco Peco Card  / Pecopeco Card
-4001,Poring Card
-1154,Bastard Sword
-4023,Baby Desert Wolf Card  / Baby Desertwolf Card
-601,Fly Wing
-602,Butterfly Wing
-5069,Kitsune Mask
-2207,Fancy Flower
-582,Orange
-4042,Steel Chonchon Card
-2656,Armor Charm
-4003,Pupa Card
-2296,Binoculars
-1107,Blade
-4060,Goblin Card
-4201,Majoruros Card
-4234,Anolian Card
-5010,Indian Fillet
-2241,Grampa Beard
-5088,Surprised Mask
-7294,Turquoise
-7022,Old Hilt
-1625,Healing Staff
-4264,Wind Ghost Card
-1614,Wand of Occult
-1472,Soul Staff
-4138,Anubis Card
-4253,Alice Card
-4185,Rideword Card
-1306,War Axe
-1364,Great Axe
-2604,Glove
-4369,Venatu Card
-1061,Witched Starsand  / Witch Starsand
-4021,Rocker Card
-0,RateMyServer.Net
-2508,Ragamuffin Manteau
-1551,Bible
-4119,Bathory Card
-1734,Orc Archer Bow
-2270,Romantic Leaf
-617,Old Purple Box
-2203,Glasses
-5118,Puppy Headband
-1007,Necklace of Wisdom
-2106,Shield
-4061,Cornutus Card
-956,Gill
-1051,Detonator
-1050,Tendon
-1023,Fish Tail
-4178,Dragon Tail Card
-1234,Moonlight Dagger
-2615,Safety Ring
-4014,Roda Frog Card
-4157,Goblin Archer Card
-4080,Flora Card
-1966,Icicle Whip
-608,Yggdrasil Seed
-4257,Wild Rose Card
-4108,Myst Card
-4196,Marin Card
-1139,Tirfing
-1169,Executioner
-2611,Silver Ring
-4019,Hornet Card
-5087,Poker Face
-2225,Goggles
-1165,Masamune
-1004,Chivalry Emblem
-4136,Khalitzburg Card
-2407,Crystal Pumps
-1261,Infiltrator
-2619,Bow Thimble
-2618,Matyr's Leash
-2506,Manteau
-4094,Archer Skeleton Card
-4141,Evil Druid Card
-2318,Lord's Clothes
-1135,Cutlus
-1237,Grimtooth
-5089,Annoyed Mask
-2297,Goblin Mask
-751,Osiris Doll
-2406,Boots
-4086,Soldier Skeleton Card
-999,Steel
-2266,Iron Cain
-1158,Two-Handed Sword  / Two-handed Sword
-1162,Broad Sword
-4012,Thief Bug Egg Card  / Thiefbug Egg Card
-2522,Undershirt
-4053,Vitata Card
-2313,Padded Armor
-2621,Ring
-2336,Thief Clothes
-5014,Fin Helm
-2326,Saint's Robe
-1217,Stiletto
-2255,Evil Wing
-4004,Drops Card
-2274,Ghost Bandana
-4035,Hydra Card
-4091,Kobold Card
-4178,Dragon Tail Card
-1117,Katana
-1411,Lance
-2289,Poo Poo Hat
-5007,Grand Circlet
-2256,Majestic Goat  / Magestic Goat
-2258,Spiky Band
-4092,Skeleton Worker Card  / Skel Worker Card
-2604,Glove
-5053,Sphinx Hat
-5002,Jewel Crown
-4120,Sky Petite Card
-2285,Apple of Archer
-2104,Buckler
-2656,Armor Charm
-1133,Fireblend
-2625,Brooch
-5016,Boy's Cap
-984,Oridecon
-1258,Katar of Raging Blaze
-1259,Katar of Piercing Wind
-2234,Tiara
-2320,Formal Suit
-4003,Pupa Card
-5096,Assassin Mask
-4081,Hode Card
-1715,Arbalest  / Arbalest Bow
-993,Green Live
-969,Gold
-2615,Safety Ring
-1234,Moonlight Dagger
-2334,Mage Coat
-5027,Mage Hat
-2322,Silk Robe
-2504,Muffler
-2229,Helm
-1466,Crescent Scythe
-4160,Firelock Soldier Card
-1127,Saber
-2311,Mink Coat
-1220,Gladius
-2108,Mirror Shield
-1464,Halberd  / Hallberd
-968,Heroic Emblem
-7510,Valhalla's Flower  / Valhala's Flower
-2246,Golden Gear
-4122,Deviruchi Card
-4133,Raydric Card
-4014,Roda Frog Card
-4026,Female Thief Bug Card  / Female Thiefbug Card
-4037,Snake Card
-4029,Wolf Card
-4052,Elder Willow Card
-4044,Smokie Card
-4066,Orc Warrior Card
-4127,Nightmare Card
-4057,Metaller Card
-4105,Marc Card
-4299,Clock Card
-5019,Corsair
-4208,Miyabi Doll Card
-750,Baphomet Doll
-4161,Grand Peco Card
-4071,Orc Zombie Card
-4077,Phen Card
-1129,Flamberge
-2404,Shoes
-7297,Biotite
-1141,Immaterial Sword
-7290,Phlogopite
-5141,Marionette Doll
-7292,Muscovite
-5022,Hat of the Sun God
-2607,Clip
-2310,Coat
-714,Emperium
-4126,Minorous Card
-4221,Skeleton General Card
-4205,Mimic Card
-4115,Hunter Fly Card
-4279,Earth Deleter Card
-1473,Wizardry Staff
-4230,Shinobi Card
-4106,Mummy Card
-4100,Sohee Card
-2102,Guard
-4040,Creamy Card
-756,Rough Oridecon
-4080,Flora Card
-1966,Icicle Whip
-4157,Goblin Archer Card
-2221,Hat
-2253,Sunflower
-2339,Pantie
-2206,Wedding Veil
-4069,Drainliar Card
-2264,Munak Hat
-2217,Biretta
-1226,Damascus
-5017,Bone Helm
-2315,Chain Mail
-4255,Orc Lady Card
-2623,Necklace
-4246,Assaulter Card
-5032,Sunday Hat
-5042,Bao Bao
-502,Orange Potion
-656,Awakening Potion
-601,Fly Wing
-578,Strawberry
-604,Dead Branch
-518,Honey
-4021,Rocker Card
-608,Yggdrasil Seed
-4034,Wormtail Card
-2333,Silver Robe
-5033,Raccoon Hat
-2331,Tights
-4280,Geographer Card
-2267,Cigarette
-582,Orange
-4257,Wild Rose Card
-4196,Marin Card
-4042,Steel Chonchon Card
-2602,Earring
-4108,Myst Card
-2254,Angel Wing
-1255,Jamadhar
-4051,Yoyo Card
-1602,Rod
-4079,Mantis Card
-4043,Andre Card
-1615,Evil Bone Wand
-4211,Vocal Card
-4129,Bapho Jr. Card
-4058,Thara Frog Card
-1705,Composite Bow
-4082,Desert Wolf Card
-2287,Pirate Bandana
-5094,Helmet of Orc Hero
-2214,Bunny Band
-4020,Familiar Card
-2235,Crown
-1169,Executioner
-1417,Pole Axe  / Poll Axe
-1139,Tirfing
-757,Rough Elunium
-2624,Glove
-1253,Katar
-4174,Deviling Card
-4158,Sky Deleter Card
-2308,Mantle
-1120,Tsurugi
-1164,Muramasa
-602,Butterfly Wing
-4031,Peco Peco Card  / Pecopeco Card
-4023,Baby Desert Wolf Card  / Baby Desertwolf Card
-4070,Eggyra Card
-4001,Poring Card
-1405,Spear
-1551,Bible
-2508,Ragamuffin Manteau
-2617,Celebrant's Mitten
-2233,Circlet
-1608,Staff
-4112,Marduk Card
-616,Old Card Album
-4107,Verit Card
-4102,Whisper Card
-4119,Bathory Card
-2270,Romantic Leaf
-1734,Orc Archer Bow
-2611,Silver Ring
-617,Old Purple Box
-991,Crystal Blue
-1520,Chain
-4117,Sidewinder Card
-2338,Wedding Dress
-2000,Staff of Destruction
-503,Yellow Potion  / Yellow potion
-2525,Ancient Cape
-4237,Owl Duke Card
-7020,Mother's Nightmare
-4238,Owl Baron Card
-4248,Ancient Mummy Card
-5045,Magician Hat
-1232,Assassin Dagger
-4025,Skeleton Card
-4085,Orc Skeleton Card
-4038,Zombie Card
-4239,Iron Fist Card
-1505,Mace
-4098,Dokebi Card
-2245,Sweet Gent
-4005,Santa Poring Card
-1136,Solar Sword
-4013,Andre Egg Card
-2236,Santa Hat
-645,Concentration Potion
-4060,Goblin Card
-2203,Glasses
-4019,Hornet Card
-4201,Majoruros Card
-2502,Hood
-4234,Anolian Card
-2337,Ninja Suit
-1260,Sharpened Legbone of Ghoul
-1223,Fortune Sword
-4250,Executioner Card
-4140,Abysmal Knight Card
-2268,Pipe
-4010,Willow Card
-2317,Full Plate
-4059,Soldier Andre Card
-2250,Cute Ribbon
-4264,Wind Ghost Card
-5009,Safety Helmet
-1625,Healing Staff
-1472,Soul Staff
-1614,Wand of Occult
-1611,Arc Wand
-4253,Alice Card
-7294,Turquoise
-2296,Binoculars
-4185,Rideword Card
-4138,Anubis Card
-2225,Goggles
-5010,Indian Fillet
-5087,Poker Face
-5069,Kitsune Mask
-5118,Puppy Headband
-1165,Masamune
-4024,Plankton Card
-4022,Spore Card
-4027,Kukre Card
-4049,Vadon Card
-4033,Poporing Card  / PoPoring Card
-4048,Poison Spore Card
-4074,Bigfoot Card
-1057,Moth Dust
-2291,Masquerade
-7012,Tough Scalelike Stem
-1108,Blade
-716,Red Gemstone
-501,Red Potion
-501,Red Potion
-12117,Elemental Converter  / Elemental Converter: Wind
-531,Apple Juice
-5040,Blush
-5040,Blush
-2603,Necklace
-5078,Sea-Otter Hat
-931,Orcish Voucher
-1718,Hunter Bow
-1251,Jur
-1714,Gakkung Bow
-1257,Katar of Quaking
-2306,Adventurer's Suit
-2306,Adventurer's Suit
-4097,Matyr Card
-4097,Matyr Card
-4089,Swordfish Card
-4089,Swordfish Card
-4089,Swordfish Card
-4103,Horong Card
-1230,Ice Pick  / Ice pick
-4103,Horong Card
-1230,Ice Pick  / Ice pick
-5085,Small Ribbons
-2249,Coronet
-2231,Gemmed Sallet
-2244,Big Ribbon
-1461,Trident
-710,Illusion Flower
-2106,Shield
-2106,Shield
-7295,Citrin
-7291,Agate
-5171,Valkyrie Helm
-7295,Citrin
-5171,Valkyrie Helm
-7291,Agate
-1361,Two-Handed Axe  / Two-handed Axe
-4375,Orc Baby Card
-4375,Orc Baby Card
-4375,Orc Baby Card
-1468,Zephyrus
-1170,Katzbalger
-1125,Ring Pommel Saber
-4317,Mobster Card
-4317,Mobster Card
-4172,The Paper Card
-4207,Mysteltainn Card
-2252,Wizard Hat
-5015,Egg Shell
-1363,Bloody Axe
-4190,Wraith Card
-622,Rainbow Carrot
-4093,Obeaune Card
-5081,Crown of Mistress
-2405,Boots
-2405,Boots
-1722,Ballista
-1711,Crossbow  / Cross Bow
-1711,Crossbow  / Cross Bow
-1524,Golden Mace
-1554,Book of Mother Earth
-1555,Book of the Blazing Sun
-1555,Book of the Blazing Sun
-1554,Book of Mother Earth
-4194,Rybio Card
-1916,Green Acre Guitar
-1402,Javelin
-520,Hinalle Leaflet
-2298,Green Feeler
-711,Shoot
-914,Fluff
-619,Unripe Apple
-13011,Asura
-916,Feather of Birds
-721,Emerald
-1408,Pike
-1501,Club
-515,Carrot
-1502,Club
-1967,Gaia Whip
-4030,Mandragora Card
-722,Pearl
-1003,Coal
-4124,Medusa Card
-4007,Peco Peco Egg Card  / Pecopeco Egg Card
-4050,Male Thief Bug Card  / Male Thiefbug Card
-504,White Potion
-4296,Cramp Card
-4159,Nine Tail Card
-4008,Picky Card
-2626,Rosary
-2622,Earring
-1222,Damascus
-2265,Gangster Mask
-5037,Nut Shell
-4096,Zenorc Card
-2209,Ribbon
-1708,Great Bow
-2227,Cap
-2608,Rosary
-4087,Giearth Card
-4222,Skeleton Prisoner Card  / Skel Prisoner Card
-638,Silver Knife of Chastity
-2605,Brooch
-1124,Orcish Sword
-985,Elunium
-4061,Cornutus Card
-4061,Cornutus Card
-985,Elunium
-1455,Glaive
-1216,Stiletto
-1455,Glaive
-1216,Stiletto
-4369,Venatu Card
-2269,Romantic Flower
-2329,Wooden Mail
-505,Blue Potion
-4064,Zerom Card
-1516,Sword Mace
-607,Yggdrasil Berry  / Yggdrasilberry
-5049,Striped Hairband
-1352,Battle Axe
-2251,Monk Hat
-1214,Dagger
-2224,Goggles
-2627,Belt
-4011,Picky Egg Card
-4203,Mutant Dragonoid Card
-4090,Munak Card
-4109,Jakk Card
-4055,Marina Card
-4192,Rotar Zairo Card
-2288,Mr. Scream
-1613,Mighty Staff
-2654,Shinobi Sash
-4017,Savage Babe Card  / Savage Bebe Card
-1207,Main Gauche
-1207,Main Gauche
-997,Great Nature
-4006,Lunatic Card
-603,Old Blue Box
-4187,Raydric Archer Card
-4292,Kobold Archer Card
-1105,Falchion
-2402,Sandals
-2275,Red Bandana
-4111,Strouf Card
-4199,Merman Card
-4139,Joker Card
-1410,Lance
-2282,Halo
-7019,Loki's Whispers
-7022,Old Hilt
-1219,Gladius
-1236,Sucsamad
-5125,Angel's Kiss
-2116,Angelic Guard
-4099,Pasana Card
-4206,Myst Case Card
-4068,Scorpion Card
-4045,Horn Card
-1364,Great Axe
-1306,War Axe
-1364,Great Axe
-1306,War Axe
-1553,Book of Billows
-5046,Bongun Hat
-2505,Manteau
-1477,Spectral Spear
-12116,Elemental Converter  / Elemental Converter: Earth
-4286,Karakasa Card
-4036,Muka Card
-7293,Rose Quartz
-4015,Condor Card
-4073,Pirate Skeleton Card  / Pirate Skel Card
-5003,Joker Jester
-0,RateMyServer.Net
-4054,Angeling Card
-2527,Dragon Breath
-1163,Claymore
-1116,Katana
-5068,Evil Wing Ears
-1529,Iron Driver
-4150,Goat Card
-11500,Light Yellow Potion
-1558,Girl's Diary
-7023,Blade Lost in Darkness
-5086,Alarm Mask
-995,Mystic Frozen
-7024,Bloody Edge
-7289,Peridot
-709,Izidor
-7017,Executioner's Mitten
-702,Animal Gore
-7021,Foolishness of the Blind
-1009,Hand of God
-1008,Necklace of Oblivion
-2213,Kitty Band
-2213,Kitty Band
-0,RateMyServer.Net
-0,RateMyServer.Net
-0,RateMyServer.Net
-0,RateMyServer.Net
-0,RateMyServer.Net
-0,RateMyServer.Net
-0,RateMyServer.Net
-0,RateMyServer.Net
-0,RateMyServer.Net
-0,RateMyServer.Net
-0,RateMyServer.Net
-0,RateMyServer.Net
-0,RateMyServer.Net
-0,RateMyServer.Net
-2257,Unicorn Horn
-1754,Crystal Arrow
-2103,Buckler
+633,Sweet Potato
 637,Old Broom
-2521,Angelic Cardigan
-1716,Gakkung Bow
-2276,Angled Glasses
-1015,Tongue
-2212,Eye Patch
-1048,Horrendous Hair
-1377,Hurricane's Fury  / Hurricane Fury
-4275,Zombie Prisoner Card
-4268,Injustice Card
-2286,Elven Ears
-4226,Sting Card
-1233,Exorciser
-4254,Ogretooth Card
-1366,Light Epsilon
-4028,Tarou Card
-2355,Angelic Protection
-7113,Broken Pharaoh Emblem
-4223,Stalactic Golem Card
-4084,Marine Sphere Card
-1054,Ancient Lips
-523,Holy Water
-568,Lemon
-1460,Trident
-7013,Coral Reef
-4062,Anacondaq Card
-4197,Mastering Card
-2262,Clown Nose
-526,Royal Jelly
-59,RateMyServer.Net
-1517,Sword Mace
+638,Silver Knife of Chastity
+639,Armlet of Obedience
+640,Shining Stone
 641,Contract in Shadow
-4220,Solider Card
-0,RateMyServer.Net
-706,Four Leaf Clover
-1053,Ancient Tooth
-1751,Silver Arrow
-1701,Bow
-1750,Arrow
-1202,Knife
-901,Daenggie
-1094,Short Daenggie
-609,Amulet
-662,Authoritative Badge
-2305,Adventurer's Suit
-1049,Skirt of Virgin
-708,Ment
-618,Worn Out Scroll
-7054,Brigan
-2277,Nurse Cap
-7014,Old Portrait
-1022,Nine Tails
-2272,Stop Post
-7110,Broken Sword
-7121,Honey Pot
-25600,RateMyServer.Net
-39936,RateMyServer.Net
-3072,RateMyServer.Net
-17408,RateMyServer.Net
-31744,RateMyServer.Net
-46080,RateMyServer.Net
-9216,RateMyServer.Net
-23552,RateMyServer.Net
-49152,RateMyServer.Net
-12288,Squirrel Magic Powder
-26624,RateMyServer.Net
-40960,RateMyServer.Net
-18432,RateMyServer.Net
-32768,RateMyServer.Net
-47104,RateMyServer.Net
-10240,RateMyServer.Net
-24576,RateMyServer.Net
-38912,RateMyServer.Net
-2048,RateMyServer.Net
-16384,RateMyServer.Net
-30720,RateMyServer.Net
-45056,RateMyServer.Net
-8192,RateMyServer.Net
-22528,RateMyServer.Net
-36864,RateMyServer.Net
-14336,RateMyServer.Net
-28672,RateMyServer.Net
-2434,Black Leather Boots
-4554,RateMyServer.Net
-27648,RateMyServer.Net
-4652,RateMyServer.Net
-5008,Puppy Love
-4528,RateMyServer.Net
-4808,RateMyServer.Net
-4610,RateMyServer.Net
-4514,RateMyServer.Net
-4212,Bongun Card
-10028,Beautiful Badges
-513,Banana
-1001,Star Dust
-992,Wind of Verdure
-5214,Moonlight Flower Hat
-4812,RateMyServer.Net
-963,Sharp Scale
-938,Sticky Mucus
-962,Tentacle
-720,Aquamarine
-956,Gill
-517,Meat
-1050,Tendon
-951,Fin
-509,White Herb
-1023,Fish Tail
-717,Blue Gemstone
-1011,Emveretarcon
-1051,Detonator
-971,Detrimindexta
-950,Heart of Mermaid
-4440,Necromancer Card
-5004,Oxygen Mask
-949,Feather
-2922,RateMyServer.Net
-4314,Penomena Card
-525,Panacea
-7094,Fragment
-7317,Rusty Screw
-7357,Crest Piece
-7356,Crest Piece
-7359,Crest Piece
-7004,Mud Lump
-7049,Stone
-7049,Stone
-7053,Cyfar
-606,Aloevera
-1055,Earthworm Peeling
-4630,RateMyServer.Net
-719,Amethyst
-1256,Katar of Frozen Icicle
-2512,Novice Manteau
-2920,RateMyServer.Net
-2241,Grampa Beard
-4482,RateMyServer.Net
-511,Green Herb
-908,Spawn
-967,Turtle Shell
-508,Yellow Herb
-510,Blue Herb
-7064,Wing of Dragonfly
-7064,Wing of Dragonfly
-912,Zargon
-1096,Round Shell
-605,Anodyne
-911,Scell
-507,Red Herb
-918,Sticky Webfoot
-943,Solid Shell
-4311,Permeter Card
-1019,Trunk
-7070,Broken Shell
-522,Mastela Fruit
-4227,Spring Rabbit Card
-4227,Spring Rabbit Card
-2207,Fancy Flower
-4414,Seeker Card
+643,Pet Incubator
+645,Concentration Potion
+656,Awakening Potion
 657,Berserk Potion
-5250,Robotic Ears
-5012,Ph.D Hat
-4634,RateMyServer.Net
-2228,Helm
-7211,Fragment of Rossata Stone
-1304,Orcish Axe
-5001,Headset
-4018,Andre Larva Card
-4244,Alarm Card
-1622,Hypnotist's Staff
-4114,Argiope Card
-7433,Blank Scroll
-5058,Drooping Cat
-17,RateMyServer.Net
-4118,Earth Petite Card
-1525,Long Mace
-1604,Wand
-7114,Masque of Tutankhamen
-2294,Stellar
-1358,Buster
-2299,Orc Helm
-5038,Deviruchi Hat
-4076,Magnolia Card
-12006,Steel Arrow Quiver
-4626,RateMyServer.Net
-7067,Stone Fragment
-7066,Ice Cubic
-725,Sardonyx
-7358,Crest Piece
-5312,Ayothaya King's Hat
-13157,Drifter
-26314,RateMyServer.Net
-729,Zircon
-919,Animal Skin
-945,Raccoon Leaf
-516,Potato
-942,Yoyo Tail
-7182,Cacao
-909,Jellopy
-512,Apple
-532,Banana Juice
-7011,Claw of Monkey
-713,Empty Bottle
-906,Pointed Scale
+660,Forbidden Red Candle
+662,Authoritative Badge
+702,Animal Gore
+703,Hinalle
+704,Aloe
+705,Clover
+706,Four Leaf Clover
+707,Singing Plant
+708,Ment
+709,Izidor
+710,Illusion Flower
+711,Shoot
 712,Flower
-915,Chrysalis
-754,Raccoon Doll  / Racoon Doll
-905,Stem
-924,Powder of Butterfly
-521,Aloe Leaflet
-3040,RateMyServer.Net
-921,Mushroom Spore
-7033,Poison Spore
-1021,Dokebi Horn
-3002,RateMyServer.Net
-953,Stone Heart
-1752,Fire Arrow
-4442,Tatacho Card
-621,Bitter Herb
-970,Alcohol
-910,Garlet
-2279,Bomb Wick
-1035,Dragon Canine
-1037,Dragon Tail
-939,Bee Sting
-1031,Mantis Scythe
-1032,Maneater Blossom
-1510,Flail
-1452,Guisarme
-1013,Rainbow Shell
-920,Wolf Claw
-947,Horn
-935,Shell
-528,Monster's Feed
-1026,Acorn
-1002,Iron Ore
-940,Grasshopper's Leg
-514,Grape
-990,Red Blood
-40048,RateMyServer.Net
-40046,RateMyServer.Net
-1014,Ant Jaw
-7006,Wing of Red Bat
-955,Worm Peeling
-1040,Elder Pixie's Moustache
-5079,X Hairpin
-913,Tooth of Bat
-1111,Rapier
-1010,Phracon
-5063,Giant Band Aid
-746,Glass Bead
-7007,Claw of Rat
-752,Rocker Doll
-2420,Angel's Reincarnation
-538,Well-baked Cookie
-530,Candy Cane
-529,Candy
-11002,Chef King Orleans Vol.1
-7174,Wrapping Lace
-7175,Wrapping Paper
-7174,Wrapping Lace
-7175,Wrapping Paper
-7175,Wrapping Paper
-7175,Wrapping Paper
-7174,Wrapping Lace
-539,Piece of Cake
-610,Yggdrasil Leaf
-7269,Pinafore
-731,2carat Diamond
-1065,Trap
-611,Magnifier
-930,Rotten Bandage
-934,Memento
-1042,Bug Leg
-1025,Cobweb
-7318,Old Pick
-1041,Lantern
-7001,Mould Powder
-1061,Witched Starsand  / Witch Starsand
+713,Empty Bottle
+714,Emperium
 715,Yellow Gemstone
-7119,Bacillus
-923,Evil Horn
-7012,Tough Scalelike Stem
-1968,Skipping Rope
-7009,Glitter Shell
-7002,Ogre Tooth
-1756,Stone Arrow
-1755,Arrow of Wind
-1063,Fang
-1753,Steel Arrow
-7026,Key of Clock Tower
-1095,Needle of Alarm
-1097,Worn Out Page
-7005,Skull
-7027,Key of Underground
-1765,Oridecon Arrow
-998,Iron
-7016,Spoon Stub
-1098,Manacles
+716,Red Gemstone
+717,Blue Gemstone
+719,Amethyst
+720,Aquamarine
+721,Emerald
+722,Pearl
+724,Cursed Ruby
+725,Sardonyx
 726,Sapphire
-4329,Phendark Card
-40026,RateMyServer.Net
+727,Opal
+729,Zircon
+731,2carat Diamond
+733,Cracked Diamond
+734,Red Frame
+736,China
+737,Black Ladle
+740,Puppet
+743,Spore Doll
+746,Glass Bead
+747,Crystal Mirror
+748,Witherless Rose
+750,Baphomet Doll
+751,Osiris Doll
+752,Rocker Doll
+754,Raccoon Doll  / Racoon Doll
+756,Rough Oridecon
+757,Rough Elunium
+901,Daenggie
+902,Tree Root
+903,Reptile Tongue
+904,Scorpion Tail
+905,Stem
+906,Pointed Scale
+907,Resin
+908,Spawn
+909,Jellopy
+910,Garlet
+911,Scell
+912,Zargon
+913,Tooth of Bat
+914,Fluff
+915,Chrysalis
+916,Feather of Birds
+917,Talon
+918,Sticky Webfoot
+919,Animal Skin
+920,Wolf Claw
+921,Mushroom Spore
+922,Orc's Fang
+923,Evil Horn
+924,Powder of Butterfly
+925,Bill of Birds
+926,Snake Scale
+928,Insect Feeler
+929,Immortal Heart
+930,Rotten Bandage
+931,Orcish Voucher
+932,Skel-Bone
+934,Memento
+935,Shell
+936,Scale Shell
+937,Venom Canine
+938,Sticky Mucus
+939,Bee Sting
+940,Grasshopper's Leg
+941,Nose Ring
+942,Yoyo Tail
+943,Solid Shell
+944,Horseshoe
+945,Raccoon Leaf
+946,Snail's Shell
+947,Horn
+948,Bear's Footskin
+949,Feather
+950,Heart of Mermaid
+951,Fin
+952,Cactus Needle
+953,Stone Heart
+954,Shining Scale
+955,Worm Peeling
+956,Gill
 957,Decayed Nail
 958,Horrendous Mouth
-2609,Skull Ring
-932,Skel-Bone
-727,Opal
-1060,Golden Hair
-734,Red Frame
+959,Stinky Scale
+960,Nipper
+961,Conch
+962,Tentacle
+963,Sharp Scale
+964,Crab Shell
+965,Clam Shell
+966,Clam Flesh
+967,Turtle Shell
+968,Heroic Emblem
+969,Gold
+970,Alcohol
+971,Detrimindexta
+972,Karvodailnirol
+984,Oridecon
+985,Elunium
+990,Red Blood
+991,Crystal Blue
+992,Wind of Verdure
+993,Green Live
+995,Mystic Frozen
+996,Rough Wind
+997,Great Nature
+998,Iron
+999,Steel
 1000,Star Crumb
+1001,Star Dust
+1002,Iron Ore
+1003,Coal
+1004,Chivalry Emblem
+1005,Hammer of Blacksmith
+1006,Old Magicbook
+1007,Necklace of Wisdom
+1008,Necklace of Oblivion
+1009,Hand of God
+1010,Phracon
+1011,Emveretarcon
+1012,Frill
+1013,Rainbow Shell
+1014,Ant Jaw
+1015,Tongue
+1016,Rat Tail
+1017,Mole Whiskers
+1019,Trunk
+1020,Black Hair
+1021,Dokebi Horn
+1022,Nine Tails
+1023,Fish Tail
+1024,Squid Ink
+1025,Cobweb
+1026,Acorn
+1028,Mane
+1031,Mantis Scythe
+1032,Maneater Blossom
+1033,Maneater Root
+1034,Blue Hair
+1035,Dragon Canine
+1036,Dragon Scale
+1037,Dragon Tail
+1038,Little Evil Horn
+1039,Little Evil Wing
+1040,Elder Pixie's Moustache
+1041,Lantern
+1042,Bug Leg
+1043,Orc Claw
+1044,Zenorc's Fang
+1048,Horrendous Hair
+1049,Skirt of Virgin
+1050,Tendon
+1051,Detonator
+1052,Single Cell
+1053,Ancient Tooth
+1054,Ancient Lips
+1055,Earthworm Peeling
+1056,Grit
+1057,Moth Dust
+1058,Moth Wings
+1059,Fabric
+1060,Golden Hair
+1061,Witched Starsand  / Witch Starsand
+1062,Jack o' Pumpkin
+1063,Fang
+1064,Reins
+1065,Trap
+1066,Fine-grained Trunk
+1067,Solid Trunk
+1068,Barren Trunk
+1094,Short Daenggie
+1095,Needle of Alarm
+1096,Round Shell
+1097,Worn Out Page
+1098,Manacles
+1099,Worn-out Prison Uniform
+1101,Sword
+1104,Falchion
+1105,Falchion
+1107,Blade
+1108,Blade
+1111,Rapier
+1116,Katana
+1117,Katana
+1119,Tsurugi
+1120,Tsurugi
+1122,Ring Pommel Saber
+1124,Orcish Sword
+1125,Ring Pommel Saber
+1127,Saber
+1128,Haedonggum
+1129,Flamberge
+1131,Ice Falchion
+1133,Fireblend
+1135,Cutlus
+1136,Solar Sword
+1137,Excalibur
+1139,Tirfing
+1140,Byeollungum
+1141,Immaterial Sword
+1146,Town Sword
+1148,Star Dust Blade
+1152,Slayer
+1154,Bastard Sword
+1157,Two-Handed Sword  / Two-handed Sword
+1158,Two-Handed Sword  / Two-handed Sword
+1162,Broad Sword
+1163,Claymore
+1164,Muramasa
+1165,Masamune
+1169,Executioner
+1170,Katzbalger
+1201,Knife
+1202,Knife
+1207,Main Gauche
+1208,Main Gauche
+1211,Dirk
+1214,Dagger
+1216,Stiletto
+1217,Stiletto
+1219,Gladius
+1220,Gladius
+1222,Damascus
+1223,Fortune Sword
+1226,Damascus
+1228,Combat Knife
+1230,Ice Pick  / Ice pick
+1231,Bazerald
+1232,Assassin Dagger
+1233,Exorciser
+1234,Moonlight Dagger
+1236,Sucsamad
+1237,Grimtooth
+1239,Poison Knife
+1251,Jur
+1253,Katar
+1255,Jamadhar
+1256,Katar of Frozen Icicle
+1257,Katar of Quaking
+1258,Katar of Raging Blaze
+1259,Katar of Piercing Wind
+1260,Sharpened Legbone of Ghoul
+1261,Infiltrator
+1301,Axe
+1304,Orcish Axe
+1306,War Axe
+1352,Battle Axe
+1358,Buster
+1361,Two-Handed Axe  / Two-handed Axe
+1363,Bloody Axe
+1364,Great Axe
+1366,Light Epsilon
+1377,Hurricane's Fury  / Hurricane Fury
+1402,Javelin
+1405,Spear
+1407,Pike
+1408,Pike
+1410,Lance
+1411,Lance
+1413,Gungnir
+1417,Pole Axe  / Poll Axe
+1452,Guisarme
+1454,Glaive
+1455,Glaive
+1458,Partizan
+1460,Trident
+1461,Trident
+1464,Halberd  / Hallberd
+1466,Crescent Scythe
+1468,Zephyrus
+1472,Soul Staff
+1473,Wizardry Staff
+1477,Spectral Spear
+1501,Club
+1502,Club
+1505,Mace
+1508,Smasher
+1510,Flail
+1511,Flail
+1516,Sword Mace
+1517,Sword Mace
+1520,Chain
+1524,Golden Mace
+1525,Long Mace
+1529,Iron Driver
+1551,Bible
+1552,Tablet
+1553,Book of Billows
+1554,Book of Mother Earth
+1555,Book of the Blazing Sun
+1556,Book of Gust of Wind
+1558,Girl's Diary
+1559,Legacy of Dragon
+1602,Rod
+1604,Wand
+1605,Wand
+1608,Staff
+1611,Arc Wand
+1613,Mighty Staff
+1614,Wand of Occult
+1615,Evil Bone Wand
+1622,Hypnotist's Staff
+1625,Healing Staff
+1639,Novice Rod4290,Cat O' Nine Tails Card
+1701,Bow
+1702,Bow
+1705,Composite Bow
+1708,Great Bow
+1710,Crossbow  / Cross Bow
+1711,Crossbow  / Cross Bow
+1713,Arbalest  / Arbalest Bow
+1714,Gakkung Bow
+1715,Arbalest  / Arbalest Bow
+1716,Gakkung Bow
+1718,Hunter Bow
+1722,Ballista
+1734,Orc Archer Bow
+1750,Arrow
+1751,Silver Arrow
+1752,Fire Arrow
+1753,Steel Arrow
+1754,Crystal Arrow
+1755,Arrow of Wind
+1756,Stone Arrow
+1763,Poison Arrow
+1764,Sharp Arrow
+1765,Oridecon Arrow
+1767,Arrow of Shadow
+1769,Mute Arrow
+1770,Iron Arrow
+1915,Loner's Guitar
+1916,Green Acre Guitar
+1965,Red Flame Whip
+1966,Icicle Whip
+1967,Gaia Whip
+1968,Skipping Rope
+2000,Staff of Destruction
+2102,Guard
+2103,Buckler
+2104,Buckler
+2106,Shield
+2108,Mirror Shield
+2109,Memory Book
+2116,Angelic Guard
+2125,Strong Shield
+2203,Glasses
+2206,Wedding Veil
+2207,Fancy Flower
+2209,Ribbon
+2210,Hair Band
+2211,Bandana
+2212,Eye Patch
+2213,Kitty Band
+2214,Bunny Band
+2215,Flower Band
+2217,Biretta
+2218,Flu Mask
+2220,Hat
+2221,Hat
+2224,Goggles
+2225,Goggles
+2227,Cap
+2228,Helm
+2229,Helm
+2231,Gemmed Sallet
+2233,Circlet
+2234,Tiara
+2235,Crown
+2236,Santa Hat
+2241,Grampa Beard
+2244,Big Ribbon
+2245,Sweet Gent
+2246,Golden Gear
+2248,Western Grace
+2249,Coronet
+2250,Cute Ribbon
+2251,Monk Hat
+2252,Wizard Hat
+2253,Sunflower
+2254,Angel Wing
+2255,Evil Wing
+2256,Majestic Goat  / Magestic Goat
+2257,Unicorn Horn
+2258,Spiky Band
+2259,Mini Propeller
+2262,Clown Nose
+2263,Zorro Masque
+2264,Munak Hat
+2265,Gangster Mask
+2266,Iron Cain
+2267,Cigarette
+2268,Pipe
+2269,Romantic Flower
+2270,Romantic Leaf
+2272,Stop Post
+2273,Doctor Band
+2274,Ghost Bandana
+2275,Red Bandana
+2276,Angled Glasses
+2277,Nurse Cap
+2279,Bomb Wick
+2280,Sakkat
+2282,Halo
+2285,Apple of Archer
+2286,Elven Ears
+2287,Pirate Bandana
+2288,Mr. Scream
+2289,Poo Poo Hat
+2291,Masquerade
+2292,Welding Mask
+2294,Stellar
+2296,Binoculars
+2297,Goblin Mask
+2298,Green Feeler
+2299,Orc Helm
+2301,Cotton Shirt
+2302,Cotton Shirt
+2303,Jacket
+2304,Jacket
+2305,Adventurer's Suit
+2306,Adventurer's Suit
+2308,Mantle
+2310,Coat
+2311,Mink Coat
+2313,Padded Armor
+2315,Chain Mail
+2316,Full Plate
+2317,Full Plate
+2318,Lord's Clothes
+2320,Formal Suit
+2322,Silk Robe
+2324,Scapulare
+2326,Saint's Robe
+2329,Wooden Mail
+2331,Tights
+2333,Silver Robe
+2334,Mage Coat
+2336,Thief Clothes
+2337,Ninja Suit
+2338,Wedding Dress
+2339,Pantie
+2355,Angelic Protection
+2357,Valkyrian Armor
+2402,Sandals
+2404,Shoes
+2405,Boots
+2406,Boots
+2407,Crystal Pumps
+2408,Shackles
+2420,Angel's Reincarnation
+2434,Black Leather Boots
+2502,Hood
+2504,Muffler
+2505,Manteau
+2506,Manteau
+2507,Ancient Cape
+2508,Ragamuffin Manteau
+2512,Novice Manteau
+2521,Angelic Cardigan
+2522,Undershirt
+2525,Ancient Cape
+2527,Dragon Breath
+2602,Earring
+2603,Necklace
+2604,Glove
+2605,Brooch
+2607,Clip
+2608,Rosary
+2609,Skull Ring
+2611,Silver Ring
+2612,Flower Ring
+2615,Safety Ring
+2617,Celebrant's Mitten
+2618,Matyr's Leash
+2619,Bow Thimble
+2621,Ring
+2622,Earring
+2623,Necklace
+2624,Glove
+2625,Brooch
+2626,Rosary
+2627,Belt
+2654,Shinobi Sash
+2656,Armor Charm
+4001,Poring Card
+4002,Fabre Card
+4003,Pupa Card
+4004,Drops Card
+4005,Santa Poring Card
+4006,Lunatic Card
+4007,Peco Peco Egg Card  / Pecopeco Egg Card
+4008,Picky Card
+4009,Chonchon Card
+4010,Willow Card
+4011,Picky Egg Card
+4012,Thief Bug Egg Card  / Thiefbug Egg Card
+4013,Andre Egg Card
+4014,Roda Frog Card
+4015,Condor Card
+4016,Thief Bug Card
+4017,Savage Babe Card  / Savage Bebe Card
+4018,Andre Larva Card
+4019,Hornet Card
+4020,Familiar Card
+4021,Rocker Card
+4022,Spore Card
+4023,Baby Desert Wolf Card  / Baby Desertwolf Card
+4024,Plankton Card
+4025,Skeleton Card
+4026,Female Thief Bug Card  / Female Thiefbug Card
+4027,Kukre Card
+4028,Tarou Card
+4029,Wolf Card
+4030,Mandragora Card
+4031,Peco Peco Card  / Pecopeco Card
+4033,Poporing Card  / PoPoring Card
+4034,Wormtail Card
+4035,Hydra Card
+4036,Muka Card
+4037,Snake Card
+4038,Zombie Card
+4040,Creamy Card
+4041,Coco Card
+4042,Steel Chonchon Card
+4043,Andre Card
+4044,Smokie Card
+4045,Horn Card
+4046,Martin Card
+4048,Poison Spore Card
+4049,Vadon Card
+4050,Male Thief Bug Card  / Male Thiefbug Card
+4051,Yoyo Card
+4052,Elder Willow Card
+4053,Vitata Card
+4054,Angeling Card
+4055,Marina Card
+4056,Dustiness Card
+4057,Metaller Card
+4058,Thara Frog Card
+4059,Soldier Andre Card
+4060,Goblin Card
+4061,Cornutus Card
+4062,Anacondaq Card
+4063,Caramel Card
+4064,Zerom Card
+4065,Kaho Card
+4066,Orc Warrior Card
+4068,Scorpion Card
+4069,Drainliar Card
+4070,Eggyra Card
+4071,Orc Zombie Card
+4073,Pirate Skeleton Card  / Pirate Skel Card
+4074,Bigfoot Card
+4076,Magnolia Card
+4077,Phen Card
+4078,Savage Card
+4079,Mantis Card
+4080,Flora Card
+4081,Hode Card
+4082,Desert Wolf Card
+4084,Marine Sphere Card
+4085,Orc Skeleton Card
+4086,Soldier Skeleton Card
+4087,Giearth Card
+4089,Swordfish Card
+4090,Munak Card
+4091,Kobold Card
+4092,Skeleton Worker Card  / Skel Worker Card
+4093,Obeaune Card
+4094,Archer Skeleton Card
+4095,Marse Card
+4096,Zenorc Card
+4097,Matyr Card
+4098,Dokebi Card
+4099,Pasana Card
+4100,Sohee Card
+4101,Sandman Card
+4102,Whisper Card
+4103,Horong Card
+4105,Marc Card
+4106,Mummy Card
+4107,Verit Card
+4108,Myst Card
+4109,Jakk Card
+4111,Strouf Card
+4112,Marduk Card
 4113,Marionette Card
+4114,Argiope Card
+4115,Hunter Fly Card
+4116,Isis Card
+4117,Sidewinder Card
+4118,Earth Petite Card
+4119,Bathory Card
+4120,Sky Petite Card
+4122,Deviruchi Card
+4124,Medusa Card
+4126,Minorous Card
+4127,Nightmare Card
+4129,Bapho Jr. Card
+4133,Raydric Card
+4136,Khalitzburg Card
+4138,Anubis Card
+4139,Joker Card
+4140,Abysmal Knight Card
+4141,Evil Druid Card
+4149,Gargoyle Card
+4150,Goat Card
+4153,Crab Card
+4156,Goblin Steamrider Card
+4157,Goblin Archer Card
+4158,Sky Deleter Card
+4159,Nine Tail Card
+4160,Firelock Soldier Card
+4161,Grand Peco Card
+4172,The Paper Card
+4173,Demon Pungus Card  / Demon Fungus Card
+4174,Deviling Card
+4178,Dragon Tail Card
+4185,Rideword Card
+4187,Raydric Archer Card
+4190,Wraith Card
+4192,Rotar Zairo Card
+4194,Rybio Card
+4196,Marin Card
+4197,Mastering Card
+4199,Merman Card
+4200,Megalith Card
+4201,Majoruros Card
+4203,Mutant Dragonoid Card
+4205,Mimic Card
+4206,Myst Case Card
+4207,Mysteltainn Card
+4208,Miyabi Doll Card
+4211,Vocal Card
+4212,Bongun Card
+4220,Solider Card
+4221,Skeleton General Card
+4222,Skeleton Prisoner Card  / Skel Prisoner Card
+4223,Stalactic Golem Card
+4224,Stem Worm Card
+4226,Sting Card
+4227,Spring Rabbit Card
+4228,Sleeper Card
+4230,Shinobi Card
+4234,Anolian Card
+4237,Owl Duke Card
+4238,Owl Baron Card
+4239,Iron Fist Card
+4244,Alarm Card
+4246,Assaulter Card
+4247,Aster Card
+4248,Ancient Mummy Card
+4250,Executioner Card
+4251,Elder Card
+4252,Alligator Card
+4253,Alice Card
+4254,Ogretooth Card
+4255,Orc Lady Card
+4257,Wild Rose Card
+4264,Wind Ghost Card
+4268,Injustice Card
+4273,Shell Fish Card
+4275,Zombie Prisoner Card
+4279,Earth Deleter Card
+4280,Geographer Card
+4282,Tengu Card
+4283,Greatest General Card
+4285,Choco Card
+4286,Karakasa Card
+4287,Kapha Card
+4290,Cat O' Nine Tails Card
+4292,Kobold Archer Card
+4293,Cookie Card
+4296,Cramp Card
+4299,Clock Card
+4303,Giant Whisper Card
+4308,Tri Joint Card
+4311,Permeter Card
+4314,Penomena Card
+4315,Pest Card
+4317,Mobster Card
+4319,Freezer Card
+4322,High Orc Card
+4329,Phendark Card
+4369,Venatu Card
+4375,Orc Baby Card
+4414,Seeker Card
+4440,Necromancer Card
+4442,Tatacho Card
+5001,Headset
+5002,Jewel Crown
+5003,Joker Jester
+5004,Oxygen Mask
+5005,Gas Mask
+5007,Grand Circlet
+5008,Puppy Love
+5009,Safety Helmet
+5010,Indian Fillet
+5012,Ph.D Hat
+5014,Fin Helm
+5015,Egg Shell
+5016,Boy's Cap
+5017,Bone Helm
+5019,Corsair
+5022,Hat of the Sun God
+5027,Mage Hat
+5032,Sunday Hat
+5033,Raccoon Hat
+5035,Poring Hat
+5037,Nut Shell
+5038,Deviruchi Hat
+5040,Blush
+5042,Bao Bao
+5045,Magician Hat
+5046,Bongun Hat
+5049,Striped Hairband
+5053,Sphinx Hat
+5058,Drooping Cat
+5062,Straw Hat
+5063,Giant Band Aid
+5065,Blue Fish
+5068,Evil Wing Ears
+5069,Kitsune Mask
+5078,Sea-Otter Hat
+5079,X Hairpin
+5081,Crown of Mistress
+5085,Small Ribbons
+5086,Alarm Mask
+5087,Poker Face
+5088,Surprised Mask
+5089,Annoyed Mask
+5094,Helmet of Orc Hero
+5096,Assassin Mask
+5118,Puppy Headband
+5125,Angel's Kiss
+5141,Marionette Doll
+5171,Valkyrie Helm
+5214,Moonlight Flower Hat
+5250,Robotic Ears
+5312,Ayothaya King's Hat
+7001,Mould Powder
+7002,Ogre Tooth
+7003,Anolian Skin
+7004,Mud Lump
+7005,Skull
+7006,Wing of Red Bat
+7007,Claw of Rat
+7009,Glitter Shell
+7010,Tail of Steel Scorpion
+7011,Claw of Monkey
+7012,Tough Scalelike Stem
+7013,Coral Reef
+7014,Old Portrait
 7015,Bookclip in Memory
-747,Crystal Mirror
-7072,Old Shuriken
+7016,Spoon Stub
+7017,Executioner's Mitten
+7018,Young Twig
+7019,Loki's Whispers
+7020,Mother's Nightmare
+7021,Foolishness of the Blind
+7022,Old Hilt
+7023,Blade Lost in Darkness
+7024,Bloody Edge
+7026,Key of Clock Tower
+7027,Key of Underground
+7030,Claw of Desert Wolf
+7031,Old Frying Pan
+7032,Piece of Egg Shell
+7033,Poison Spore
+7041,Fine Grit
+7043,Fine Sand
+7047,Alice's Apron
+7048,Talon of Griffon
+7049,Stone
+7053,Cyfar
+7054,Brigan
+7063,Soft Feather
+7064,Wing of Dragonfly
+7065,Sea-Otter Fur  / Sea-otter Fur
+7066,Ice Cubic
+7067,Stone Fragment
 7068,Burnt Tree
 7069,Destroyed Armor
-954,Shining Scale
-926,Snake Scale
-937,Venom Canine
-534,Carrot Juice
-2259,Mini Propeller
-4224,Stem Worm Card
-1454,Glaive
-972,Karvodailnirol
-996,Rough Wind
+7070,Broken Shell
+7072,Old Shuriken
+7094,Fragment
+7099,Worn-out Magic Scroll
+7101,Peco Peco Feather  / PecoPeco Feather
+7106,Antelope Horn
 7107,Antelope Skin
-7043,Fine Sand
-1056,Grit
-7124,Sand Clump
-2612,Flower Ring
-929,Immortal Heart
-549,Yam
-7158,Broken Liquor Jar
-7159,Tengu Nose
-7063,Soft Feather
-7126,Large Jellopy
-7156,Broken Shuriken
-7157,Dark Mask
-13301,Huuma Giant Wheel Shuriken
+7110,Broken Sword
 7111,Slick Paper
 7112,Sharp Paper
-737,Black Ladle
-1034,Blue Hair
-944,Horseshoe
-1146,Town Sword
-7031,Old Frying Pan
-1763,Poison Arrow
-1059,Fabric
-1099,Worn-out Prison Uniform
-904,Scorpion Tail
-7041,Fine Grit
-1012,Frill
-903,Reptile Tongue
-2408,Shackles
-1552,Tablet
-1605,Wand
-1508,Smasher
-13009,Kamaitachi
-1006,Old Magicbook
-1211,Dirk
-4282,Tengu Card
-4322,High Orc Card
-1038,Little Evil Horn
-1017,Mole Whiskers
-13302,Huuma Giant Wheel Shuriken
-724,Cursed Ruby
-1301,Axe
-1039,Little Evil Wing
-660,Forbidden Red Candle
-7106,Antelope Horn
-13300,Huuma Wing Shuriken
-7099,Worn-out Magic Scroll
-936,Scale Shell
-537,Pet Food
-1036,Dragon Scale
-928,Insect Feeler
-1152,Slayer
-2303,Jacket
-1016,Rat Tail
-20023,RateMyServer.Net
-20026,RateMyServer.Net
-2304,Jacket
-20017,RateMyServer.Net
-7118,Torn Scroll
-705,Clover
-7155,Poisonous Toad Skin
-7154,Poisonous Powder
-7152,Glossy Hair
-7153,Worn-out Kimono
-948,Bear's Footskin
-922,Orc's Fang
-1044,Zenorc's Fang
-640,Shining Stone
-1064,Reins
-1764,Sharp Arrow
-7047,Alice's Apron
-1767,Arrow of Shadow
-1201,Knife
-633,Sweet Potato
-1020,Black Hair
-703,Hinalle
-4283,Greatest General Card
-20014,RateMyServer.Net
-1033,Maneater Root
-5035,Poring Hat
-7300,Gemstone
-4315,Pest Card
-1007,Necklace of Wisdom
-1965,Red Flame Whip
-1062,Jack o' Pumpkin
-535,Pumpkin
-7003,Anolian Skin
-1769,Mute Arrow
-4009,Chonchon Card
-7123,Dragon Skin
-7048,Talon of Griffon
-20031,RateMyServer.Net
-4149,Gargoyle Card
-20037,RateMyServer.Net
-620,Orange Juice
-917,Talon
-1702,Bow
-4308,Tri Joint Card
-519,Milk
-941,Nose Ring
-1101,Sword
-2301,Cotton Shirt
-2125,Strong Shield
-4101,Sandman Card
-1005,Hammer of Blacksmith
-10007,Silk Ribbon
-1713,Arbalest  / Arbalest Bow
-2302,Cotton Shirt
-946,Snail's Shell
-7030,Claw of Desert Wolf
-630,Dew Laden Moss
-625,Rusty Iron
-736,China
-7150,Piece of Bamboo
-7149,Yellow Plate
-13304,Huuma Calm Mind
-7151,Oil Paper
-1915,Loner's Guitar
-4287,Kapha Card
-13012,Murasame
-740,Puppet
-13008,Jitte
-952,Cactus Needle
-1028,Mane
-7010,Tail of Steel Scorpion
-7322,Toxic Gas
-1066,Fine-grained Trunk
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-959,Stinky Scale
-4200,Megalith Card
-1043,Orc Claw
-20013,RateMyServer.Net
-4252,Alligator Card
-704,Aloe
-4078,Savage Card
-961,Conch
-965,Clam Shell
-960,Nipper
-964,Crab Shell
-966,Clam Flesh
-7049,Stone
-7049,Stone
-7049,Stone
-4153,Crab Card
-7049,Stone
-1052,Single Cell
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-4247,Aster Card
-7049,Stone
-7049,Stone
-1239,Poison Knife
+7113,Broken Pharaoh Emblem
+7114,Masque of Tutankhamen
 7115,Harpy Feather
 7116,Harpy Talon
-4273,Shell Fish Card
-707,Singing Plant
-1559,Legacy of Dragon
-7065,Sea-Otter Fur  / Sea-otter Fur
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-7049,Stone
-2248,Western Grace
-2215,Flower Band
-533,Grape Juice
-4293,Cookie Card
-1413,Gungnir
-1458,Partizan
-7296,Pyroxene
-0,RateMyServer.Net
-1128,Haedonggum
-1710,Crossbow  / Cross Bow
-4290,Cat O' Nine Tails Card
-4063,Caramel Card
-1208,Main Gauche
-4285,Choco Card
-4095,Marse Card
-2273,Doctor Band
-2220,Hat
-2280,Sakkat
-7101,Peco Peco Feather  / PecoPeco Feather
-2292,Welding Mask
-4156,Goblin Steamrider Card
-639,Armlet of Obedience
-4303,Giant Whisper Card
-1131,Ice Falchion
-1556,Book of Gust of Wind
-4016,Thief Bug Card
-2316,Full Plate
-5005,Gas Mask
-13015,Hakujin
-2210,Hair Band
-4319,Freezer Card
-1140,Byeollungum
-2507,Ancient Cape
-2109,Memory Book
-1231,Bazerald
-2324,Scapulare
-5065,Blue Fish
-1137,Excalibur
-7018,Young Twig
-4251,Elder Card
-2263,Zorro Masque
-12008,Fire Arrow Quiver
-15,RateMyServer.Net
-1157,Two-Handed Sword  / Two-handed Sword
-4065,Kaho Card
-4002,Fabre Card
-12114,Elemental Converter  / Elemental Converter: Fire
-37276,RateMyServer.Net
-60267,RateMyServer.Net
-22341,RateMyServer.Net
-45617,RateMyServer.Net
-5062,Straw Hat
-4046,Martin Card
-1119,Tsurugi
-16000,Erde
-30786,RateMyServer.Net
-1,RateMyServer.Net
-3153,RateMyServer.Net
-38863,RateMyServer.Net
-1154,Bastard Sword
-1107,Blade
-1511,Flail
-12115,Elemental Converter  / Elemental Converter: Water
-4116,Isis Card
-1148,Star Dust Blade
-2357,Valkyrian Armor
-1122,Ring Pommel Saber
-1024,Squid Ink
-623,Earthworm the Dude
-2211,Bandana
-1104,Falchion
-20012,RateMyServer.Net
+7118,Torn Scroll
+7119,Bacillus
+7121,Honey Pot
+7123,Dragon Skin
+7124,Sand Clump
+7126,Large Jellopy
+7149,Yellow Plate
+7150,Piece of Bamboo
+7151,Oil Paper
+7152,Glossy Hair
+7153,Worn-out Kimono
+7154,Poisonous Powder
+7155,Poisonous Toad Skin
+7156,Broken Shuriken
+7157,Dark Mask
+7158,Broken Liquor Jar
+7159,Tengu Nose
+7174,Wrapping Lace
+7175,Wrapping Paper
+7182,Cacao
 7190,Solid Husk
 7202,Pincher of Beetle
-4173,Demon Pungus Card  / Demon Fungus Card
-748,Witherless Rose
-1024,Squid Ink
-961,Conch
-925,Bill of Birds
-1770,Iron Arrow
-733,Cracked Diamond
-0,RateMyServer.Net
-4095,Marse Card
-5005,Gas Mask
-1407,Pike
-1458,Partizan
-1128,Haedonggum
-1710,Crossbow  / Cross Bow
-1131,Ice Falchion
-1228,Combat Knife
-2218,Flu Mask
-1058,Moth Wings
-4056,Dustiness Card
-1639,Novice Rod4290,Cat O' Nine Tails Card
-1208,Main Gauche
-4063,Caramel Card
-4228,Sleeper Card
-4285,Choco Card
-2220,Hat
-2292,Welding Mask
-2280,Sakkat
-0,RateMyServer.Net
+7211,Fragment of Rossata Stone
+7269,Pinafore
+7289,Peridot
+7290,Phlogopite
+7291,Agate
+7292,Muscovite
+7293,Rose Quartz
+7294,Turquoise
+7295,Citrin
+7296,Pyroxene
+7297,Biotite
+7300,Gemstone
+7317,Rusty Screw
+7318,Old Pick
+7322,Toxic Gas
+7356,Crest Piece
+7357,Crest Piece
+7358,Crest Piece
+7359,Crest Piece
+7433,Blank Scroll
+7510,Valhalla's Flower  / Valhala's Flower
+10007,Silk Ribbon
+10028,Beautiful Badges
+11002,Chef King Orleans Vol.1
+11500,Light Yellow Potion
+12006,Steel Arrow Quiver
+12008,Fire Arrow Quiver
+12114,Elemental Converter  / Elemental Converter: Fire
+12115,Elemental Converter  / Elemental Converter: Water
+12116,Elemental Converter  / Elemental Converter: Earth
+12117,Elemental Converter  / Elemental Converter: Wind
+12288,Squirrel Magic Powder
+13008,Jitte
+13009,Kamaitachi
+13011,Asura
+13012,Murasame
+13015,Hakujin
+13157,Drifter
+13300,Huuma Wing Shuriken
+13301,Huuma Giant Wheel Shuriken
+13302,Huuma Giant Wheel Shuriken
+13304,Huuma Calm Mind
+16000,Erde
