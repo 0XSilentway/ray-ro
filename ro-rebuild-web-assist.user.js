@@ -127,6 +127,7 @@
     'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius',
     'wanderEnabled', 'warpFindEnabled', 'warpToMonster',
     'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs',
+    'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
     'itemNames',
   ];
   function saveConfig() {
@@ -245,6 +246,16 @@
     restHpPercent: 40,            // HP ต่ำกว่า 30% → นั่งพัก
     restUntilPercent: 90,         // ฟื้นถึง 90% → ลุก
     restMaxSec: 40,               // นั่งนานสุด 60 วิ (กันค้าง — HP ไม่ขยับ = มีปัญหา)
+
+    // ---------- AUTO-SELL (★ default OFF) ----------
+    //  trigger: ของเต็ม (0x20 'too full') OR ครบเวลา sellIntervalMin
+    //  เลือก NPC + แมป เอง + เลือก item ที่จะขายเอง (default ไม่ขายอะไร)
+    sellEnabled: false,
+    sellNpcName: 'Tool Dealer',   // ชื่อ NPC (หาจาก entities kind=2)
+    sellNpcMap: 'izlude_in',     // แมปที่ NPC อยู่ (วาร์ปไปแมปนี้)
+    sellIntervalMin: 0,           // 0=off, >0=ขายทุก N นาที
+    sellOnFull: true,             // ขายเมื่อของเต็ม (server ส่ง 'too full')
+    sellItemIds: [],              // ★ item id ที่ติ๊กว่าจะขาย (default ว่าง = ไม่ขายอะไร)
 
     // ---------- AUTO-LOOT ----------
     lootEnabled: true,
@@ -737,6 +748,84 @@
         warpQueue.delete(eid);
       }
     }
+    // ============== SELL / INVENTORY packets ==============
+    // 0x32 INVENTORY: track count แม่นยำจาก server (mirror world.js:738-789)
+    //   sub=3 (stackable): [32][03][invId:4=itemId×2][02 00][seqId:4][invId:4][countEnc:2][flag:1]
+    //   itemId = invId >>> 1, count = countEnc >>> 1 (bit-packed)
+    else if (op === 0x32 && u.length >= 6) {
+      const sub = u[1];
+      if (sub === 3 && u.length >= 19) {
+        const invId = u32(u, 2);
+        const itemId = invId >>> 1;
+        const countEnc = u16(u, 15);
+        const count = countEnc >>> 1;
+        if (itemId > 0 && itemId < 50000) {
+          inventory.set(itemId, count);   // SET ตรงจาก server (แม่นยำเสมอ)
+        }
+      } else if (sub !== 3 && sub !== 22) {
+        // equipment (sub=5 etc) — +1 each (mirror world.js:753)
+        // อ่าน itemId จาก offset 12 ถ้ามี
+        if (u.length >= 15) {
+          const itemId = u16(u, 12) >>> 1;
+          if (itemId > 0 && itemId < 50000) {
+            inventory.set(itemId, (inventory.get(itemId) || 0) + 1);
+          }
+        }
+      }
+    }
+    // 0x20 SYS_MESSAGE: detect "too full" → inventoryFull (mirror world.js:264-279)
+    else if (op === 0x20 && u.length >= 2) {
+      try {
+        const msg = new TextDecoder('utf8', { fatal: false }).decode(u.slice(1)).toLowerCase();
+        if (msg.includes('too full') || msg.includes('inventory is full') || msg.includes('cannot carry') || msg.includes('กระเป๋าเต็ม')) {
+          if (!inventoryFull) log('🎒 ของเต็ม! (inventory full)');
+          inventoryFull = true;
+        }
+        if (msg.includes('could not complete sale') || msg.includes('do not match')) {
+          // sell failed signal
+          if (sellState === 'SELL') { log('⚠️ ขายของล้มเหลว (server ปฏิเสธ)'); }
+        }
+      } catch (e) {}
+    }
+    // 0x4d NPC_DIALOG: sub=2 = choice list → เลือก Sell (mirror world.js:441-449)
+    else if (op === 0x4d && u.length >= 6) {
+      const sub = u[1];
+      if (sub === 2 && sellState === 'TALK') {
+        log('💰 ได้ NPC dialog choices → เลือก Sell');
+        sendNpcSelect(1);   // choice 1 = Sell
+        sellState = 'SELECT_SELL'; sellStateAt = nowMs();
+      }
+    }
+    // 0x53 SELL_OPEN: sell menu opened → ส่ง sellItems
+    else if (op === 0x53 && sellState === 'SELECT_SELL') {
+      // สร้างรายการขายจาก sellItemIds + inventory count
+      const items = [];
+      for (const id of CFG.sellItemIds) {
+        const count = inventory.get(id) || 0;
+        if (count > 0) items.push({ itemId: id, count });
+      }
+      if (items.length === 0) {
+        log('⚠️ ไม่มีของที่จะขาย (sellItemIds ว่าง หรือ inventory ไม่มี)');
+        sellState = 'WARP_BACK'; sellStateAt = nowMs();
+      } else {
+        log('💰 ขายของ', items.length, 'ชนิด:', items.map(i => nameOf(i.itemId) + '×' + i.count).join(', '));
+        sendSellItems(items);
+        sellState = 'SELL'; sellStateAt = nowMs();
+      }
+    }
+    // 0x5b SELL_RESULT: [5b][flag:1] flag>0 = success
+    else if (op === 0x5b && u.length >= 2 && sellState === 'SELL') {
+      if (u[1] > 0) {
+        log('✅ ขายของสำเร็จ!');
+        // ล้าง inventory tracking ของ sold items (mirror bot.js:1767)
+        for (const id of CFG.sellItemIds) inventory.delete(id);
+        inventoryFull = false;
+        lastSellAt = nowMs();
+      } else {
+        log('⚠️ ขายของล้มเหลว (SELL_RESULT flag=0)');
+      }
+      sellState = 'WARP_BACK'; sellStateAt = nowMs();
+    }
     // ============== COMBAT packets ==============
     // 0x06 SPAWN: สร้าง/อัปเดต entity (kind=0 player/1 monster/2 NPC)
     //   layout: [06][flag:1][type:4][0f][id:4][sub:4][?:4][z:i32][nameLen:4][name][kind:1][class:2][x:i32][y:i32][hp:u32][hpMax:u32]
@@ -1037,8 +1126,108 @@
   }, CFG.lootTickMs);
 
   // ============================================================
-  //  AUTO-COMBAT — entity tracker + state machine
+  //  AUTO-SELL — state machine (IDLE → WARP → MOVE → TALK → SELECT → SELL → WARP_BACK)
   // ============================================================
+  // หา NPC จาก entities (kind=2 + ชื่อตรง) — mirror world.js:1948-1959
+  function findSellNpc() {
+    const target = (CFG.sellNpcName || '').toLowerCase();
+    for (const e of entities.values()) {
+      if (e.kind === 2 && e.alive && e.x != null && e.name && e.name.toLowerCase().includes(target)) return e;
+    }
+    return null;
+  }
+  function setSellState(s) { sellState = s; sellStateAt = nowMs(); }
+  function abortSell(reason) {
+    log('⚠️ ยกเลิกขาย:', reason);
+    sellState = 'IDLE'; sellStateAt = 0;
+    // พยายามวาร์ปกลับถ้ามี returnTo
+    if (sellReturnTo && sellReturnTo.map) { sendTeleport(sellReturnTo.map, sellReturnTo.x, sellReturnTo.y); }
+    sellReturnTo = null;
+  }
+  // สร้าง trigger check + state machine ใน loop เดียว
+  const sellLoop = setInterval(() => {
+    if (!CFG.sellEnabled) return;
+    if (!activeWS || activeWS.readyState !== 1) return;
+    if (isDead) return;
+    const now = nowMs();
+
+    // === trigger (เฉพาะ IDLE) ===
+    if (sellState === 'IDLE') {
+      let shouldSell = false; let reason = '';
+      // trigger 1: ของเต็ม
+      if (CFG.sellOnFull && inventoryFull && CFG.sellItemIds.length > 0) { shouldSell = true; reason = 'ของเต็ม'; }
+      // trigger 2: ครบเวลา
+      if (CFG.sellIntervalMin > 0 && CFG.sellItemIds.length > 0 && lastSellAt > 0 && (now - lastSellAt >= CFG.sellIntervalMin * 60000)) {
+        shouldSell = true; reason = 'ครบ ' + CFG.sellIntervalMin + ' นาที';
+      }
+      if (shouldSell && currentMap && player.x != null) {
+        sellReturnTo = { map: currentMap, x: Math.round(player.x), y: Math.round(player.y) };
+        log('💰 เริ่มขายของ (' + reason + ') → วาร์ปไป', CFG.sellNpcMap);
+        sendTeleport(CFG.sellNpcMap, -999, -999);
+        setSellState('WARP_TO_NPC');
+      }
+      return;
+    }
+
+    // === watchdog: stuck >60s → abort ===
+    if (now - sellStateAt > 60000) { abortSell('timeout (' + sellState + ' 60s)'); return; }
+
+    // === state machine ===
+    if (sellState === 'WARP_TO_NPC') {
+      // รอ 3s หลังวาร์ป ให้ entities โหลด → หา NPC
+      if (now - sellStateAt > 3000) {
+        const npc = findSellNpc();
+        if (npc) { sellNpcId = npc.id; setSellState('MOVE_TO_NPC'); log('💰 พบ', npc.name, '@(', npc.x, npc.y + ')'); }
+        else { setSellState('MOVE_TO_NPC'); log('⚠️ ไม่พบ NPC', CFG.sellNpcName, '→ ลองเดินหา'); }
+      }
+      return;
+    }
+    if (sellState === 'MOVE_TO_NPC') {
+      const npc = sellNpcId ? entities.get(sellNpcId) : null;
+      if (!npc || !npc.alive || npc.x == null) {
+        // NPC หาย → ลองหาใหม่
+        const found = findSellNpc();
+        if (found) { sellNpcId = found.id; }
+        else { abortSell('ไม่พบ NPC ' + CFG.sellNpcName); return; }
+      }
+      if (player.x != null) {
+        const d = Math.hypot(npc.x - player.x, npc.y - player.y);
+        if (d <= 3) {
+          // ใกล้แล้ว → คุย NPC
+          if (now - sellStateAt > 1500) { sendNpcTalk(sellNpcId); setSellState('TALK'); log('💰 คุย NPC', npc.name); }
+        } else {
+          // เดินไปหา (throttle 1s)
+          if (now - (sellState._lastMove || 0) > 1000) { sellState._lastMove = now; sendMove(npc.x, npc.y); }
+        }
+      }
+      return;
+    }
+    if (sellState === 'TALK') {
+      // รอ 0x4d sub=2 (handler จะเปลี่ยน state) — ถ้า 5s ไม่มา → คุยใหม่
+      if (now - sellStateAt > 5000) { sendNpcTalk(sellNpcId); sellStateAt = now; log('💰 รอ dialog นาน → คุยใหม่'); }
+      return;
+    }
+    if (sellState === 'SELECT_SELL') {
+      // รอ 0x53 SELL_OPEN (handler จะเปลี่ยน state) — ถ้า 5s ไม่มา → abort
+      if (now - sellStateAt > 5000) { abortSell('ไม่ได้รับ SELL_OPEN'); }
+      return;
+    }
+    if (sellState === 'SELL') {
+      // รอ 0x5b SELL_RESULT (handler จะเปลี่ยน state) — ถ้า 15s ไม่มา → abort
+      if (now - sellStateAt > 15000) { abortSell('ไม่ได้รับ SELL_RESULT'); }
+      return;
+    }
+    if (sellState === 'WARP_BACK') {
+      // รอ 2s แล้ววาร์ปกลับ
+      if (now - sellStateAt > 2000 && sellReturnTo) {
+        sendTeleport(sellReturnTo.map, sellReturnTo.x, sellReturnTo.y);
+        log('💰 วาร์ปกลับ', sellReturnTo.map);
+        sellReturnTo = null;
+        setSellState('IDLE');
+      }
+      return;
+    }
+  }, 1000);
   // ---------- entity tracker ----------
   //  kind: 0=player, 1=monster, 2=NPC (จาก SPAWN)
   const entities = new Map();    // id -> {id,kind,sub,name,x,y,hp,hpMax,alive,_lastEngagedByOtherAt,_lastDamageAt}
@@ -1051,6 +1240,15 @@
     return true;
   }
   const mobAttackers = new Map(); // monsterId -> timestamp (มอนตีเรา)
+
+  // ---------- AUTO-SELL state + inventory ----------
+  const inventory = new Map();    // itemId -> count (authoritative from 0x32, mirror world.js:34)
+  let inventoryFull = false;      // true เมื่อ server ส่ง "too full" (0x20)
+  let sellState = 'IDLE';         // IDLE|WARP_TO_NPC|MOVE_TO_NPC|TALK|SELECT_SELL|SELL|WARP_BACK
+  let sellStateAt = 0;            // timestamp เข้า state (watchdog)
+  let sellReturnTo = null;        // {map,x,y} ที่จะวาร์ปกลับหลังขาย
+  let sellNpcId = null;           // NPC entity id (หาจาก entities)
+  let lastSellAt = 0;             // throttle interval
   let noMonsterSince = 0;        // timestamp ที่เริ่มไม่เจอมอน
   let lastWanderAt = 0;
   let lastFleeAt = 0;
@@ -1215,6 +1413,32 @@
     if (!activeWS || activeWS.readyState !== 1) return false;
     activeWS.send(new Uint8Array([0x0e, 0x00]));
     return true;
+  }
+  // SELL encoders (mirror protocol.js:367,386,394)
+  function sendNpcTalk(npcId) {
+    if (!activeWS || activeWS.readyState !== 1) return false;
+    const b = new Uint8Array(5); b[0] = 0x4c;
+    b[1] = npcId & 0xff; b[2] = (npcId >> 8) & 0xff; b[3] = (npcId >> 16) & 0xff; b[4] = (npcId >>> 24) & 0xff;
+    activeWS.send(b); return true;
+  }
+  function sendNpcSelect(idx) {
+    if (!activeWS || activeWS.readyState !== 1) return false;
+    const b = new Uint8Array(5); b[0] = 0x4f;
+    b[1] = idx & 0xff; b[2] = (idx >> 8) & 0xff; b[3] = (idx >> 16) & 0xff; b[4] = (idx >>> 24) & 0xff;
+    activeWS.send(b); return true;
+  }
+  // [57][count:4][itemId:4][count:4] × N
+  function sendSellItems(items) {
+    if (!activeWS || activeWS.readyState !== 1) return false;
+    const b = new Uint8Array(1 + 4 + items.length * 8);
+    let p = 0; b[p++] = 0x57;
+    b[p++] = items.length & 0xff; b[p++] = (items.length >> 8) & 0xff; b[p++] = (items.length >> 16) & 0xff; b[p++] = (items.length >>> 24) & 0xff;
+    for (const it of items) {
+      const id = it.itemId, c = it.count;
+      b[p++] = id & 0xff; b[p++] = (id >> 8) & 0xff; b[p++] = (id >> 16) & 0xff; b[p++] = (id >>> 24) & 0xff;
+      b[p++] = c & 0xff; b[p++] = (c >> 8) & 0xff; b[p++] = (c >> 16) & 0xff; b[p++] = (c >>> 24) & 0xff;
+    }
+    activeWS.send(b); return true;
   }
   function clearCombatThreat() { monsterAggro.clear(); mobAttackers.clear(); }
 
@@ -1655,6 +1879,19 @@
     setRestMaxSec(sec) { CFG.restMaxSec = sec; log('🪑 นั่งนานสุด', sec + 's'); },
     isResting() { return isResting; },
 
+    // ---------- Auto-Sell ----------
+    sellOn()  { CFG.sellEnabled = true;  log('💰 Auto-Sell: ON'); },
+    sellOff() { CFG.sellEnabled = false; log('💰 Auto-Sell: OFF'); },
+    setSellNpc(name, map) { CFG.sellNpcName = name; if (map) CFG.sellNpcMap = map; log('💰 NPC:', name, '@', CFG.sellNpcMap); },
+    setSellInterval(min) { CFG.sellIntervalMin = min; log('💰 ขายทุก', min, 'นาที (0=off)'); },
+    toggleSellOnFull(on) { CFG.sellOnFull = !!on; log('💰 ขายตอนเต็ม =', CFG.sellOnFull); },
+    setSellItems(...ids) { CFG.sellItemIds = ids; log('💰 ขาย item:', ids.map(nameOf).join(', ')); },
+    addSellItem(id) { if (!CFG.sellItemIds.includes(id)) CFG.sellItemIds.push(id); log('💰 เพิ่มขาย:', nameOf(id)); },
+    removeSellItem(id) { CFG.sellItemIds = CFG.sellItemIds.filter(x => x !== id); log('💰 เลิกขาย:', nameOf(id)); },
+    sellNow() { if (sellState === 'IDLE' && currentMap && player.x != null) { sellReturnTo = { map: currentMap, x: Math.round(player.x), y: Math.round(player.y) }; sendTeleport(CFG.sellNpcMap, -999, -999); setSellState('WARP_TO_NPC'); log('💰 ขายทันที!'); } else { log('⚠️ ไม่สามารถขายได้ตอนนี้ (state:', sellState + ')'); } },
+    getInventory() { return [...inventory.entries()].map(([id, c]) => ({ id, name: itemDisplayName(id), count: c, sell: CFG.sellItemIds.includes(id) })).sort((a, b) => b.count - a.count); },
+    getSellState() { return { state: sellState, full: inventoryFull, returnTo: sellReturnTo }; },
+
     // ---------- Auto-Loot ----------
     lootOn()  { CFG.lootEnabled = true;  log('📦 Auto-Loot: ON'); },
     lootOff() { CFG.lootEnabled = false; log('📦 Auto-Loot: OFF'); },
@@ -1785,7 +2022,7 @@
     getLogs() { return logBuf.slice(); },
     clearLogs() { logBuf.length = 0; log('🧹 ล้าง log'); },
     stopAll() {
-      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop);
+      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop);
       if (typeof uiLoop !== 'undefined') clearInterval(uiLoop);
       log('⏹ หยุดระบบทั้งหมดแล้ว');
     },
@@ -1887,6 +2124,7 @@
         <span class="pill off" data-heal>Heal</span>
         <span class="pill off" data-rest>Rest</span>
         <span class="pill off" data-combat>Combat</span>
+        <span class="pill off" data-sell>Sell</span>
         <span class="expand">⚙</span>
       </div>
       <div id="__assist_popup">
@@ -1916,6 +2154,8 @@
           <h4>Combat</h4>
           <div class="row"><span class="k">เป้าหมาย</span><span class="v" data-combat-target>(none)</span></div>
           <div class="row"><span class="k">มอน (ตี/aggro/รอบ)</span><span class="v" data-combat-aggro>0 / 0 / 0</span></div>
+          <div class="row"><span class="k">🎒 Inventory</span><span class="v" data-inventory>?</span></div>
+          <div class="row"><span class="k">💰 Sell</span><span class="v" data-sellstate>OFF</span></div>
           <h4>ของที่เก็บได้ (ล่าสุด)</h4>
           <div data-items style="font-size:11px;color:#9aa0a6">(ยังไม่มี)</div>
           <div class="btns"><button class="danger" id="__assist_resetstats">รีเซ็ตสถิติ</button></div>
@@ -1969,6 +2209,17 @@
           <div class="field"><label>HP% ที่จะลุกยืน (ฟื้นถึงนี้ → ลุก)</label><input type="number" id="__assist_restuntil" min="1" max="100"></div>
           <div class="field"><label>นั่งนานสุด (วินาที) — กันค้าง</label><input type="number" id="__assist_restmaxsec" min="5" max="300"></div>
           <div class="btns"><button id="__assist_applyrest">ใช้ค่า rest</button></div>
+
+          <h4>💰 Auto-Sell (ขายของอัตโนมัติ)</h4>
+          <div class="btns">
+            <button id="__assist_sellbtn" class="off">Sell: ?</button>
+            <button id="__assist_sellnow" class="danger">ขายเดี๋ยวนี้</button>
+          </div>
+          <div class="field"><label>ชื่อ NPC ขายของ</label><input type="text" id="__assist_sellnpc" placeholder="เช่น Tool Dealer"></div>
+          <div class="field"><label>แมปที่ NPC อยู่</label><input type="text" id="__assist_sellmap" placeholder="เช่น izlude_in"></div>
+          <div class="field"><label>ขายทุก N นาที (0=off)</label><input type="number" id="__assist_sellinterval" min="0" max="999"></div>
+          <div class="btns"><button id="__assist_applysell">ใช้ค่า sell</button><button id="__assist_t_sellfull" class="on">ขายตอนเต็ม</button></div>
+          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เลือก item ที่จะขาย: ติ๊ก checkbox "ขาย" ในส่วน 'ของที่เก็บได้' ด้านบน (default ไม่ขายอะไร)</div>
         </div>
         <div class="__assist_page" data-page="log">
           <div class="logbox" id="__assist_logbox"></div>
@@ -2058,6 +2309,7 @@
           if (!CFG.combatEnabled && !confirm('เปิด Auto-Combat?\n\nส่ง packet โจมตีจริง — ตั้ง whitelist ก่อน (เช่น ASSIST.setTargetWhitelist("Poring"))\nใช้ในความรับผิดชอบของคุณ')) return;
           CFG.combatEnabled ? ASSIST.combatOff() : ASSIST.combatOn();
         }
+        if (pill.hasAttribute('data-sell')) CFG.sellEnabled ? ASSIST.sellOff() : ASSIST.sellOn();
         return;
       }
       popup.classList.toggle('open');
@@ -2135,6 +2387,17 @@
       if (!isNaN(until)) ASSIST.setRestUntil(until);
       if (!isNaN(sec)) ASSIST.setRestMaxSec(sec);
     });
+    // ---- sell wires ----
+    root.querySelector('#__assist_sellbtn').addEventListener('click', () => CFG.sellEnabled ? ASSIST.sellOff() : ASSIST.sellOn());
+    root.querySelector('#__assist_sellnow').addEventListener('click', () => ASSIST.sellNow());
+    root.querySelector('#__assist_applysell').addEventListener('click', () => {
+      const npcName = root.querySelector('#__assist_sellnpc').value.trim();
+      const npcMap = root.querySelector('#__assist_sellmap').value.trim();
+      const interval = parseInt(root.querySelector('#__assist_sellinterval').value, 10);
+      if (npcName) ASSIST.setSellNpc(npcName, npcMap);
+      if (!isNaN(interval)) ASSIST.setSellInterval(interval);
+    });
+    root.querySelector('#__assist_t_sellfull').addEventListener('click', () => { CFG.sellOnFull = !CFG.sellOnFull; ASSIST.toggleSellOnFull(CFG.sellOnFull); });
     const tBtn = (sel, fn, cfgKey) => root.querySelector(sel).addEventListener('click', () => { CFG[cfgKey] = !CFG[cfgKey]; fn(CFG[cfgKey]); });
     tBtn('#__assist_t_antiks', (v) => ASSIST.toggleAntiKS(v), 'antiKS');
     tBtn('#__assist_t_avoidp', (v) => ASSIST.toggleAvoidPlayers(v), 'avoidOtherPlayers');
@@ -2188,6 +2451,7 @@
       else if (p.hasAttribute('data-heal')) { on = CFG.healEnabled; label = 'Heal'; }
       else if (p.hasAttribute('data-rest')) { on = CFG.restEnabled; label = isResting ? '🪑' : 'Rest'; }
       else if (p.hasAttribute('data-combat')) { on = CFG.combatEnabled; label = 'Combat'; }
+      else if (p.hasAttribute('data-sell')) { on = CFG.sellEnabled; label = 'Sell'; }
       else return;
       p.className = 'pill ' + (on ? 'on' : 'off');
       p.textContent = label + ': ' + (on ? 'ON' : 'OFF');
@@ -2214,16 +2478,29 @@
       const top = s.itemsByCount.slice(0, 8);
       itemsEl.innerHTML = top.length ? top.map(i => {
         const price = itemPrice(i.id);
+        const invCount = inventory.get(i.id) || 0;
+        const invStr = invCount ? ` <span style="color:#8ab4f8">(${invCount})</span>` : '';
         const zeny = price ? ` <span style="color:#f1c40f">${(price * i.count).toLocaleString()}z</span>` : '';
         const icon = itemDB.loaded ? `<img src="${itemIconUrl(i.id)}" style="width:16px;height:16px;vertical-align:middle" onerror="this.style.display='none'"> ` : '';
-        return `<div>${icon}${i.name} ×${i.count}${zeny}</div>`;
+        const checked = CFG.sellItemIds.includes(i.id) ? 'checked' : '';
+        return `<div>${icon}${i.name} ×${i.count}${invStr}${zeny} <label style="float:right;font-size:10px;color:#e67e22"><input type="checkbox" data-sellid="${i.id}" ${checked} style="vertical-align:middle">ขาย</label></div>`;
       }).join('') : '(ยังไม่มี)';
+      // wire checkboxes
+      itemsEl.querySelectorAll('input[data-sellid]').forEach(cb => {
+        cb.onchange = () => {
+          const id = parseInt(cb.getAttribute('data-sellid'), 10);
+          if (cb.checked) ASSIST.addSellItem(id); else ASSIST.removeSellItem(id);
+        };
+      });
     }
     // combat stats
     const tgt = ASSIST.getTarget();
     const agg = ASSIST.getAggro();
     set('[data-combat-target]', tgt ? (tgt.id + ' pending:' + tgt.pending) : '(none)');
     set('[data-combat-aggro]', agg.mobAttackers + ' ตี / ' + agg.aggro + ' aggro / ' + agg.threat + ' threat / ' + agg.monstersNearby + ' รอบ');
+    // inventory + sell state
+    set('[data-inventory]', inventory.size + ' ชนิด' + (inventoryFull ? ' ⚠️เต็ม' : ''));
+    set('[data-sellstate]', CFG.sellEnabled ? (sellState === 'IDLE' ? 'ON (รอ trigger)' : sellState) : 'OFF');
 
     // config page — ซิงค์ค่าปัจจุบันเข้า input (กันเขียนทับเวลา user กำลังพิมพ์)
     const lootBtn = root.querySelector('#__assist_lootbtn');
@@ -2271,6 +2548,13 @@
     syncToggle('#__assist_t_wander', CFG.wanderEnabled);
     syncToggle('#__assist_t_warpfind', CFG.warpFindEnabled);
     syncToggle('#__assist_t_warptomon', CFG.warpToMonster);
+    // sell config sync
+    const sellBtn = root.querySelector('#__assist_sellbtn');
+    if (sellBtn) { sellBtn.textContent = 'Sell: ' + (CFG.sellEnabled ? 'ON' : 'OFF') + (sellState !== 'IDLE' ? ' (' + sellState + ')' : ''); sellBtn.className = CFG.sellEnabled ? 'on' : 'off'; }
+    syncInput('#__assist_sellnpc', CFG.sellNpcName);
+    syncInput('#__assist_sellmap', CFG.sellNpcMap);
+    syncInput('#__assist_sellinterval', CFG.sellIntervalMin);
+    syncToggle('#__assist_t_sellfull', CFG.sellOnFull);
 
     // log page (อัปเดตเฉพาะถ้าเปิดอยู่ เพื่อประหยัด)
     const logPage = root.querySelector('.__assist_page[data-page="log"]');
