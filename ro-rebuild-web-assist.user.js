@@ -114,7 +114,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.0.2';
+  const VERSION = '4.1.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -128,6 +128,7 @@
     'wanderEnabled', 'warpFindEnabled', 'warpToMonster',
     'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs',
     'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellNpcX', 'sellNpcY', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
+    'farmMap', 'farmMapX', 'farmMapY', 'warpBackToFarm',
     'itemNames',
   ];
   function saveConfig() {
@@ -258,6 +259,15 @@
     sellIntervalMin: 0,           // 0=off, >0=ขายทุก N นาที
     sellOnFull: true,             // ขายเมื่อของเต็ม (server ส่ง 'too full')
     sellItemIds: [],              // ★ item id ที่ติ๊กว่าจะขาย (default ว่าง = ไม่ขายอะไร)
+
+    // ---------- FARM MAP (แมปฟาร์ม) ----------
+    //  ใช้สำหรับ: (1) เผลอเดินเข้าวาร์ป → เปลี่ยนแมป → วาร์ปกลับอัตโนมัติ
+    //             (2) กดปุ่ม "วาร์ปไปแมปฟาร์ม" เพื่อกลับทันที (manual)
+    //  ★ farmMap ว่าง = ปิดฟีเจอร์ทั้งคู่ (mirror บอทหลัก autoTeleport.mapName)
+    farmMap: '',                  // ชื่อแมปฟาร์ม (เช่น 'cmd_fild01') — ว่าง = ไม่ใช้
+    farmMapX: -999,               // พิกัด X ที่จะวาร์ปไป (-999 = random spawn ในแมปนั้น)
+    farmMapY: -999,               // พิกัด Y
+    warpBackToFarm: true,         // ถ้า currentMap เปลี่ยนจาก farmMap → วาร์ปกลับอัตโนมัติ
 
     // ---------- AUTO-LOOT ----------
     lootEnabled: true,
@@ -702,11 +712,23 @@
     }
     // 0x12 MAP_NAME: ชื่อแมปปัจจุบัน → เก็บไว้ใช้สำหรับ warp
     //   format: [12][len:2 LE][mapname UTF-8]
+    //   ★ ตรวจ "ออกจากแมปฟาร์ม" → วาร์ปกลับอัตโนมัติ (mirror bot.js:1226-1235)
     else if (op === 0x12 && u.length >= 3) {
       const len = u16(u, 1);
       if (u.length >= 3 + len) {
         const name = new TextDecoder().decode(u.slice(3, 3 + len));
-        if (name && name !== currentMap) { currentMap = name; log('🗺️ แมป:', name); }
+        if (name && name !== currentMap) {
+          const prevMap = currentMap;
+          currentMap = name;
+          log('🗺️ แมป:', name);
+          // ★ warp-back-to-farm: เผลอเดินเข้าวาร์ปจนเปลี่ยนแมป → วาร์ปกลับแมปฟาร์ม
+          //   เงื่อนไข: warpBackToFarm=on AND farmMap ไม่ว่าง AND มาจาก farmMap AND ตอนนี้ไม่ใช่ farmMap
+          //   (กันวาร์ปซ้ำ: ต้องมาจาก farmMap เท่านั้น — เข้าแมปอื่น→farmMap ปกติจะไม่ trigger)
+          if (CFG.warpBackToFarm && CFG.farmMap && prevMap === CFG.farmMap && name !== CFG.farmMap) {
+            log('🌀 ออกจากแมปฟาร์ม (' + prevMap + '→' + name + ') → วาร์ปกลับ', CFG.farmMap);
+            sendTeleport(CFG.farmMap, CFG.farmMapX, CFG.farmMapY);
+          }
+        }
       }
     }
     // 0x03 SELECT_CHAR: server ตอบหลังเลือกตัวละคร — ★ ฝัง mapName (MAP_NAME ไม่ส่งตอน login ครั้งแรก)
@@ -1544,6 +1566,9 @@
     if (!CFG.combatEnabled) return;
     if (isDead) { return; }
     if (!activeWS || activeWS.readyState !== 1) return;
+    // ★ farm map guard: ถ้าตั้ง farmMap ไว้ และตอนนี้ไม่ได้อยู่แมปฟาร์ม → ไม่ฟาร์ม
+    //   (วาร์ปกลับจัดการโดย 0x12 handler แล้ว ที่นี่แค่หยุด combat ไม่ให้ตีมอนในแมปผิด)
+    if (CFG.farmMap && currentMap && currentMap !== CFG.farmMap) return;
     const now = nowMs();
     const pct = hpPct();
     const mobCount = getMobAttackerCount();
@@ -1899,6 +1924,32 @@
     removeSellItem(id) { CFG.sellItemIds = CFG.sellItemIds.filter(x => x !== id); log('💰 เลิกขาย:', nameOf(id)); },
     sellNow() { if (sellState === 'IDLE' && currentMap && player.x != null) { sellReturnTo = { map: currentMap, x: Math.round(player.x), y: Math.round(player.y) }; sendTeleport(CFG.sellNpcMap, CFG.sellNpcX, CFG.sellNpcY); setSellState('WARP_TO_NPC'); log('💰 ขายทันที! → วาร์ป', CFG.sellNpcMap, '@(', CFG.sellNpcX, CFG.sellNpcY + ')'); } else { log('⚠️ ไม่สามารถขายได้ตอนนี้ (state:', sellState + ')'); } },
     getInventory() { return [...inventory.entries()].map(([id, c]) => ({ id, name: itemDisplayName(id), count: c, sell: CFG.sellItemIds.includes(id) })).sort((a, b) => b.count - a.count); },
+
+    // ---------- Farm Map ----------
+    //  setFarmMap(name, x, y): ตั้งแมปฟาร์ม + พิกัด (x/y optional, default -999=random)
+    //  useCurrentPosAsFarm(): ดึงพิกัดตัวละครปัจจุบันเป็นจุดวาร์ปของแมปฟาร์ม
+    //  warpToFarm(): วาร์ปไปแมปฟาร์มทันที (manual — เผื่อผู้เล่นควบคุมเองแล้วอยากกลับ)
+    //  toggleWarpBack(on): เปิด/ปิด auto warp-back เมื่อออกจากแมปฟาร์ม
+    setFarmMap(name, x, y) {
+      CFG.farmMap = String(name || '');
+      CFG.farmMapX = (x != null) ? Math.round(Number(x)) : -999;
+      CFG.farmMapY = (y != null) ? Math.round(Number(y)) : -999;
+      log('🗺️ แมปฟาร์ม:', CFG.farmMap || '(ยกเลิก)', '@(', CFG.farmMapX, CFG.farmMapY + ')');
+    },
+    useCurrentPosAsFarm() {
+      if (player.x != null && player.y != null) {
+        CFG.farmMapX = Math.round(player.x); CFG.farmMapY = Math.round(player.y);
+        if (currentMap) CFG.farmMap = currentMap;
+        log('🗺️ ใช้พิกัดปัจจุบันเป็นแมปฟาร์ม:', CFG.farmMap, '@(', CFG.farmMapX, CFG.farmMapY + ')');
+      } else { log('⚠️ ยังไม่รู้พิกัดตัวละคร'); }
+    },
+    warpToFarm() {
+      if (!CFG.farmMap) { log('⚠️ ยังไม่ได้ตั้งแมปฟาร์ม (ASSIST.setFarmMap หรือกด "ใช้พิกัดตัวละคร")'); return; }
+      if (!activeWS || activeWS.readyState !== 1) { log('⚠️ ยังไม่ได้เชื่อมต่อเซิร์ฟเวอร์'); return; }
+      sendTeleport(CFG.farmMap, CFG.farmMapX, CFG.farmMapY);
+      log('🌀 วาร์ปไปแมปฟาร์ม:', CFG.farmMap, '@(', CFG.farmMapX, CFG.farmMapY + ')');
+    },
+    toggleWarpBack(on) { CFG.warpBackToFarm = !!on; log('🗺️ วาร์ปกลับแมปฟาร์มอัตโนมัติ =', CFG.warpBackToFarm); },
     getSellState() { return { state: sellState, full: inventoryFull, returnTo: sellReturnTo }; },
 
     // ---------- Auto-Loot ----------
@@ -2150,6 +2201,7 @@
           </div>
           <div class="row"><span class="k">HP</span><span class="v" data-hp>?</span></div>
           <div class="row"><span class="k">ตำแหน่ง</span><span class="v" data-pos>?</span></div>
+          <div class="row"><span class="k">🗺️ แมป / ฟาร์ม</span><span class="v" data-farmmap>?</span></div>
           <div class="row"><span class="k">player_id</span><span class="v" data-pid>?</span></div>
           <div class="row"><span class="k">สถานะ</span><span class="v" data-state>?</span></div>
           <h4>การฟาร์ม</h4>
@@ -2218,6 +2270,16 @@
           <div class="field"><label>HP% ที่จะลุกยืน (ฟื้นถึงนี้ → ลุก)</label><input type="number" id="__assist_restuntil" min="1" max="100"></div>
           <div class="field"><label>นั่งนานสุด (วินาที) — กันค้าง</label><input type="number" id="__assist_restmaxsec" min="5" max="300"></div>
           <div class="btns"><button id="__assist_applyrest">ใช้ค่า rest</button></div>
+
+          <h4>🗺️ Farm Map (แมปฟาร์ม — วาร์ปกลับเมื่อเผลอเข้าจุดวาร์ป)</h4>
+          <div class="btns">
+            <button id="__assist_warptofarm" class="primary">🌀 วาร์ปไปแมปฟาร์ม</button>
+            <button id="__assist_t_warpback" class="on">วาร์ปกลับอัตโนมัติ</button>
+          </div>
+          <div class="field"><label>ชื่อแมปฟาร์ม</label><input type="text" id="__assist_farmmap" placeholder="เช่น cmd_fild01 (ว่าง=ปิด)"></div>
+          <div class="field"><label>พิกัดวาร์ป X</label><input type="number" id="__assist_farmx" placeholder="-999"><label style="margin-left:8px">Y</label><input type="number" id="__assist_farmy" placeholder="-999"><button id="__assist_usefarmpos" style="margin-left:8px;font-size:10px">ใช้พิกัดตัวละคร</button></div>
+          <div class="btns"><button id="__assist_applyfarm">ใช้ค่า farm map</button></div>
+          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ วิธีใช้: ยืนในแมปฟาร์ม → กด 'ใช้พิกัดตัวละคร' → ใช้ค่า farm map<br>★ ว่างช่องชื่อแมป = ปิดฟีเจอร์</div>
 
           <h4>💰 Auto-Sell (ขายของอัตโนมัติ)</h4>
           <div class="btns">
@@ -2412,6 +2474,16 @@
     });
     root.querySelector('#__assist_useselfpos').addEventListener('click', () => { ASSIST.useCurrentPosAsSellWarp(); });
     root.querySelector('#__assist_t_sellfull').addEventListener('click', () => { CFG.sellOnFull = !CFG.sellOnFull; ASSIST.toggleSellOnFull(CFG.sellOnFull); });
+    // ---- farm map wires ----
+    root.querySelector('#__assist_warptofarm').addEventListener('click', () => ASSIST.warpToFarm());
+    root.querySelector('#__assist_t_warpback').addEventListener('click', () => { CFG.warpBackToFarm = !CFG.warpBackToFarm; ASSIST.toggleWarpBack(CFG.warpBackToFarm); });
+    root.querySelector('#__assist_usefarmpos').addEventListener('click', () => { ASSIST.useCurrentPosAsFarm(); });
+    root.querySelector('#__assist_applyfarm').addEventListener('click', () => {
+      const fm = root.querySelector('#__assist_farmmap').value.trim();
+      const fx = parseInt(root.querySelector('#__assist_farmx').value, 10);
+      const fy = parseInt(root.querySelector('#__assist_farmy').value, 10);
+      ASSIST.setFarmMap(fm, !isNaN(fx) ? fx : -999, !isNaN(fy) ? fy : -999);
+    });
     const tBtn = (sel, fn, cfgKey) => root.querySelector(sel).addEventListener('click', () => { CFG[cfgKey] = !CFG[cfgKey]; fn(CFG[cfgKey]); });
     tBtn('#__assist_t_antiks', (v) => ASSIST.toggleAntiKS(v), 'antiKS');
     tBtn('#__assist_t_avoidp', (v) => ASSIST.toggleAvoidPlayers(v), 'avoidOtherPlayers');
@@ -2478,6 +2550,13 @@
     const set = (sel, val) => { const el = root.querySelector(sel); if (el) el.textContent = val; };
     set('[data-hp]', hpText);
     set('[data-pos]', player.x != null ? `(${player.x.toFixed(1)}, ${player.y.toFixed(1)})` : '?');
+    // ★ farm map status: แสดงแมปปัจจุบัน + เตือนถ้าอยู่ผิดแมปฟาร์ม
+    {
+      const farmInfo = CFG.farmMap
+        ? (currentMap === CFG.farmMap ? `${currentMap} ✅` : `${currentMap || '?'} ⚠️ (ฟาร์ม: ${CFG.farmMap})`)
+        : (currentMap || '?');
+      set('[data-farmmap]', farmInfo);
+    }
     set('[data-pid]', playerId ? playerId.toString(16) : '?');
     set('[data-state]', isDead ? '☠️ ตาย' : (isResting ? '🪑 นั่งพัก' : (activeWS && activeWS.readyState === 1 ? '🟢 เชื่อมต่อ' : '🔴 ไม่ได้ต่อ')));
     set('[data-kills]', s.kills);
@@ -2571,6 +2650,11 @@
     syncInput('#__assist_selly', CFG.sellNpcY);
     syncInput('#__assist_sellinterval', CFG.sellIntervalMin);
     syncToggle('#__assist_t_sellfull', CFG.sellOnFull);
+    // farm map config sync
+    syncInput('#__assist_farmmap', CFG.farmMap);
+    syncInput('#__assist_farmx', CFG.farmMapX);
+    syncInput('#__assist_farmy', CFG.farmMapY);
+    syncToggle('#__assist_t_warpback', CFG.warpBackToFarm);
 
     // log page (อัปเดตเฉพาะถ้าเปิดอยู่ เพื่อประหยัด)
     const logPage = root.querySelector('.__assist_page[data-page="log"]');
