@@ -114,7 +114,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.2.0';
+  const VERSION = '4.2.1';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -913,17 +913,30 @@
     }
     // 0x53 SELL_OPEN: sell menu opened → ส่ง sellItems
     else if (op === 0x53 && sellState === 'SELECT_SELL') {
-      // สร้างรายการขายจาก sellItemIds + inventory count
+      // ★ สร้างรายการขาย — แยก equipment vs stackable (mirror bot.js _buildSellItems:1141-1171)
+      //   equipment: ส่ง slot ID (20000+) count=1 ทีละชิ้น — เหมือน storageMove
+      //   stackable: ส่ง itemId + count ปกติ
       const items = [];
+      let eqCount = 0;
       for (const id of CFG.sellItemIds) {
-        const count = inventory.get(id) || 0;
-        if (count > 0) items.push({ itemId: id, count });
+        const stock = inventory.get(id) || 0;
+        if (stock <= 0) continue;
+        const eqSlots = equipmentSlots.get(id);
+        if (eqSlots && eqSlots.length > 0) {
+          // ★ equipment — ฝากจาก slot สูง→ต่ำ (กัน index shift เหมือน storage)
+          const sorted = [...eqSlots].sort((a, b) => b - a);
+          for (const slotId of sorted) { items.push({ itemId: slotId, count: 1 }); eqCount++; }
+        } else {
+          // ★ stackable — itemId + count จริง (server ปฏิเสธถ้า count ไม่ตรง)
+          items.push({ itemId: id, count: stock });
+        }
       }
       if (items.length === 0) {
         log('⚠️ ไม่มีของที่จะขาย (sellItemIds ว่าง หรือ inventory ไม่มี)');
         sellState = 'WARP_BACK'; sellStateAt = nowMs();
       } else {
-        log('💰 ขายของ', items.length, 'ชนิด:', items.map(i => nameOf(i.itemId) + '×' + i.count).join(', '));
+        log('💰 ขายของ', items.length, 'รายการ' + (eqCount ? ' (' + eqCount + ' equipment)' : '') + ':',
+            items.map(i => nameOf(i.itemId) + '×' + i.count).join(', '));
         sendSellItems(items);
         sellState = 'SELL'; sellStateAt = nowMs();
       }
