@@ -114,7 +114,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.0.1';
+  const VERSION = '4.0.2';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -127,7 +127,7 @@
     'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius',
     'wanderEnabled', 'warpFindEnabled', 'warpToMonster',
     'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs',
-    'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
+    'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellNpcX', 'sellNpcY', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
     'itemNames',
   ];
   function saveConfig() {
@@ -253,6 +253,8 @@
     sellEnabled: false,
     sellNpcName: 'Tool Dealer',   // ชื่อ NPC (หาจาก entities kind=2)
     sellNpcMap: 'izlude_in',     // แมปที่ NPC อยู่ (วาร์ปไปแมปนี้)
+    sellNpcX: 114,                // ★ พิกัด X ที่จะวาร์ปไป (ใกล้ NPC ที่สุด, mirror บอทหลัก npcMapX)
+    sellNpcY: 49,                 // ★ พิกัด Y ที่จะวาร์ปไป (-999 = random spawn, แต่อาจไกล NPC)
     sellIntervalMin: 0,           // 0=off, >0=ขายทุก N นาที
     sellOnFull: true,             // ขายเมื่อของเต็ม (server ส่ง 'too full')
     sellItemIds: [],              // ★ item id ที่ติ๊กว่าจะขาย (default ว่าง = ไม่ขายอะไร)
@@ -1167,8 +1169,8 @@
       }
       if (shouldSell && currentMap && player.x != null) {
         sellReturnTo = { map: currentMap, x: Math.round(player.x), y: Math.round(player.y) };
-        log('💰 เริ่มขายของ (' + reason + ') → วาร์ปไป', CFG.sellNpcMap);
-        sendTeleport(CFG.sellNpcMap, -999, -999);
+        log('💰 เริ่มขายของ (' + reason + ') → วาร์ปไป', CFG.sellNpcMap, '@(', CFG.sellNpcX, CFG.sellNpcY + ')');
+        sendTeleport(CFG.sellNpcMap, CFG.sellNpcX, CFG.sellNpcY);
         setSellState('WARP_TO_NPC');
       }
       return;
@@ -1888,12 +1890,14 @@
     sellOn()  { CFG.sellEnabled = true;  log('💰 Auto-Sell: ON'); },
     sellOff() { CFG.sellEnabled = false; log('💰 Auto-Sell: OFF'); },
     setSellNpc(name, map) { CFG.sellNpcName = name; if (map) CFG.sellNpcMap = map; log('💰 NPC:', name, '@', CFG.sellNpcMap); },
+    setSellNpcPos(x, y) { CFG.sellNpcX = Math.round(Number(x)); CFG.sellNpcY = Math.round(Number(y)); log('💰 พิกัดวาร์ป NPC:', CFG.sellNpcX, CFG.sellNpcY); },
+    useCurrentPosAsSellWarp() { if (player.x != null && player.y != null) { CFG.sellNpcX = Math.round(player.x); CFG.sellNpcY = Math.round(player.y); log('💰 ใช้พิกัดปัจจุบันเป็นจุดวาร์ป:', CFG.sellNpcMap, '@(', CFG.sellNpcX, CFG.sellNpcY + ')'); } else { log('⚠️ ยังไม่รู้พิกัดตัวละคร'); } },
     setSellInterval(min) { CFG.sellIntervalMin = min; log('💰 ขายทุก', min, 'นาที (0=off)'); },
     toggleSellOnFull(on) { CFG.sellOnFull = !!on; log('💰 ขายตอนเต็ม =', CFG.sellOnFull); },
     setSellItems(...ids) { CFG.sellItemIds = ids; log('💰 ขาย item:', ids.map(nameOf).join(', ')); },
     addSellItem(id) { if (!CFG.sellItemIds.includes(id)) CFG.sellItemIds.push(id); log('💰 เพิ่มขาย:', nameOf(id)); },
     removeSellItem(id) { CFG.sellItemIds = CFG.sellItemIds.filter(x => x !== id); log('💰 เลิกขาย:', nameOf(id)); },
-    sellNow() { if (sellState === 'IDLE' && currentMap && player.x != null) { sellReturnTo = { map: currentMap, x: Math.round(player.x), y: Math.round(player.y) }; sendTeleport(CFG.sellNpcMap, -999, -999); setSellState('WARP_TO_NPC'); log('💰 ขายทันที!'); } else { log('⚠️ ไม่สามารถขายได้ตอนนี้ (state:', sellState + ')'); } },
+    sellNow() { if (sellState === 'IDLE' && currentMap && player.x != null) { sellReturnTo = { map: currentMap, x: Math.round(player.x), y: Math.round(player.y) }; sendTeleport(CFG.sellNpcMap, CFG.sellNpcX, CFG.sellNpcY); setSellState('WARP_TO_NPC'); log('💰 ขายทันที! → วาร์ป', CFG.sellNpcMap, '@(', CFG.sellNpcX, CFG.sellNpcY + ')'); } else { log('⚠️ ไม่สามารถขายได้ตอนนี้ (state:', sellState + ')'); } },
     getInventory() { return [...inventory.entries()].map(([id, c]) => ({ id, name: itemDisplayName(id), count: c, sell: CFG.sellItemIds.includes(id) })).sort((a, b) => b.count - a.count); },
     getSellState() { return { state: sellState, full: inventoryFull, returnTo: sellReturnTo }; },
 
@@ -2222,6 +2226,7 @@
           </div>
           <div class="field"><label>ชื่อ NPC ขายของ</label><input type="text" id="__assist_sellnpc" placeholder="เช่น Tool Dealer"></div>
           <div class="field"><label>แมปที่ NPC อยู่</label><input type="text" id="__assist_sellmap" placeholder="เช่น izlude_in"></div>
+          <div class="field"><label>พิกัดวาร์ป X</label><input type="number" id="__assist_sellx" placeholder="114"><label style="margin-left:8px">Y</label><input type="number" id="__assist_selly" placeholder="49"><button id="__assist_useselfpos" style="margin-left:8px;font-size:10px">ใช้พิกัดตัวละคร</button></div>
           <div class="field"><label>ขายทุก N นาที (0=off)</label><input type="number" id="__assist_sellinterval" min="0" max="999"></div>
           <div class="btns"><button id="__assist_applysell">ใช้ค่า sell</button><button id="__assist_t_sellfull" class="on">ขายตอนเต็ม</button></div>
           <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เลือก item ที่จะขาย: ติ๊ก checkbox "ขาย" ในส่วน 'ของที่เก็บได้' ด้านบน (default ไม่ขายอะไร)</div>
@@ -2399,9 +2404,13 @@
       const npcName = root.querySelector('#__assist_sellnpc').value.trim();
       const npcMap = root.querySelector('#__assist_sellmap').value.trim();
       const interval = parseInt(root.querySelector('#__assist_sellinterval').value, 10);
+      const sx = parseInt(root.querySelector('#__assist_sellx').value, 10);
+      const sy = parseInt(root.querySelector('#__assist_selly').value, 10);
       if (npcName) ASSIST.setSellNpc(npcName, npcMap);
+      if (!isNaN(sx) && !isNaN(sy)) ASSIST.setSellNpcPos(sx, sy);
       if (!isNaN(interval)) ASSIST.setSellInterval(interval);
     });
+    root.querySelector('#__assist_useselfpos').addEventListener('click', () => { ASSIST.useCurrentPosAsSellWarp(); });
     root.querySelector('#__assist_t_sellfull').addEventListener('click', () => { CFG.sellOnFull = !CFG.sellOnFull; ASSIST.toggleSellOnFull(CFG.sellOnFull); });
     const tBtn = (sel, fn, cfgKey) => root.querySelector(sel).addEventListener('click', () => { CFG[cfgKey] = !CFG[cfgKey]; fn(CFG[cfgKey]); });
     tBtn('#__assist_t_antiks', (v) => ASSIST.toggleAntiKS(v), 'antiKS');
@@ -2558,6 +2567,8 @@
     if (sellBtn) { sellBtn.textContent = 'Sell: ' + (CFG.sellEnabled ? 'ON' : 'OFF') + (sellState !== 'IDLE' ? ' (' + sellState + ')' : ''); sellBtn.className = CFG.sellEnabled ? 'on' : 'off'; }
     syncInput('#__assist_sellnpc', CFG.sellNpcName);
     syncInput('#__assist_sellmap', CFG.sellNpcMap);
+    syncInput('#__assist_sellx', CFG.sellNpcX);
+    syncInput('#__assist_selly', CFG.sellNpcY);
     syncInput('#__assist_sellinterval', CFG.sellIntervalMin);
     syncToggle('#__assist_t_sellfull', CFG.sellOnFull);
 
