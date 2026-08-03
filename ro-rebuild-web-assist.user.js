@@ -114,7 +114,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.2.1';
+  const VERSION = '4.3.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -2423,6 +2423,121 @@
   //  UI — mini-bar + popup panel (ฝังในหน้าเกม)
   // ============================================================
   let uiLoop;          // render interval (clear ใน stopAll)
+  // ============================================================
+  //  ITEM-LIST POPUP — จัดการรายการ item (only/except) แบบ visual
+  //    listType: 'only' | 'except' (สำหรับ loot filter)
+  // ============================================================
+  // ★ source ของรายการที่จะแสดงในช่องค้นหา = itemDB ทั้งหมด + inventory ปัจจุบัน
+  function itemDBEntries() {
+    const entries = [];
+    // ★ inventory ปัจจุบัน แสดงก่อน (ใช้บ่อยที่สุด)
+    for (const [id, count] of inventory.entries()) {
+      if (count > 0) entries.push({ id: Number(id), name: itemDisplayName(id), count, src: 'inv' });
+    }
+    // ★ itemDB ทั้งหมด (ถ้าโหลดแล้ว)
+    if (itemDB.loaded) {
+      for (const id of Object.keys(itemDB.names)) {
+        const numId = Number(id);
+        if (!inventory.has(numId)) entries.push({ id: numId, name: itemDB.names[id], src: 'db' });
+      }
+    }
+    return entries;
+  }
+  function openItemListPopup(listType) {
+    let popup = document.getElementById('__assist_itempopup');
+    if (!popup) {
+      popup = document.createElement('div');
+      popup.id = '__assist_itempopup';
+      document.body.appendChild(popup);
+    }
+    const getList = () => listType === 'only' ? CFG.filter.onlyItems : CFG.filter.exceptItems;
+    const setList = (arr) => {
+      if (listType === 'only') CFG.filter.onlyItems = arr; else CFG.filter.exceptItems = arr;
+      saveConfigDebounced();
+    };
+    const titleTxt = listType === 'only' ? 'เก็บเฉพาะ (only)' : 'ยกเว้น (except)';
+
+    function render(search) {
+      const current = getList();
+      const s = (search || '').trim().toLowerCase();
+      const all = itemDBEntries();
+      // ★ แบ่ง 2 ส่วน: (1) ในรายการแล้ว (2) ค้นหาเพิ่ม
+      const inList = current.map(id => {
+        const e = all.find(x => x.id === id) || { id, name: nameOf(id) };
+        return e;
+      });
+      const searchable = all.filter(e => !current.includes(e.id));
+      let searchRes = searchable;
+      if (s) {
+        searchRes = searchable.filter(e =>
+          e.name.toLowerCase().includes(s) || String(e.id).includes(s));
+      }
+      searchRes = searchRes.slice(0, 200);   // limit กัน lag
+
+      const renderItem = (e, inCurrent) => {
+        const icon = `<img src="${itemIconUrl(e.id)}" onerror="this.style.visibility='hidden'">`;
+        const price = itemPrice(e.id);
+        const priceStr = price ? `<span class="price">${(price).toLocaleString()}z</span>` : '';
+        const countStr = e.count ? ` <span style="color:#27ae60">×${e.count}</span>` : '';
+        const btn = inCurrent
+          ? `<button class="rmbtn" data-rm="${e.id}">✕ ลบ</button>`
+          : `<button class="addbtn" data-add="${e.id}">+ เพิ่ม</button>`;
+        return `<div class="itemrow">${icon}<span class="nm">${e.name}${countStr}</span>${priceStr}<span class="id">${e.id}</span>${btn}</div>`;
+      };
+
+      let html = '';
+      html += `<div style="padding:6px 8px;color:#8ab4f8;font-size:11px;font-weight:600;border-bottom:1px solid #2a2d35">📋 ในรายการ (${inList.length})</div>`;
+      html += inList.length ? inList.map(e => renderItem(e, true)).join('')
+        : `<div class="empty">(ยังว่าง — ค้นหาแล้วกด + เพิ่ม ด้านล่าง)</div>`;
+      html += `<div style="padding:6px 8px;color:#8ab4f8;font-size:11px;font-weight:600;border-bottom:1px solid #2a2d35;margin-top:6px">🔍 ทั้งหมด${s ? ` (${searchRes.length}${searchable.length>200?'+':''})` : ''}</div>`;
+      html += searchRes.length ? searchRes.map(e => renderItem(e, false)).join('')
+        : `<div class="empty">${s ? 'ไม่พบ — ลองคำอื่น หรือ id เลข' : 'พิมพ์เพื่อค้นหา...'}</div>`;
+      return html;
+    }
+
+    popup.innerHTML = `
+      <div class="modal">
+        <div class="hdr">
+          <span class="ttl">📦 จัดการรายการ — ${titleTxt}</span>
+          <span class="x" id="__assist_itempopup_x">✕</span>
+        </div>
+        <div class="searchbar">
+          <input type="text" id="__assist_itempopup_search" placeholder="ค้นหาชื่อหรือ id..." autocomplete="off">
+        </div>
+        <div class="body" id="__assist_itempopup_body"></div>
+      </div>`;
+    const bodyEl = popup.querySelector('#__assist_itempopup_body');
+    const searchInput = popup.querySelector('#__assist_itempopup_search');
+    let searchVal = '';
+    const refresh = () => { bodyEl.innerHTML = render(searchVal); wireButtons(); };
+    function wireButtons() {
+      bodyEl.querySelectorAll('[data-add]').forEach(b => {
+        b.onclick = () => {
+          const id = parseInt(b.getAttribute('data-add'), 10);
+          const cur = getList();
+          if (!cur.includes(id)) { setList([...cur, id]); log('📦 เพิ่ม', nameOf(id), 'เข้า', listType); }
+          refresh();
+        };
+      });
+      bodyEl.querySelectorAll('[data-rm]').forEach(b => {
+        b.onclick = () => {
+          const id = parseInt(b.getAttribute('data-rm'), 10);
+          setList(getList().filter(x => x !== id));
+          log('📦 ลบ', nameOf(id), 'ออกจาก', listType);
+          refresh();
+        };
+      });
+    }
+    searchInput.addEventListener('input', () => { searchVal = searchInput.value; refresh(); });
+    popup.querySelector('#__assist_itempopup_x').addEventListener('click', () => {
+      popup.classList.remove('open');
+    });
+    popup.addEventListener('click', (ev) => { if (ev.target === popup) popup.classList.remove('open'); });
+    refresh();
+    searchInput.focus();
+    popup.classList.add('open');
+  }
+
   function buildUI() {
     if (document.getElementById('__assist_root')) return;   // สร้างแล้ว
 
@@ -2494,6 +2609,49 @@
       .__assist_page .logline .ts { color: #5f6368; }
       .__assist_dead { animation: __assist_blink 1s infinite; }
       @keyframes __assist_blink { 50% { opacity: .4; } }
+      /* ===== item-list popup (จัดการรายการ item) ===== */
+      #__assist_itempopup {
+        position: fixed; inset: 0; z-index: 2147483648;
+        background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center;
+      }
+      #__assist_itempopup.open { display: flex; }
+      #__assist_itempopup .modal {
+        background: rgba(20,22,28,.98); border: 1px solid #3a3f4b; border-radius: 10px;
+        box-shadow: 0 8px 32px rgba(0,0,0,.7); width: 480px; max-width: 92vw; max-height: 80vh;
+        display: flex; flex-direction: column; overflow: hidden; color: #e8e8e8;
+        font-family: 'Segoe UI', system-ui, sans-serif; font-size: 12px;
+      }
+      #__assist_itempopup .modal .hdr {
+        padding: 10px 14px; background: #15171c; border-bottom: 1px solid #3a3f4b;
+        display: flex; justify-content: space-between; align-items: center;
+      }
+      #__assist_itempopup .modal .hdr .ttl { color: #8ab4f8; font-weight: 600; font-size: 13px; }
+      #__assist_itempopup .modal .hdr .x { cursor: pointer; color: #9aa0a6; font-size: 18px; line-height: 1; padding: 0 4px; }
+      #__assist_itempopup .modal .hdr .x:hover { color: #ef5350; }
+      #__assist_itempopup .modal .searchbar { padding: 8px 14px; border-bottom: 1px solid #2a2d35; display: flex; gap: 8px; }
+      #__assist_itempopup .modal .searchbar input {
+        flex: 1; background: #15171c; border: 1px solid #3a3f4b; border-radius: 5px;
+        color: #e8e8e8; padding: 5px 8px; font-size: 12px; font-family: inherit;
+      }
+      #__assist_itempopup .modal .searchbar input:focus { outline: none; border-color: #8ab4f8; }
+      #__assist_itempopup .modal .body { overflow-y: auto; flex: 1; padding: 6px 8px; }
+      #__assist_itempopup .itemrow {
+        display: flex; align-items: center; gap: 8px; padding: 5px 6px;
+        border-bottom: 1px solid rgba(255,255,255,.04); border-radius: 4px;
+      }
+      #__assist_itempopup .itemrow:hover { background: rgba(255,255,255,.04); }
+      #__assist_itempopup .itemrow img { width: 22px; height: 22px; flex-shrink: 0; }
+      #__assist_itempopup .itemrow .nm { flex: 1; font-size: 11px; color: #e8e8e8; }
+      #__assist_itempopup .itemrow .id { font-size: 10px; color: #5f6368; font-family: 'Consolas', monospace; }
+      #__assist_itempopup .itemrow .price { font-size: 10px; color: #f1c40f; }
+      #__assist_itempopup .itemrow .addbtn, #__assist_itempopup .itemrow .rmbtn {
+        background: #2a3441; border: 1px solid #3a3f4b; border-radius: 4px; color: #e8e8e8;
+        cursor: pointer; font-size: 11px; padding: 3px 10px; font-family: inherit; flex-shrink: 0;
+      }
+      #__assist_itempopup .itemrow .addbtn:hover { background: #1b5e20; border-color: #2e7d32; }
+      #__assist_itempopup .itemrow .rmbtn { background: #4a2020; border-color: #6a3030; }
+      #__assist_itempopup .itemrow .rmbtn:hover { background: #6a3030; }
+      #__assist_itempopup .empty { padding: 20px; text-align: center; color: #5f6368; font-size: 11px; }
     `;
     const style = document.createElement('style');
     style.textContent = css;
@@ -2551,13 +2709,13 @@
         <div class="__assist_page" data-page="config">
           <div class="btns">
             <button id="__assist_lootbtn" class="on">Loot: ?</button>
-            <button id="__assist_healbtn" class="off">Heal: ?</button>
           </div>
-          <div class="field"><label>HP% เริ่มใช้ยา (healAt)</label><input type="number" id="__assist_healat" min="1" max="100"></div>
-          <div class="field"><label>item id ที่จะใช้ heal (คั่นด้วยจุลภาค)</label><input type="text" id="__assist_healitems" placeholder="เช่น 501,502,503"></div>
-          <div class="btns"><button id="__assist_applyheal">ใช้ค่า heal</button></div>
-          <div class="field"><label>โหมด heal</label><select id="__assist_healmode"><option value="order">order (ใช้ตัวเดิมจนหมด)</option><option value="random">random (สุ่ม)</option></select></div>
           <div class="field"><label>โหมด loot</label><select id="__assist_lootmode"><option value="all">all (เก็บหมด)</option><option value="only">only (เก็บเฉพาะ)</option><option value="except">except (ยกเว้น)</option></select></div>
+          <div class="btns">
+            <button id="__assist_manageonly">📋 จัดการ 'เก็บเฉพาะ'</button>
+            <button id="__assist_manageexcept">📋 จัดการ 'ยกเว้น'</button>
+          </div>
+          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ หรือพิมพ์ id คั่นจุลภาค แล้วกดปุ่มด้านล่าง (legacy)</div>
           <div class="field"><label>item id ที่จะเก็บเท่านั้น / ยกเว้น (คั่นจุลภาค)</label><input type="text" id="__assist_lootfilter" placeholder="เช่น 909,512"></div>
           <div class="btns">
             <button id="__assist_applylootonly">ตั้ง only</button>
@@ -2566,6 +2724,13 @@
           </div>
           <div class="field"><label>ดีเลย์ก่อนเก็บ (ms หลังของตก) — 0 = เก็บทันที</label><input type="number" id="__assist_lootdelay" min="0" step="100"></div>
           <div class="btns"><button id="__assist_applylootdelay">ตั้งดีเลย์</button></div>
+          <div class="btns">
+            <button id="__assist_healbtn" class="off">Heal: ?</button>
+          </div>
+          <div class="field"><label>HP% เริ่มใช้ยา (healAt)</label><input type="number" id="__assist_healat" min="1" max="100"></div>
+          <div class="field"><label>item id ที่จะใช้ heal (คั่นด้วยจุลภาค)</label><input type="text" id="__assist_healitems" placeholder="เช่น 501,502,503"></div>
+          <div class="btns"><button id="__assist_applyheal">ใช้ค่า heal</button></div>
+          <div class="field"><label>โหมด heal</label><select id="__assist_healmode"><option value="order">order (ใช้ตัวเดิมจนหมด)</option><option value="random">random (สุ่ม)</option></select></div>
 
           <h4>🌀 Warp-to-Loot (วาร์ปไปเก็บของที่ติดกำแพง)</h4>
           <div class="btns"><button id="__assist_warpbtn" class="off">วาร์ปไปเก็บของ: ?</button></div>
@@ -2750,6 +2915,8 @@
     });
     root.querySelector('#__assist_healmode').addEventListener('change', e => ASSIST.setHealMode(e.target.value));
     root.querySelector('#__assist_lootmode').addEventListener('change', e => ASSIST.setLootMode(e.target.value));
+    root.querySelector('#__assist_manageonly').addEventListener('click', () => openItemListPopup('only'));
+    root.querySelector('#__assist_manageexcept').addEventListener('click', () => openItemListPopup('except'));
     root.querySelector('#__assist_applylootonly').addEventListener('click', () => {
       const ids = root.querySelector('#__assist_lootfilter').value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
       ASSIST.clearLootOnly();
