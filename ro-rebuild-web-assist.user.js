@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.3.2
+// @version      4.3.3
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.3.2';
+  const VERSION = '4.3.3';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -2505,14 +2505,29 @@
           <span class="x" id="__assist_itempopup_x">✕</span>
         </div>
         <div class="searchbar">
-          <input type="text" id="__assist_itempopup_search" placeholder="ค้นหาชื่อหรือ id..." autocomplete="off">
+          <input type="text" id="__assist_itempopup_search" placeholder="ค้นหาชื่อหรือ id..." autocomplete="off" style="flex:1">
+          <input type="text" id="__assist_itempopup_addid" placeholder="id" autocomplete="off" style="width:54px;flex:0 0 auto">
+          <button id="__assist_itempopup_addbtn" style="flex:0 0 auto;padding:5px 10px">+ id</button>
         </div>
         <div class="body" id="__assist_itempopup_body"></div>
       </div>`;
     const bodyEl = popup.querySelector('#__assist_itempopup_body');
     const searchInput = popup.querySelector('#__assist_itempopup_search');
+    const addIdInput = popup.querySelector('#__assist_itempopup_addid');
     let searchVal = '';
     const refresh = () => { bodyEl.innerHTML = render(searchVal); wireButtons(); };
+    // ★ เพิ่ม id แบบ manual (รองรับหลาย id คั่นจุลภาค) — สำหรับ item ที่ไม่อยู่ใน DB
+    const addManualIds = () => {
+      const ids = addIdInput.value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0);
+      if (!ids.length) return;
+      const cur = getList();
+      let added = 0;
+      for (const id of ids) if (!cur.includes(id)) { cur.push(id); added++; }
+      setList(cur);
+      if (added) { log('📦 เพิ่ม id', ids.join(','), 'เข้า', listType); addIdInput.value = ''; refresh(); }
+    };
+    popup.querySelector('#__assist_itempopup_addbtn').addEventListener('click', addManualIds);
+    addIdInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); addManualIds(); } });
     function wireButtons() {
       bodyEl.querySelectorAll('[data-add]').forEach(b => {
         b.onclick = () => {
