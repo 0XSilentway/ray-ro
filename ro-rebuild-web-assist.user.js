@@ -114,7 +114,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.3.0';
+  const VERSION = '4.3.1';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -2444,12 +2444,13 @@
     return entries;
   }
   function openItemListPopup(listType) {
-    let popup = document.getElementById('__assist_itempopup');
-    if (!popup) {
-      popup = document.createElement('div');
-      popup.id = '__assist_itempopup';
-      document.body.appendChild(popup);
-    }
+    // ★ สร้าง popup ใหม่ทุกครั้ง (กัน closure/listener ค้างจากครั้งก่อน)
+    const old = document.getElementById('__assist_itempopup');
+    if (old) old.remove();
+    const popup = document.createElement('div');
+    popup.id = '__assist_itempopup';
+    document.body.appendChild(popup);
+
     const getList = () => listType === 'only' ? CFG.filter.onlyItems : CFG.filter.exceptItems;
     const setList = (arr) => {
       if (listType === 'only') CFG.filter.onlyItems = arr; else CFG.filter.exceptItems = arr;
@@ -2528,11 +2529,10 @@
         };
       });
     }
+    const closePopup = () => { popup.classList.remove('open'); setTimeout(() => popup.remove(), 200); };
     searchInput.addEventListener('input', () => { searchVal = searchInput.value; refresh(); });
-    popup.querySelector('#__assist_itempopup_x').addEventListener('click', () => {
-      popup.classList.remove('open');
-    });
-    popup.addEventListener('click', (ev) => { if (ev.target === popup) popup.classList.remove('open'); });
+    popup.querySelector('#__assist_itempopup_x').addEventListener('click', closePopup);
+    popup.addEventListener('click', (ev) => { if (ev.target === popup) closePopup(); });
     refresh();
     searchInput.focus();
     popup.classList.add('open');
@@ -2714,13 +2714,6 @@
           <div class="btns">
             <button id="__assist_manageonly">📋 จัดการ 'เก็บเฉพาะ'</button>
             <button id="__assist_manageexcept">📋 จัดการ 'ยกเว้น'</button>
-          </div>
-          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ หรือพิมพ์ id คั่นจุลภาค แล้วกดปุ่มด้านล่าง (legacy)</div>
-          <div class="field"><label>item id ที่จะเก็บเท่านั้น / ยกเว้น (คั่นจุลภาค)</label><input type="text" id="__assist_lootfilter" placeholder="เช่น 909,512"></div>
-          <div class="btns">
-            <button id="__assist_applylootonly">ตั้ง only</button>
-            <button id="__assist_applylootexcept">ตั้ง except</button>
-            <button id="__assist_clearfilter">ล้าง</button>
           </div>
           <div class="field"><label>ดีเลย์ก่อนเก็บ (ms หลังของตก) — 0 = เก็บทันที</label><input type="number" id="__assist_lootdelay" min="0" step="100"></div>
           <div class="btns"><button id="__assist_applylootdelay">ตั้งดีเลย์</button></div>
@@ -2917,17 +2910,6 @@
     root.querySelector('#__assist_lootmode').addEventListener('change', e => ASSIST.setLootMode(e.target.value));
     root.querySelector('#__assist_manageonly').addEventListener('click', () => openItemListPopup('only'));
     root.querySelector('#__assist_manageexcept').addEventListener('click', () => openItemListPopup('except'));
-    root.querySelector('#__assist_applylootonly').addEventListener('click', () => {
-      const ids = root.querySelector('#__assist_lootfilter').value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
-      ASSIST.clearLootOnly();
-      if (ids.length) ASSIST.addLootOnly(...ids);
-    });
-    root.querySelector('#__assist_applylootexcept').addEventListener('click', () => {
-      const ids = root.querySelector('#__assist_lootfilter').value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
-      ASSIST.clearLootExcept();
-      if (ids.length) ASSIST.addLootExcept(...ids);
-    });
-    root.querySelector('#__assist_clearfilter').addEventListener('click', () => { ASSIST.clearLootOnly(); ASSIST.clearLootExcept(); });
     root.querySelector('#__assist_applylootdelay').addEventListener('click', () => {
       const ms = parseInt(root.querySelector('#__assist_lootdelay').value, 10);
       if (!isNaN(ms)) ASSIST.setLootDelay(ms);
@@ -3132,11 +3114,6 @@
     if (hm && document.activeElement !== hm) hm.value = CFG.healMode;
     const lm = root.querySelector('#__assist_lootmode');
     if (lm && document.activeElement !== lm) lm.value = CFG.filter.mode;
-    const lf = root.querySelector('#__assist_lootfilter');
-    if (lf && document.activeElement !== lf) {
-      lf.value = (CFG.filter.mode === 'only' ? CFG.filter.onlyItems : CFG.filter.mode === 'except' ? CFG.filter.exceptItems : []).join(',');
-      lf.placeholder = CFG.filter.mode === 'only' ? 'item id ที่จะเก็บเท่านั้น' : CFG.filter.mode === 'except' ? 'item id ที่จะไม่เก็บ' : 'เลือกโหมดก่อน';
-    }
     const ld = root.querySelector('#__assist_lootdelay');
     if (ld && document.activeElement !== ld) ld.value = CFG.lootDelayAfterDropMs;
 
