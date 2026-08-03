@@ -114,7 +114,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.1.0';
+  const VERSION = '4.2.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -128,6 +128,7 @@
     'wanderEnabled', 'warpFindEnabled', 'warpToMonster',
     'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs',
     'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellNpcX', 'sellNpcY', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
+    'storageEnabled', 'kafraName', 'kafraMap', 'kafraMapX', 'kafraMapY', 'kafraChoice', 'depositOnFull', 'depositAfterSell', 'depositItemIds',
     'farmMap', 'farmMapX', 'farmMapY', 'warpBackToFarm',
     'itemNames',
   ];
@@ -254,11 +255,24 @@
     sellEnabled: false,
     sellNpcName: 'Tool Dealer',   // ชื่อ NPC (หาจาก entities kind=2)
     sellNpcMap: 'izlude_in',     // แมปที่ NPC อยู่ (วาร์ปไปแมปนี้)
-    sellNpcX: 114,                // ★ พิกัด X ที่จะวาร์ปไป (ใกล้ NPC ที่สุด, mirror บอทหลัก npcMapX)
-    sellNpcY: 49,                 // ★ พิกัด Y ที่จะวาร์ปไป (-999 = random spawn, แต่อาจไกล NPC)
+    sellNpcX: 116,                // ★ พิกัด X ที่จะวาร์ปไป (ใกล้ NPC ที่สุด, mirror บอทหลัก npcMapX)
+    sellNpcY: 55,                 // ★ พิกัด Y ที่จะวาร์ปไป (-999 = random spawn, แต่อาจไกล NPC)
     sellIntervalMin: 0,           // 0=off, >0=ขายทุก N นาที
     sellOnFull: true,             // ขายเมื่อของเต็ม (server ส่ง 'too full')
     sellItemIds: [],              // ★ item id ที่ติ๊กว่าจะขาย (default ว่าง = ไม่ขายอะไร)
+
+    // ---------- AUTO-STORAGE (ฝากของเข้า Kafra) ----------
+    //  ★ default OFF — เปิดเองใน config tab หรือ ASSIST.storageOn()
+    //  mirror บอทหลัก config.bot.autoStorage (config.json:743-924)
+    storageEnabled: false,        // เปิดใช้ตอนเริ่มหรือไม่
+    kafraName: 'Kafra Staff',     // ชื่อ NPC Kafra (หาจาก entities kind=2)
+    kafraMap: 'izlude',           // แมปที่ Kafra อยู่ (วาร์ปไปแมปนี้)
+    kafraMapX: 0,                 // พิกัดวาร์ป X (0 = ใช้ sellNpcX/Y แทน)
+    kafraMapY: 0,                 // พิกัดวาร์ป Y
+    kafraChoice: 1,               // index เมนู "Use Storage" (0=Save, 1=Use Storage, 2=Teleport)
+    depositOnFull: true,          // ฝากเมื่อของเต็ม (server ส่ง 'too full')
+    depositAfterSell: true,       // ★ chain: ฝากต่อทันทีหลังขายเสร็จ
+    depositItemIds: [],           // ★ item id ที่จะฝาก (default ว่าง = ไม่ฝากอะไร)
 
     // ---------- FARM MAP (แมปฟาร์ม) ----------
     //  ใช้สำหรับ: (1) เผลอเดินเข้าวาร์ป → เปลี่ยนแมป → วาร์ปกลับอัตโนมัติ
@@ -272,11 +286,11 @@
     // ---------- AUTO-LOOT ----------
     lootEnabled: true,
     pickRadius: 2,                // ระยะ (ช่อง) จากตัวเรา ที่จะถือว่าของเป็นของเรา
-    combatWindowMs: 4000,         // ของตกต้องมาภายในเวลานี้หลังเราตี/ฆ่า
-    lootDelayAfterDropMs: 400,      // ★ รอ N ms หลังของตก แล้วค่อยเริ่มเก็บ (0 = เก็บทันที, กันดูเป็นบอท)
+    combatWindowMs: 2500,         // ของตกต้องมาภายในเวลานี้หลังเราตี/ฆ่า
+    lootDelayAfterDropMs: 500,      // ★ รอ N ms หลังของตก แล้วค่อยเริ่มเก็บ (0 = เก็บทันที, กันดูเป็นบอท)
     attemptIntervalMs: 1200,      // ห่างระหว่างการลองเก็บชิ้นเดิม (1.2 วิ — รอ server เดินไปเก็บ)
     sendThrottleMs: 400,          // ห่างระหว่างคำสั่งเก็บทุกชิ้น (กันสแปม)
-    maxAttempts: 6,               // เก็บไม่ได้ 6 ครั้ง → ปล่อย (นักธนูฆ่าไกล ตัวเดินไปเก็บนานขึ้น)
+    maxAttempts: 5,               // เก็บไม่ได้ 6 ครั้ง → ปล่อย (นักธนูฆ่าไกล ตัวเดินไปเก็บนานขึ้น)
     itemMaxAgeMs: 30000,          // ของเก่ากว่านี้ → ทิ้งออกจากคิว
     lootTickMs: 300,
 
@@ -303,12 +317,12 @@
     walkStepDistance: 20,         // ★ สั่งเดินทีละ N ช่อง (game click-walk cap ~20)
     maxWalkDistance: 15,          // (legacy — ใช้น้อย เพราะ server walk-and-attack เอง)
     combatTickMs: 200,            // tick loop (มี jitter ±25% เหมือนบอทหลัก)
-    postCombatDelayMs: 1000,      // ★ รอ N ms หลังสู้เสร็จ/เก็บของเสร็จ ก่อนทำอย่างอื่น (ดูเป็นธรรมชาติ)
+    postCombatDelayMs: 800,      // ★ รอ N ms หลังสู้เสร็จ/เก็บของเสร็จ ก่อนทำอย่างอื่น (ดูเป็นธรรมชาติ)
     attackReIssueMs: 3000,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้ (เพิ่มจาก 2500 → pending เพิ่มช้าลง)
-    attackAbandonMs: 20000,       // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (เพิ่มจาก 8s → 20s รองรับ reset ล่าช้า)
+    attackAbandonMs: 10000,       // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (เพิ่มจาก 8s → 20s รองรับ reset ล่าช้า)
     attackPendingMax: 4,          // ★ abandon ถ้า pending ≥ N (ลดจาก 8 → 4 ใกล้บอทหลัก ตัดมอนตีไม่ได้เร็วขึ้น)
     aggroKeepAliveMs: 15000,      // ★ มอน aggro เรา → ถือว่ายังสู้อยู่ N ms (กัน abandon ตอนมอนเดินมาหา)
-    maxEngageSec: 20,             // abandon target ถ้า engage นานกว่านี้ (ลดจาก 30 → 20 ใกล้บอทหลัก)
+    maxEngageSec: 30,             // abandon target ถ้า engage นานกว่านี้ (ลดจาก 30 → 20 ใกล้บอทหลัก)
     // flee (วาร์ปหนี)
     fleeOnMobCount: 3,            // มอนรุม N ตัว (ที่ตีเรา) → วาร์ปหนี (0=off)
     fleeOnAggroCount: 5,          // มอนจับเราเป็นเป้า N ตัว → วาร์ปหนี (0=off)
@@ -368,6 +382,25 @@
     const db = itemDisplayName(id);
     return db !== 'item_' + id ? `${db}(${id})` : (CFG.itemNames[id] ? `${CFG.itemNames[id]}(${id})` : `item_${id}`);
   };
+
+  // ★ per-item action: 'keep' | 'sell' | 'deposit' (เก็บ/ขาย/ฝาก — เลือกได้อย่างเดียว)
+  //   เก็บไว้ใน sellItemIds/depositItemIds ที่มีอยู่แล้ว (deposit สำคัญกว่า sell ถ้าซ้ำ)
+  function getItemAction(id) {
+    if (CFG.depositItemIds.includes(id)) return 'deposit';
+    if (CFG.sellItemIds.includes(id)) return 'sell';
+    return 'keep';
+  }
+  // ★ วน toggle: keep → sell → deposit → keep (สำหรับปุ่มใน UI)
+  function cycleItemAction(id) {
+    const cur = getItemAction(id);
+    // ลบจากทั้งสองก่อน
+    CFG.sellItemIds = CFG.sellItemIds.filter(x => x !== id);
+    CFG.depositItemIds = CFG.depositItemIds.filter(x => x !== id);
+    if (cur === 'keep') { CFG.sellItemIds.push(id); log('💰', nameOf(id), '→ ขาย'); }
+    else if (cur === 'sell') { CFG.depositItemIds.push(id); log('🏦', nameOf(id), '→ ฝาก'); }
+    else { log('📦', nameOf(id), '→ เก็บ'); }
+    return getItemAction(id);
+  }
 
   // ---------- สถิติการฟาร์ม ----------
   const stats = {
@@ -792,15 +825,43 @@
           inventory.set(itemId, count);   // SET ตรงจาก server (แม่นยำเสมอ)
         }
       } else if (sub === 5 && u.length >= 15) {
-        // ★ equipment add (sub=5, 53B): itemId ที่ offset 12 (2B LE) bit-packed >>> 1
-        //   (protocol.js:1237-1248) — แต่ละชิ้นส่งแยก → +1
+        // ★ equipment add (sub=5): itemId @ offset 12 (2B LE) bit-packed >>> 1
+        //   slotId @ offset 2 (4B LE) bit-packed >>> 1 — mirror protocol.js:1237-1248
+        //   ★★ track slotId สำหรับฝากเข้า storage (storage ต้องการ slotId ไม่ใช่ itemId)
         const itemId = u16(u, 12) >>> 1;
+        const slotId = u32(u, 2) >>> 1;   // เช่น Bow(1701) slot 20010 → offset2 = 40020
         if (itemId > 0 && itemId < 50000) {
           inventory.set(itemId, (inventory.get(itemId) || 0) + 1);
+          // ★ track slot id ของแต่ละชิ้น (mirror world.js:773-777)
+          if (slotId > 0) {
+            const slots = equipmentSlots.get(itemId) || [];
+            if (!slots.includes(slotId)) slots.push(slotId);
+            equipmentSlots.set(itemId, slots);
+          }
+        }
+      } else if (sub !== 3 && sub !== 5 && u.length >= 7 && u.length <= 14) {
+        // ★★ equipment removal (drop/sell/move to storage) — 12B packet
+        //   โครงสร้าง: [32][sub][slotId×2:4][02 00][...] (protocol.js:1256-1264)
+        //   ใช้ล้าง slot id ออกจาก equipmentSlots กัน stale slot
+        const rawSlot = u32(u, 1);
+        if (rawSlot > 0) {
+          const slotId = rawSlot >>> 1;
+          if (slotId > 0 && slotId < 100000) {
+            for (const [itemId, slots] of equipmentSlots) {
+              const idx = slots.indexOf(slotId);
+              if (idx >= 0) {
+                slots.splice(idx, 1);
+                const cur = inventory.get(itemId) || 0;
+                if (cur > 1) inventory.set(itemId, cur - 1);
+                else inventory.delete(itemId);
+                if (slots.length === 0) equipmentSlots.delete(itemId);
+                break;
+              }
+            }
+          }
         }
       }
-      // ★ sub อื่น ๆ (รวม 22=equipment moved to storage, 12B removal) → ไม่ track
-      //   (protocol.js:1251-1266) ไม่มี itemId → เคยทำให้เกิด bug inventory.set(undefined, 1)
+      // ★ sub อื่น ๆ → ไม่ track (protocol.js:1265 ทิ้ง)
     }
     // 0x20 SYS_MESSAGE: detect "too full" → inventoryFull (mirror world.js:264-279)
     else if (op === 0x20 && u.length >= 2) {
@@ -816,13 +877,38 @@
         }
       } catch (e) {}
     }
-    // 0x4d NPC_DIALOG: sub=2 = choice list → เลือก Sell (mirror world.js:441-449)
+    // 0x4d NPC_DIALOG (mirror world.js:441-449)
+    //   sub=1 = บทพูด (text) → กด Next ไปต่อ
+    //   sub=2 = choice list (menu) → เลือก choice
+    //   ★ ใช้ร่วมกับทั้ง sell (Tool Dealer) และ storage (Kafra)
     else if (op === 0x4d && u.length >= 6) {
       const sub = u[1];
+      // --- SELL: TALK → เลือก Sell (choice 1) ---
       if (sub === 2 && sellState === 'TALK') {
         log('💰 ได้ NPC dialog choices → เลือก Sell');
-        sendNpcSelect(1);   // choice 1 = Sell
+        sendNpcSelect(1);
         sellState = 'SELECT_SELL'; sellStateAt = nowMs();
+      }
+      // --- STORAGE: TALK_KAFRA (บทพูด) → กด Next ---
+      else if (storageState === 'TALK_KAFRA') {
+        if (sub === 1) {
+          log('🏦 Kafra บทพูด → กด Next');
+          sendNpcNext();
+          storageState = 'SELECT_STORAGE'; storageStateAt = nowMs();
+        } else if (sub === 2) {
+          // Kafra ส่ง menu ตรงๆ (ไม่มี intro) → เลือก Use Storage
+          const choice = CFG.kafraChoice != null ? CFG.kafraChoice : 1;
+          log('🏦 Kafra menu → เลือก Use Storage (choice', choice + ')');
+          sendNpcSelect(choice);
+          storageState = 'STORAGE_OPENED'; storageStateAt = nowMs();
+        }
+      }
+      // --- STORAGE: SELECT_STORAGE (menu) → เลือก Use Storage ---
+      else if (sub === 2 && storageState === 'SELECT_STORAGE') {
+        const choice = CFG.kafraChoice != null ? CFG.kafraChoice : 1;
+        log('🏦 Kafra menu → เลือก Use Storage (choice', choice + ')');
+        sendNpcSelect(choice);
+        storageState = 'STORAGE_OPENED'; storageStateAt = nowMs();
       }
     }
     // 0x53 SELL_OPEN: sell menu opened → ส่ง sellItems
@@ -850,6 +936,18 @@
         for (const id of CFG.sellItemIds) inventory.delete(id);
         inventoryFull = false;
         lastSellAt = nowMs();
+        // ★ chain → storage: ถ้าเปิด depositAfterSell และมีของฝาก → ฝากต่อ (mirror bot.js:1773-1781)
+        //   ใช้ sellReturnTo เป็นจุดกลับของ storage ด้วย (เพราะอยู่ในเมืองอยู่แล้ว → วาร์ปไป Kafra ใกล้ ๆ)
+        if (CFG.storageEnabled && CFG.depositAfterSell && CFG.depositItemIds.length > 0) {
+          let hasDeposit = false;
+          for (const id of CFG.depositItemIds) { if ((inventory.get(id) || 0) > 0) { hasDeposit = true; break; } }
+          if (hasDeposit) {
+            const retTo = sellReturnTo;   // จดก่อน sell clear
+            sellState = 'IDLE'; sellReturnTo = null;   // clear sell ก่อนเริ่ม storage
+            startStorage('หลังขาย', retTo);
+            return;
+          }
+        }
       } else {
         log('⚠️ ขายของล้มเหลว (SELL_RESULT flag=0)');
       }
@@ -1257,6 +1355,167 @@
       return;
     }
   }, 1000);
+
+  // ============================================================
+  //  AUTO-STORAGE — state machine (mirror bot.js:1816-2047)
+  //  IDLE → WARP_TO_KAFRA → MOVE_TO_KAFRA → TALK_KAFRA → SELECT_STORAGE
+  //       → STORAGE_OPENED → MOVE_ITEMS → CLOSE_STORAGE → WARP_BACK → IDLE
+  // ============================================================
+  function findKafraNpc() {
+    const target = (CFG.kafraName || '').toLowerCase();
+    for (const e of entities.values()) {
+      if (e.kind === 2 && e.alive && e.x != null && e.name && e.name.toLowerCase().includes(target)) return e;
+    }
+    return null;
+  }
+  function setStorageState(s) { storageState = s; storageStateAt = nowMs(); }
+  function abortStorage(reason) {
+    log('⚠️ ยกเลิกฝาก:', reason);
+    storageState = 'IDLE'; storageStateAt = 0;
+    storageMoveQueue = []; storageMoveIdx = 0;
+    if (storageReturnTo && storageReturnTo.map) { sendTeleport(storageReturnTo.map, storageReturnTo.x, storageReturnTo.y); }
+    storageReturnTo = null;
+  }
+  // ★ เริ่มฝากของ — จด returnTo แล้ววาร์ปไปแมป Kafra
+  function startStorage(reason, returnTo) {
+    const kx = (CFG.kafraMapX && CFG.kafraMapX > 0) ? CFG.kafraMapX : CFG.sellNpcX;
+    const ky = (CFG.kafraMapY && CFG.kafraMapY > 0) ? CFG.kafraMapY : CFG.sellNpcY;
+    storageReturnTo = returnTo || { map: currentMap, x: Math.round(player.x), y: Math.round(player.y) };
+    log('🏦 เริ่มฝากของ (' + reason + ') → วาร์ปไป', CFG.kafraMap, '@(', kx, ky + ')');
+    sendTeleport(CFG.kafraMap, kx, ky);
+    setStorageState('WARP_TO_KAFRA');
+  }
+  // ★ สร้าง queue ของที่จะฝาก — แยก equipment vs stackable (mirror bot.js:1947-1987)
+  function buildDepositQueue() {
+    const queue = [];
+    for (const itemId of CFG.depositItemIds) {
+      const stock = inventory.get(itemId) || 0;
+      if (stock <= 0) continue;
+      const eqSlots = equipmentSlots.get(itemId);
+      if (eqSlots && eqSlots.length > 0) {
+        // ★★ equipment — ฝากจาก slot สูง→ต่ำ (กัน index shift) ทีละชิ้น amount=1
+        const sorted = [...eqSlots].sort((a, b) => b - a);
+        for (const slotId of sorted) queue.push({ itemId, amount: 1, invId: slotId, isEquipment: true });
+      } else {
+        // ★ stackable — ทั้งกองทีเดียว (moveId = itemId)
+        queue.push({ itemId, amount: stock, invId: itemId, isEquipment: false });
+      }
+    }
+    return queue;
+  }
+  const storageLoop = setInterval(() => {
+    if (!CFG.storageEnabled) return;
+    if (!activeWS || activeWS.readyState !== 1) return;
+    if (isDead) return;
+    const now = nowMs();
+
+    // === trigger (IDLE เท่านั้น) ===
+    if (storageState === 'IDLE') {
+      let shouldDeposit = false; let reason = '';
+      // trigger 1: ของเต็ม (เหมือน sell แต่ฝากแทน)
+      if (CFG.depositOnFull && inventoryFull && CFG.depositItemIds.length > 0) { shouldDeposit = true; reason = 'ของเต็ม'; }
+      if (shouldDeposit && currentMap && player.x != null) startStorage(reason, null);
+      return;
+    }
+
+    // === watchdog: ค้าง >60s → ยกเลิก ===
+    if (now - storageStateAt > 60000) { abortStorage('timeout (' + storageState + ' 60s)'); return; }
+
+    if (storageState === 'WARP_TO_KAFRA') {
+      if (now - storageStateAt > 3000) {
+        const npc = findKafraNpc();
+        if (npc) { storageNpcId = npc.id; setStorageState('MOVE_TO_KAFRA'); log('🏦 พบ', npc.name, '@(', npc.x, npc.y + ')'); }
+        else { abortStorage('ไม่พบ Kafra ' + CFG.kafraName); return; }
+      }
+      return;
+    }
+    if (storageState === 'MOVE_TO_KAFRA') {
+      const npc = storageNpcId ? entities.get(storageNpcId) : null;
+      if (!npc || !npc.alive || npc.x == null) {
+        const found = findKafraNpc();
+        if (found) { storageNpcId = found.id; }
+        else { abortStorage('ไม่พบ Kafra ' + CFG.kafraName); return; }
+      }
+      if (player.x != null) {
+        const d = Math.hypot(npc.x - player.x, npc.y - player.y);
+        if (d <= 3) {
+          if (now - storageStateAt > 1500) { sendNpcTalk(storageNpcId); setStorageState('TALK_KAFRA'); log('🏦 คุย Kafra', npc.name); }
+        } else {
+          if (now - storageLastMoveAt > 1000) { storageLastMoveAt = now; sendMove(npc.x, npc.y); }
+        }
+      }
+      return;
+    }
+    // TALK_KAFRA / SELECT_STORAGE จัดการโดย 0x4d handler (packet-driven)
+    if (storageState === 'TALK_KAFRA') {
+      // รอ dialog — ถ้านานเกินไป คุยใหม่
+      if (now - storageStateAt > 5000) { sendNpcTalk(storageNpcId); storageStateAt = now; log('🏦 รอ dialog นาน → คุยใหม่'); }
+      return;
+    }
+    if (storageState === 'SELECT_STORAGE') {
+      // รอ menu — ถ้านานเกินไป คุยใหม่
+      if (now - storageStateAt > 5000) { abortStorage('ไม่ได้รับเมนู Kafra'); }
+      return;
+    }
+    if (storageState === 'STORAGE_OPENED') {
+      // ★ build queue + เริ่มฝาก
+      storageMoveQueue = buildDepositQueue();
+      storageMoveIdx = 0;
+      if (storageMoveQueue.length === 0) {
+        log('🏦 ไม่มีของที่จะฝาก → ปิด storage');
+        sendStorageClose();
+        setStorageState('CLOSE_STORAGE');
+      } else {
+        const total = storageMoveQueue.length;
+        const types = storageMoveQueue.filter(q => q.isEquipment).length;
+        log('🏦 เปิด storage แล้ว → ฝาก', total, 'รายการ' + (types ? ' (' + types + ' equipment)' : ''));
+        setStorageState('MOVE_ITEMS');
+      }
+      return;
+    }
+    if (storageState === 'MOVE_ITEMS') {
+      // ★ ส่งของทีละชิ้น (รอ 800ms ระหว่างชิ้น กัน server บล็อก)
+      if (now - storageLastMoveAt < 800) return;
+      if (storageMoveIdx >= storageMoveQueue.length) {
+        // ครบแล้ว → ปิด storage
+        log('🏦 ฝากครบแล้ว → ปิด storage');
+        sendStorageClose();
+        setStorageState('CLOSE_STORAGE');
+        return;
+      }
+      const item = storageMoveQueue[storageMoveIdx];
+      const moveId = item.isEquipment ? item.invId : item.itemId;
+      log('🏦 ฝาก', nameOf(item.itemId) + (item.isEquipment ? ' (slot ' + item.invId + ')' : ' ×' + item.amount));
+      sendStorageMove(moveId, item.amount);
+      // ★ optimistic: ลบ slot + ลด inventory count (server จะส่ง 0x32 removal ยืนยัน)
+      if (item.isEquipment) {
+        const slots = equipmentSlots.get(item.itemId);
+        if (slots) {
+          const i = slots.indexOf(item.invId);
+          if (i >= 0) slots.splice(i, 1);
+          if (slots.length === 0) equipmentSlots.delete(item.itemId);
+        }
+        const cur = inventory.get(item.itemId) || 0;
+        if (cur > 1) inventory.set(item.itemId, cur - 1);
+        else inventory.delete(item.itemId);
+      } else {
+        inventory.delete(item.itemId);   // stackable ทั้งกอง
+      }
+      storageMoveIdx++;
+      storageLastMoveAt = now;
+      return;
+    }
+    if (storageState === 'CLOSE_STORAGE') {
+      // รอ 1.5s หลัง close แล้ววาร์ปกลับ
+      if (now - storageStateAt > 1500 && storageReturnTo) {
+        sendTeleport(storageReturnTo.map, storageReturnTo.x, storageReturnTo.y);
+        log('🏦 วาร์ปกลับ', storageReturnTo.map);
+        storageReturnTo = null;
+        setStorageState('IDLE');
+      }
+      return;
+    }
+  }, 1000);
   // ---------- entity tracker ----------
   //  kind: 0=player, 1=monster, 2=NPC (จาก SPAWN)
   const entities = new Map();    // id -> {id,kind,sub,name,x,y,hp,hpMax,alive,_lastEngagedByOtherAt,_lastDamageAt}
@@ -1270,14 +1529,23 @@
   }
   const mobAttackers = new Map(); // monsterId -> timestamp (มอนตีเรา)
 
-  // ---------- AUTO-SELL state + inventory ----------
+  // ---------- AUTO-SELL + AUTO-STORAGE state + inventory ----------
   const inventory = new Map();    // itemId -> count (authoritative from 0x32, mirror world.js:34)
+  const equipmentSlots = new Map(); // ★ itemId -> [slotId, slotId, ...] (mirror world.js:773-777)
   let inventoryFull = false;      // true เมื่อ server ส่ง "too full" (0x20)
   let sellState = 'IDLE';         // IDLE|WARP_TO_NPC|MOVE_TO_NPC|TALK|SELECT_SELL|SELL|WARP_BACK
   let sellStateAt = 0;            // timestamp เข้า state (watchdog)
   let sellReturnTo = null;        // {map,x,y} ที่จะวาร์ปกลับหลังขาย
   let sellNpcId = null;           // NPC entity id (หาจาก entities)
   let lastSellAt = 0;             // throttle interval
+  // ---------- AUTO-STORAGE state (mirror bot.js:1817-1824) ----------
+  let storageState = 'IDLE';      // IDLE|WARP_TO_KAFRA|MOVE_TO_KAFRA|TALK_KAFRA|SELECT_STORAGE|STORAGE_OPENED|MOVE_ITEMS|CLOSE_STORAGE|WARP_BACK
+  let storageStateAt = 0;         // timestamp เข้า state (watchdog)
+  let storageReturnTo = null;     // {map,x,y} ที่จะวาร์ปกลับหลังฝาก
+  let storageNpcId = null;        // Kafra entity id
+  let storageMoveQueue = [];      // [{itemId, amount, invId, isEquipment}]
+  let storageMoveIdx = 0;         // index ใน queue ที่กำลังส่ง
+  let storageLastMoveAt = 0;      // throttle MOVE_TO_KAFRA + MOVE_ITEMS
   let noMonsterSince = 0;        // timestamp ที่เริ่มไม่เจอมอน
   let lastWanderAt = 0;
   let lastFleeAt = 0;
@@ -1468,6 +1736,30 @@
       b[p++] = c & 0xff; b[p++] = (c >> 8) & 0xff; b[p++] = (c >> 16) & 0xff; b[p++] = (c >>> 24) & 0xff;
     }
     activeWS.send(b); return true;
+  }
+  // ============== STORAGE encoders (mirror protocol.js:371-415) ==============
+  // [4e] NPC_NEXT — ไปหน้า dialog ถัดไป (Kafra มีหน้า intro ก่อนเมนู)
+  function sendNpcNext() {
+    if (!activeWS || activeWS.readyState !== 1) return false;
+    activeWS.send(new Uint8Array([0x4e]));
+    return true;
+  }
+  // [56][01][invId:4][amount:4] — ย้ายของจาก inventory → storage
+  //   invId = itemId (stackable) หรือ slotId (equipment)
+  //   หลักฐาน: 56 01 f4020000 08000000 → invId=756(Rough Oridecon) amount=8
+  function sendStorageMove(invId, amount) {
+    if (!activeWS || activeWS.readyState !== 1) return false;
+    const b = new Uint8Array(10); let p = 0;
+    b[p++] = 0x56; b[p++] = 0x01;
+    b[p++] = invId & 0xff; b[p++] = (invId >> 8) & 0xff; b[p++] = (invId >> 16) & 0xff; b[p++] = (invId >>> 24) & 0xff;
+    b[p++] = amount & 0xff; b[p++] = (amount >> 8) & 0xff; b[p++] = (amount >> 16) & 0xff; b[p++] = (amount >>> 24) & 0xff;
+    activeWS.send(b); return true;
+  }
+  // [56][00] — ปิดหน้าต่าง storage
+  function sendStorageClose() {
+    if (!activeWS || activeWS.readyState !== 1) return false;
+    activeWS.send(new Uint8Array([0x56, 0x00]));
+    return true;
   }
   function clearCombatThreat() { monsterAggro.clear(); mobAttackers.clear(); }
 
@@ -1923,7 +2215,28 @@
     addSellItem(id) { if (!CFG.sellItemIds.includes(id)) CFG.sellItemIds.push(id); log('💰 เพิ่มขาย:', nameOf(id)); },
     removeSellItem(id) { CFG.sellItemIds = CFG.sellItemIds.filter(x => x !== id); log('💰 เลิกขาย:', nameOf(id)); },
     sellNow() { if (sellState === 'IDLE' && currentMap && player.x != null) { sellReturnTo = { map: currentMap, x: Math.round(player.x), y: Math.round(player.y) }; sendTeleport(CFG.sellNpcMap, CFG.sellNpcX, CFG.sellNpcY); setSellState('WARP_TO_NPC'); log('💰 ขายทันที! → วาร์ป', CFG.sellNpcMap, '@(', CFG.sellNpcX, CFG.sellNpcY + ')'); } else { log('⚠️ ไม่สามารถขายได้ตอนนี้ (state:', sellState + ')'); } },
-    getInventory() { return [...inventory.entries()].map(([id, c]) => ({ id, name: itemDisplayName(id), count: c, sell: CFG.sellItemIds.includes(id) })).sort((a, b) => b.count - a.count); },
+    getInventory() { return [...inventory.entries()].map(([id, c]) => ({ id, name: itemDisplayName(id), count: c, action: getItemAction(Number(id)) })).sort((a, b) => b.count - a.count); },
+
+    // ---------- Auto-Storage (ฝากเข้า Kafra) ----------
+    storageOn()  { CFG.storageEnabled = true;  log('🏦 Auto-Storage: ON'); },
+    storageOff() { CFG.storageEnabled = false; log('🏦 Auto-Storage: OFF'); },
+    setKafra(name, map) { CFG.kafraName = name; if (map) CFG.kafraMap = map; log('🏦 Kafra:', name, '@', CFG.kafraMap); },
+    setKafraPos(x, y) { CFG.kafraMapX = Math.round(Number(x)); CFG.kafraMapY = Math.round(Number(y)); log('🏦 พิกัดวาร์ป Kafra:', CFG.kafraMapX, CFG.kafraMapY); },
+    useCurrentPosAsKafra() { if (player.x != null && player.y != null) { CFG.kafraMapX = Math.round(player.x); CFG.kafraMapY = Math.round(player.y); if (currentMap) CFG.kafraMap = currentMap; log('🏦 ใช้พิกัดปัจจุบันเป็นจุดวาร์ป Kafra:', CFG.kafraMap, '@(', CFG.kafraMapX, CFG.kafraMapY + ')'); } else { log('⚠️ ยังไม่รู้พิกัดตัวละคร'); } },
+    toggleDepositOnFull(on) { CFG.depositOnFull = !!on; log('🏦 ฝากตอนเต็ม =', CFG.depositOnFull); },
+    toggleDepositAfterSell(on) { CFG.depositAfterSell = !!on; log('🏦 ฝากหลังขาย =', CFG.depositAfterSell); },
+    setDepositItems(...ids) { CFG.depositItemIds = ids; log('🏦 ฝาก item:', ids.map(nameOf).join(', ')); },
+    addDepositItem(id) { if (!CFG.depositItemIds.includes(id)) CFG.depositItemIds.push(id); log('🏦 เพิ่มฝาก:', nameOf(id)); },
+    removeDepositItem(id) { CFG.depositItemIds = CFG.depositItemIds.filter(x => x !== id); log('🏦 เลิกฝาก:', nameOf(id)); },
+    depositNow() {
+      if (storageState !== 'IDLE') { log('⚠️ กำลังฝากอยู่แล้ว (state:', storageState + ')'); return; }
+      if (!CFG.depositItemIds.length) { log('⚠️ ยังไม่ได้เลือก item ที่จะฝาก'); return; }
+      if (!currentMap || player.x == null) { log('⚠️ ยังไม่รู้พิกัดตัวละคร'); return; }
+      let hasDeposit = false;
+      for (const id of CFG.depositItemIds) { if ((inventory.get(id) || 0) > 0) { hasDeposit = true; break; } }
+      if (!hasDeposit) { log('⚠️ ไม่มีของที่จะฝากใน inventory'); return; }
+      startStorage('กดฝากเดี๋ยวนี้', null);
+    },
 
     // ---------- Farm Map ----------
     //  setFarmMap(name, x, y): ตั้งแมปฟาร์ม + พิกัด (x/y optional, default -999=random)
@@ -2082,7 +2395,7 @@
     getLogs() { return logBuf.slice(); },
     clearLogs() { logBuf.length = 0; log('🧹 ล้าง log'); },
     stopAll() {
-      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop);
+      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop); clearInterval(storageLoop);
       if (typeof uiLoop !== 'undefined') clearInterval(uiLoop);
       log('⏹ หยุดระบบทั้งหมดแล้ว');
     },
@@ -2217,6 +2530,7 @@
           <div class="row"><span class="k">มอน (ตี/aggro/รอบ)</span><span class="v" data-combat-aggro>0 / 0 / 0</span></div>
           <div class="row"><span class="k">🎒 Inventory</span><span class="v" data-inventory>?</span></div>
           <div class="row"><span class="k">💰 Sell</span><span class="v" data-sellstate>OFF</span></div>
+          <div class="row"><span class="k">🏦 Storage</span><span class="v" data-storagestate>OFF</span></div>
           <h4>ของที่เก็บได้ (ล่าสุด)</h4>
           <div data-items style="font-size:11px;color:#9aa0a6">(ยังไม่มี)</div>
           <div class="btns"><button class="danger" id="__assist_resetstats">รีเซ็ตสถิติ</button></div>
@@ -2291,7 +2605,18 @@
           <div class="field"><label>พิกัดวาร์ป X</label><input type="number" id="__assist_sellx" placeholder="114"><label style="margin-left:8px">Y</label><input type="number" id="__assist_selly" placeholder="49"><button id="__assist_useselfpos" style="margin-left:8px;font-size:10px">ใช้พิกัดตัวละคร</button></div>
           <div class="field"><label>ขายทุก N นาที (0=off)</label><input type="number" id="__assist_sellinterval" min="0" max="999"></div>
           <div class="btns"><button id="__assist_applysell">ใช้ค่า sell</button><button id="__assist_t_sellfull" class="on">ขายตอนเต็ม</button></div>
-          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เลือก item ที่จะขาย: ติ๊ก checkbox "ขาย" ในส่วน 'ของที่เก็บได้' ด้านบน (default ไม่ขายอะไร)</div>
+          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เลือก item ที่จะขาย/ฝาก: กดปุ่มสีที่รายการของในสถิติ — วน เก็บ(เทา)→ขาย(ส้ม)→ฝาก(เขียว)→เก็บ</div>
+
+          <h4>🏦 Auto-Storage (ฝากของเข้า Kafra)</h4>
+          <div class="btns">
+            <button id="__assist_storagebtn" class="off">Storage: ?</button>
+            <button id="__assist_depositnow" class="primary">ฝากเดี๋ยวนี้</button>
+          </div>
+          <div class="field"><label>ชื่อ NPC Kafra</label><input type="text" id="__assist_kafra" placeholder="เช่น Kafra Staff"></div>
+          <div class="field"><label>แมปที่ Kafra อยู่</label><input type="text" id="__assist_kaframap" placeholder="เช่น izlude"></div>
+          <div class="field"><label>พิกัดวาร์ป X</label><input type="number" id="__assist_kafrax" placeholder="0=ใช้ sell"><label style="margin-left:8px">Y</label><input type="number" id="__assist_kafray" placeholder="0=ใช้ sell"><button id="__assist_usekafrapos" style="margin-left:8px;font-size:10px">ใช้พิกัดตัวละคร</button></div>
+          <div class="field"><label>เมนู choice (0=Save, 1=Storage, 2=Warp)</label><input type="number" id="__assist_kafrachoice" min="0" max="9" placeholder="1"></div>
+          <div class="btns"><button id="__assist_applykafra">ใช้ค่า storage</button><button id="__assist_t_depfull" class="on">ฝากตอนเต็ม</button><button id="__assist_t_depaftersell" class="on">ฝากหลังขาย</button></div>
         </div>
         <div class="__assist_page" data-page="log">
           <div class="logbox" id="__assist_logbox"></div>
@@ -2474,6 +2799,22 @@
     });
     root.querySelector('#__assist_useselfpos').addEventListener('click', () => { ASSIST.useCurrentPosAsSellWarp(); });
     root.querySelector('#__assist_t_sellfull').addEventListener('click', () => { CFG.sellOnFull = !CFG.sellOnFull; ASSIST.toggleSellOnFull(CFG.sellOnFull); });
+    // ---- storage wires ----
+    root.querySelector('#__assist_storagebtn').addEventListener('click', () => CFG.storageEnabled ? ASSIST.storageOff() : ASSIST.storageOn());
+    root.querySelector('#__assist_depositnow').addEventListener('click', () => ASSIST.depositNow());
+    root.querySelector('#__assist_applykafra').addEventListener('click', () => {
+      const kn = root.querySelector('#__assist_kafra').value.trim();
+      const km = root.querySelector('#__assist_kaframap').value.trim();
+      const kx = parseInt(root.querySelector('#__assist_kafrax').value, 10);
+      const ky = parseInt(root.querySelector('#__assist_kafray').value, 10);
+      const kc = parseInt(root.querySelector('#__assist_kafrachoice').value, 10);
+      if (kn) ASSIST.setKafra(kn, km);
+      if (!isNaN(kx) && !isNaN(ky)) ASSIST.setKafraPos(kx, ky);
+      if (!isNaN(kc)) CFG.kafraChoice = kc;
+    });
+    root.querySelector('#__assist_usekafrapos').addEventListener('click', () => { ASSIST.useCurrentPosAsKafra(); });
+    root.querySelector('#__assist_t_depfull').addEventListener('click', () => { CFG.depositOnFull = !CFG.depositOnFull; ASSIST.toggleDepositOnFull(CFG.depositOnFull); });
+    root.querySelector('#__assist_t_depaftersell').addEventListener('click', () => { CFG.depositAfterSell = !CFG.depositAfterSell; ASSIST.toggleDepositAfterSell(CFG.depositAfterSell); });
     // ---- farm map wires ----
     root.querySelector('#__assist_warptofarm').addEventListener('click', () => ASSIST.warpToFarm());
     root.querySelector('#__assist_t_warpback').addEventListener('click', () => { CFG.warpBackToFarm = !CFG.warpBackToFarm; ASSIST.toggleWarpBack(CFG.warpBackToFarm); });
@@ -2575,15 +2916,15 @@
         const price = itemPrice(numId);
         const zeny = price ? ` <span style="color:#f1c40f">${(price * count).toLocaleString()}z</span>` : '';
         const icon = itemDB.loaded ? `<img src="${itemIconUrl(numId)}" style="width:16px;height:16px;vertical-align:middle" onerror="this.style.display='none'"> ` : '';
-        const checked = CFG.sellItemIds.includes(numId) ? 'checked' : '';
-        return `<div>${icon}${itemDisplayName(numId)} ×${count}${zeny} <label style="float:right;font-size:10px;color:#e67e22"><input type="checkbox" data-sellid="${numId}" ${checked} style="vertical-align:middle">ขาย</label></div>`;
+        // ★ toggle 3-state: เก็บ(เทา) / ขาย(ส้ม) / ฝาก(เขียว) — กดวน
+        const action = getItemAction(numId);
+        const actionLabel = action === 'sell' ? 'ขาย' : (action === 'deposit' ? 'ฝาก' : 'เก็บ');
+        const actionColor = action === 'sell' ? '#e67e22' : (action === 'deposit' ? '#27ae60' : '#6b7280');
+        return `<div>${icon}${itemDisplayName(numId)} ×${count}${zeny} <button data-itemaction="${numId}" style="float:right;font-size:10px;color:#fff;background:${actionColor};border:none;border-radius:3px;padding:1px 6px;cursor:pointer;font-family:inherit">${actionLabel}</button></div>`;
       }).join('') : '(ยังไม่มี)';
-      // wire checkboxes
-      itemsEl.querySelectorAll('input[data-sellid]').forEach(cb => {
-        cb.onchange = () => {
-          const id = parseInt(cb.getAttribute('data-sellid'), 10);
-          if (cb.checked) ASSIST.addSellItem(id); else ASSIST.removeSellItem(id);
-        };
+      // wire toggle buttons (วน keep→sell→deposit→keep)
+      itemsEl.querySelectorAll('button[data-itemaction]').forEach(btn => {
+        btn.onclick = () => { const id = parseInt(btn.getAttribute('data-itemaction'), 10); cycleItemAction(id); };
       });
     }
     // combat stats
@@ -2594,6 +2935,7 @@
     // inventory + sell state
     set('[data-inventory]', inventory.size + ' ชนิด' + (inventoryFull ? ' ⚠️เต็ม' : ''));
     set('[data-sellstate]', CFG.sellEnabled ? (sellState === 'IDLE' ? 'ON (รอ trigger)' : sellState) : 'OFF');
+    set('[data-storagestate]', CFG.storageEnabled ? (storageState === 'IDLE' ? 'ON (รอ trigger)' : storageState) : 'OFF');
 
     // config page — ซิงค์ค่าปัจจุบันเข้า input (กันเขียนทับเวลา user กำลังพิมพ์)
     const lootBtn = root.querySelector('#__assist_lootbtn');
@@ -2650,6 +2992,16 @@
     syncInput('#__assist_selly', CFG.sellNpcY);
     syncInput('#__assist_sellinterval', CFG.sellIntervalMin);
     syncToggle('#__assist_t_sellfull', CFG.sellOnFull);
+    // storage config sync
+    const storageBtn = root.querySelector('#__assist_storagebtn');
+    if (storageBtn) { storageBtn.textContent = 'Storage: ' + (CFG.storageEnabled ? 'ON' : 'OFF') + (storageState !== 'IDLE' ? ' (' + storageState + ')' : ''); storageBtn.className = CFG.storageEnabled ? 'on' : 'off'; }
+    syncInput('#__assist_kafra', CFG.kafraName);
+    syncInput('#__assist_kaframap', CFG.kafraMap);
+    syncInput('#__assist_kafrax', CFG.kafraMapX);
+    syncInput('#__assist_kafray', CFG.kafraMapY);
+    syncInput('#__assist_kafrachoice', CFG.kafraChoice);
+    syncToggle('#__assist_t_depfull', CFG.depositOnFull);
+    syncToggle('#__assist_t_depaftersell', CFG.depositAfterSell);
     // farm map config sync
     syncInput('#__assist_farmmap', CFG.farmMap);
     syncInput('#__assist_farmx', CFG.farmMapX);
