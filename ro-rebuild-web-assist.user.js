@@ -114,7 +114,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.0.0';
+  const VERSION = '4.0.1';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -749,29 +749,34 @@
       }
     }
     // ============== SELL / INVENTORY packets ==============
-    // 0x32 INVENTORY: track count แม่นยำจาก server (mirror world.js:738-789)
-    //   sub=3 (stackable): [32][03][invId:4=itemId×2][02 00][seqId:4][invId:4][countEnc:2][flag:1]
-    //   itemId = invId >>> 1, count = countEnc >>> 1 (bit-packed)
+    // 0x32 INVENTORY_UPDATE (IN) — mirror protocol.js:1217-1281
+    //   โครงสร้างจริง (19B): [32][03][invId:4=itemId×2][02 00][seqId:4][invId:4][count_enc:2][flag:1]
+    //   offset: 0=op 1=sub 2..5=invId 6..7=const(02 00) 8..11=seqId 12..15=invId repeat 16..17=count_enc 18=flag
+    //   itemId = invId >>> 1   (bit-packed: bit 0 = identified flag)
+    //   count  = count_enc >>> 1  (bit-packed: bit 0 = flag; real = count_enc/2)
+    //   หลักฐาน: Heart of Mermaid 160 → 0x0140=320; Meat 11 → 0x0016=22; Poison Spore 18 → 0x0024=36
     else if (op === 0x32 && u.length >= 6) {
       const sub = u[1];
-      if (sub === 3 && u.length >= 19) {
+      if (sub === 3 && u.length >= 18) {
+        // ★ stackable: set count ตรงจาก server (รองรับทั้งเพิ่ม/ลด/ใช้)
         const invId = u32(u, 2);
         const itemId = invId >>> 1;
-        const countEnc = u16(u, 15);
+        // ★ count_enc อยู่ offset 16-17 (protocol.js:1270-1278)
+        const countEnc = u16(u, 16);
         const count = countEnc >>> 1;
         if (itemId > 0 && itemId < 50000) {
           inventory.set(itemId, count);   // SET ตรงจาก server (แม่นยำเสมอ)
         }
-      } else if (sub !== 3 && sub !== 22) {
-        // equipment (sub=5 etc) — +1 each (mirror world.js:753)
-        // อ่าน itemId จาก offset 12 ถ้ามี
-        if (u.length >= 15) {
-          const itemId = u16(u, 12) >>> 1;
-          if (itemId > 0 && itemId < 50000) {
-            inventory.set(itemId, (inventory.get(itemId) || 0) + 1);
-          }
+      } else if (sub === 5 && u.length >= 15) {
+        // ★ equipment add (sub=5, 53B): itemId ที่ offset 12 (2B LE) bit-packed >>> 1
+        //   (protocol.js:1237-1248) — แต่ละชิ้นส่งแยก → +1
+        const itemId = u16(u, 12) >>> 1;
+        if (itemId > 0 && itemId < 50000) {
+          inventory.set(itemId, (inventory.get(itemId) || 0) + 1);
         }
       }
+      // ★ sub อื่น ๆ (รวม 22=equipment moved to storage, 12B removal) → ไม่ track
+      //   (protocol.js:1251-1266) ไม่มี itemId → เคยทำให้เกิด bug inventory.set(undefined, 1)
     }
     // 0x20 SYS_MESSAGE: detect "too full" → inventoryFull (mirror world.js:264-279)
     else if (op === 0x20 && u.length >= 2) {
