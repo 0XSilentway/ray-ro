@@ -214,10 +214,10 @@
   function itemPrice(id) { return itemDB.prices[String(id)] || 0; }
   // URL รูป item (lazy-load จาก GitHub raw)
   function itemIconUrl(id) { return ITEMS_ICON_URL + id + '.gif'; }
-  // ยอด zeny รวม session (จาก itemsByCount × buyPrice)
+  // ยอด zeny รวม session (จาก inventory จริง × buyPrice)
   function sessionZeny() {
     let total = 0;
-    for (const [id, count] of stats.itemsByCount) total += (itemPrice(id) || 0) * count;
+    for (const [id, count] of inventory) total += (itemPrice(Number(id)) || 0) * count;
     return total;
   }
 
@@ -2475,15 +2475,15 @@
     set('[data-zeny]', sessionZeny().toLocaleString() + 'z');
     const itemsEl = root.querySelector('[data-items]');
     if (itemsEl) {
-      const top = s.itemsByCount.slice(0, 8);
-      itemsEl.innerHTML = top.length ? top.map(i => {
-        const price = itemPrice(i.id);
-        const invCount = inventory.get(i.id) || 0;
-        const invStr = invCount ? ` <span style="color:#8ab4f8">(${invCount})</span>` : '';
-        const zeny = price ? ` <span style="color:#f1c40f">${(price * i.count).toLocaleString()}z</span>` : '';
-        const icon = itemDB.loaded ? `<img src="${itemIconUrl(i.id)}" style="width:16px;height:16px;vertical-align:middle" onerror="this.style.display='none'"> ` : '';
-        const checked = CFG.sellItemIds.includes(i.id) ? 'checked' : '';
-        return `<div>${icon}${i.name} ×${i.count}${invStr}${zeny} <label style="float:right;font-size:10px;color:#e67e22"><input type="checkbox" data-sellid="${i.id}" ${checked} style="vertical-align:middle">ขาย</label></div>`;
+      // ★ แสดงจาก inventory จริง (ลดตอนใช้/ขาย) เรียงจากจำนวนมาก → น้อย
+      const invTop = [...inventory.entries()].filter(([id, c]) => c > 0).sort((a, b) => b[1] - a[1]).slice(0, 10);
+      itemsEl.innerHTML = invTop.length ? invTop.map(([id, count]) => {
+        const numId = Number(id);
+        const price = itemPrice(numId);
+        const zeny = price ? ` <span style="color:#f1c40f">${(price * count).toLocaleString()}z</span>` : '';
+        const icon = itemDB.loaded ? `<img src="${itemIconUrl(numId)}" style="width:16px;height:16px;vertical-align:middle" onerror="this.style.display='none'"> ` : '';
+        const checked = CFG.sellItemIds.includes(numId) ? 'checked' : '';
+        return `<div>${icon}${itemDisplayName(numId)} ×${count}${zeny} <label style="float:right;font-size:10px;color:#e67e22"><input type="checkbox" data-sellid="${numId}" ${checked} style="vertical-align:middle">ขาย</label></div>`;
       }).join('') : '(ยังไม่มี)';
       // wire checkboxes
       itemsEl.querySelectorAll('input[data-sellid]').forEach(cb => {
