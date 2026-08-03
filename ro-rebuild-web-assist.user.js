@@ -153,6 +153,74 @@
   }
 
   // ============================================================
+  //  Item database (โหลดจาก GitHub raw + cache localStorage)
+  // ============================================================
+  const ITEMS_CSV_URL = GITHUB_RAW.replace('/ro-rebuild-web-assist.user.js', '/items.csv');
+  const ITEMS_META_URL = GITHUB_RAW.replace('/ro-rebuild-web-assist.user.js', '/items/meta.json');
+  const ITEMS_ICON_URL = GITHUB_RAW.replace('/ro-rebuild-web-assist.user.js', '/items/small/');
+  const ITEMDB_CACHE_KEY = 'roAssistItemDB_v1';
+  const itemDB = { names: {}, prices: {}, loaded: false };
+  async function loadItemDB() {
+    if (itemDB.loaded) return;
+    // ลอง cache ก่อน
+    try {
+      const cached = localStorage.getItem(ITEMDB_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.names && parsed.prices) {
+          itemDB.names = parsed.names;
+          itemDB.prices = parsed.prices;
+          itemDB.loaded = true;
+          log('🗃️ โหลด item DB จาก cache (' + Object.keys(parsed.names).length + ' รายการ)');
+          return;
+        }
+      }
+    } catch (e) {}
+    // โหลดจาก GitHub
+    try {
+      log('🗃️ กำลังโหลด item DB จาก GitHub...');
+      const [csvRes, metaRes] = await Promise.all([fetch(ITEMS_CSV_URL), fetch(ITEMS_META_URL)]);
+      if (csvRes.ok) {
+        const csv = await csvRes.text();
+        for (const line of csv.split('\n')) {
+          const c = line.indexOf(',');
+          if (c > 0) { const id = line.slice(0, c).trim(); const nm = line.slice(c + 1).trim(); if (id && nm) itemDB.names[id] = nm; }
+        }
+      }
+      if (metaRes.ok) {
+        const meta = await metaRes.json();
+        for (const [id, info] of Object.entries(meta)) {
+          if (info && info.buyPrice != null) itemDB.prices[id] = info.buyPrice;
+        }
+      }
+      itemDB.loaded = true;
+      // cache ลง localStorage (กันโหลดใหม่ทุกครั้ง)
+      try { localStorage.setItem(ITEMDB_CACHE_KEY, JSON.stringify({ names: itemDB.names, prices: itemDB.prices })); } catch (e) {}
+      log('🗃️ โหลด item DB สำเร็จ: ' + Object.keys(itemDB.names).length + ' ชื่อ, ' + Object.keys(itemDB.prices).length + ' ราคา');
+    } catch (e) {
+      log('⚠️ โหลด item DB ล้มเหลว (offline?) — ใช้ชื่อเริ่มต้น');
+      itemDB.loaded = true;   // ไม่ลองใหม่
+    }
+  }
+  // ชื่อ item จาก DB (fallback ไป CFG.itemNames หรือ item_<id>)
+  function itemDisplayName(id) {
+    const k = String(id);
+    if (itemDB.names[k]) return itemDB.names[k];
+    if (CFG.itemNames[id]) return CFG.itemNames[id];
+    return 'item_' + id;
+  }
+  // ราคา item (buyPrice) — 0 ถ้าไม่มีข้อมูล
+  function itemPrice(id) { return itemDB.prices[String(id)] || 0; }
+  // URL รูป item (lazy-load จาก GitHub raw)
+  function itemIconUrl(id) { return ITEMS_ICON_URL + id + '.gif'; }
+  // ยอด zeny รวม session (จาก itemsByCount × buyPrice)
+  function sessionZeny() {
+    let total = 0;
+    for (const [id, count] of stats.itemsByCount) total += (itemPrice(id) || 0) * count;
+    return total;
+  }
+
+  // ============================================================
   //  ตั้งค่าเริ่มต้น — แก้ได้ที่นี่ หรือใช้คำสั่ง ASSIST.* จาก console
   // ============================================================
   const CFG = {
@@ -273,7 +341,10 @@
     while (logBuf.length > LOG_BUF_MAX) logBuf.shift();
     if (CFG.verbose) console.log('[ASSIST]', ...a);
   }
-  const nameOf = (id) => CFG.itemNames[id] ? `${CFG.itemNames[id]}(${id})` : `item_${id}`;
+  const nameOf = (id) => {
+    const db = itemDisplayName(id);
+    return db !== 'item_' + id ? `${db}(${id})` : (CFG.itemNames[id] ? `${CFG.itemNames[id]}(${id})` : `item_${id}`);
+  };
 
   // ---------- สถิติการฟาร์ม ----------
   const stats = {
@@ -1837,6 +1908,7 @@
           <h4>การฟาร์ม</h4>
           <div class="row"><span class="k">ฆ่าได้</span><span class="v" data-kills>0</span></div>
           <div class="row"><span class="k">เก็บของได้</span><span class="v" data-looted>0</span></div>
+          <div class="row"><span class="k">💰 ยอด zeny (session)</span><span class="v" data-zeny style="color:#f1c40f">0z</span></div>
           <div class="row"><span class="k">EXP รวม</span><span class="v" data-exp>0</span></div>
           <div class="row"><span class="k">EXP/นาที</span><span class="v" data-expmin>0</span></div>
           <div class="row"><span class="k">เวลาทำงาน</span><span class="v" data-elapsed>0s</span></div>
@@ -2136,10 +2208,16 @@
     set('[data-expmin]', s.expPerMin.toLocaleString());
     set('[data-elapsed]', fmtMs(s.elapsedMs));
     set('[data-deaths]', s.deaths);
+    set('[data-zeny]', sessionZeny().toLocaleString() + 'z');
     const itemsEl = root.querySelector('[data-items]');
     if (itemsEl) {
       const top = s.itemsByCount.slice(0, 8);
-      itemsEl.innerHTML = top.length ? top.map(i => `<div>${i.name} ×${i.count}</div>`).join('') : '(ยังไม่มี)';
+      itemsEl.innerHTML = top.length ? top.map(i => {
+        const price = itemPrice(i.id);
+        const zeny = price ? ` <span style="color:#f1c40f">${(price * i.count).toLocaleString()}z</span>` : '';
+        const icon = itemDB.loaded ? `<img src="${itemIconUrl(i.id)}" style="width:16px;height:16px;vertical-align:middle" onerror="this.style.display='none'"> ` : '';
+        return `<div>${icon}${i.name} ×${i.count}${zeny}</div>`;
+      }).join('') : '(ยังไม่มี)';
     }
     // combat stats
     const tgt = ASSIST.getTarget();
@@ -2292,6 +2370,7 @@
     }, 400);
     // ตรวจเวอร์ชั่นครั้งแรกหลังเข้าเกม 5 วิ
     setTimeout(checkVersion, 5000);
+    setTimeout(loadItemDB, 2000);   // โหลด item DB หลังเข้าเกม 2s
   }
   if (document.body) startUI();
   else document.addEventListener('DOMContentLoaded', startUI, { once: true });
