@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.3.4
+// @version      4.4.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,12 +116,13 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.3.4';
+  const VERSION = '4.4.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
   const PERSIST_KEYS = [
     'healEnabled', 'healAtPercent', 'healItems', 'healMode', 'healDelayMs', 'healAtMax',
+    'buffEnabled', 'buffItems', 'buffRebuffDelayMs',
     'lootEnabled', 'lootDelayAfterDropMs', 'filter',
     'warpLootEnabled',
     'combatEnabled', 'targetWhitelist', 'targetBlacklist', 'attackRange', 'rangedAttackRange',
@@ -155,6 +156,35 @@
   function saveConfigDebounced() {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(saveConfig, 800);
+  }
+
+  // ============================================================
+  //  AUTO-BUFF persistence — เก็บเวลาใช้ buff ล่าสุดข้าม session
+  //    (mirror bot.js:207-231 serializeUseTimes)
+  //    กัน buff หายเมื่อ refresh หน้าเว็บ → บัพจะใช้ใหม่ทันทีถ้าหมดเวลา
+  // ============================================================
+  const BUFF_TIMES_KEY = 'roAssistBuffTimes_v1';
+  const lastBuffUse = new Map();   // itemId → timestamp (ms) ใช้ครั้งล่าสุด
+  function loadBuffTimes() {
+    try {
+      const raw = localStorage.getItem(BUFF_TIMES_KEY);
+      if (!raw) return;
+      const obj = JSON.parse(raw);
+      for (const [id, ts] of Object.entries(obj)) lastBuffUse.set(Number(id), Number(ts) || 0);
+      log('✨ โหลดเวลา buff ล่าสุด:', lastBuffUse.size, 'รายการ');
+    } catch (e) { /* ignore */ }
+  }
+  function saveBuffTimes() {
+    try {
+      const obj = {};
+      for (const [id, ts] of lastBuffUse) obj[id] = ts;
+      localStorage.setItem(BUFF_TIMES_KEY, JSON.stringify(obj));
+    } catch (e) { /* ignore */ }
+  }
+  let buffSaveTimer = null;
+  function saveBuffTimesDebounced() {
+    if (buffSaveTimer) clearTimeout(buffSaveTimer);
+    buffSaveTimer = setTimeout(saveBuffTimes, 1000);
   }
 
   // ============================================================
@@ -241,6 +271,16 @@
     healAtMax: false,             // true = ใช้ยาจนเต็มก่อนหยุด (ไม่ใช่แค่พ้น threshold)
     healExhaustedMs: 3000,        // ★ item ที่ "หมด" จะรออีก N ms ก่อนลองใหม่ (เผื่อเก็บ/ซื้อมาเพิ่ม)
     healItemEffectCheckMs: 300,   // รอ server ส่ง HP กลับ N ms หลังใช้ item แล้วค่อยเช็คผล
+
+    // ---------- AUTO-BUFF (ใช้ไอเทมบัพเป็นระยะ — countdown) ----------
+    //  mirror บอทหลัก autoBuff (config.json:402-441) — timer mode
+    //  เก็บเวลาใช้ล่าสุดข้าม session (localStorage) กัน buff หายเมื่อ refresh
+    buffEnabled: false,           // เปิดใช้ตอนเริ่มหรือไม่
+    // ★ รายการ buff: [{itemId, intervalMin}] — intervalMin = ทุกกี่นาทีจะใช้ซ้ำ
+    //   ตัวอย่าง: [{itemId:656, intervalMin:30}] = Awakening Potion ทุก 30 นาที
+    buffItems: [],                // ★ default ว่าง = ไม่ใช้ buff ใด ๆ
+    buffCheckMs: 1000,            // ความถี่ในการเช็ค (1 วิ)
+    buffRebuffDelayMs: 5000,      // รออย่างน้อย N ms ก่อนใช้ buff ตัวเดิมซ้ำ (กัน spurious)
 
     // ---------- AUTO-REST (★ default OFF — นั่งพักเสี่ยงถ้ามีมอนรอบตัว) ----------
     //  เมื่อ HP ต่ำกว่า restHpPercent และไม่โดนรุม → นั่งพัก
@@ -365,6 +405,7 @@
 
   // ★ โหลดค่าที่บันทึกไว้จาก localStorage (ทับ default)
   loadConfig();
+  loadBuffTimes();   // ★ โหลดเวลา buff ล่าสุดข้าม session
 
   // ---------- state ทั่วไป ----------
   let activeWS = null;                 // game socket (ใช้ส่งคำสั่ง)
@@ -552,6 +593,34 @@
       log('💉 ใช้', nameOf(id), `@ HP ${hp.cur}/${hp.max} (${pct.toFixed(0)}%)`);
     }
   }, CFG.healCheckMs);
+
+  // ============================================================
+  //  AUTO-BUFF — ใช้ไอเทมบัพเป็นระยะ (timer mode, mirror bot.js _maybeBuff:3505-3558)
+  //    แต่ละ item มี intervalMin ของตัวเอง → ใช้ซ้ำเมื่อครบเวลา
+  //    เก็บ lastBuffUse ข้าม session → refresh หน้าแล้ว buff ยังจำเวลาเดิม
+  // ============================================================
+  const buffLoop = setInterval(() => {
+    if (!CFG.buffEnabled) return;
+    if (!CFG.buffItems || !CFG.buffItems.length) return;
+    if (isDead) return;
+    if (!activeWS || activeWS.readyState !== 1) return;
+    const now = nowMs();
+    for (const item of CFG.buffItems) {
+      if (!item || !item.itemId || !item.intervalMin) continue;
+      const intervalMs = item.intervalMin * 60 * 1000;
+      const last = lastBuffUse.get(item.itemId) || 0;
+      // ★ rebuffDelay: รออย่างน้อย N ms ก่อนใช้ซ้ำ (กัน spurious ถ้า server ล้าง buff)
+      if (last > 0 && (now - last) < Math.min(intervalMs, CFG.buffRebuffDelayMs)) continue;
+      // ★ ยังไม่ครบ interval → skip
+      if (last > 0 && (now - last) < intervalMs) continue;
+      if (sendUseItem(item.itemId)) {
+        lastBuffUse.set(item.itemId, now);
+        saveBuffTimesDebounced();
+        const remainMin = item.intervalMin;
+        log('✨ ใช้ buff', nameOf(item.itemId), '(ทุก', remainMin + 'นาที)');
+      }
+    }
+  }, CFG.buffCheckMs);
 
   // ============================================================
   //  AUTO-LOOT
@@ -743,6 +812,8 @@
       isDead = true;
       hp.cur = 0;
       stats.deaths++;
+      // ★ ล้างเวลา buff — ตายแล้ว buff หายหมด → ใช้ใหม่ได้ทันทีหลัง respawn (mirror bot.js:743-746)
+      if (lastBuffUse.size > 0) { lastBuffUse.clear(); saveBuffTimesDebounced(); }
       log('☠️ ตัวละครตาย — หยุด heal จนกว่าจะ respawn');
     }
     // 0x12 MAP_NAME: ชื่อแมปปัจจุบัน → เก็บไว้ใช้สำหรับ warp
@@ -2155,6 +2226,12 @@
       console.log('  ASSIST.setHealExhausted(3000)     // item หมด→รอ N ms แล้วลองใหม่ (default 3000)');
       console.log('  ASSIST.clearHealExhausted()       // บังคับลองใช้ item ทุกตัวใหม่ (ล้าง mark หมด)');
       console.log('  ASSIST.setHealToFull(true)        // true=ใช้ยาจนเต็ม, false=พ้น threshold หยุด');
+      console.log(`%c Auto-Buff `, 'color:#9b59b6;font-weight:bold');
+      console.log('  ASSIST.buffOn() / ASSIST.buffOff()');
+      console.log('  ASSIST.addBuffItem(656, 30)        // Awakening Potion ทุก 30 นาที');
+      console.log('  ASSIST.setBuffItems([{itemId:656,intervalMin:30}])');
+      console.log('  ASSIST.removeBuffItem(656)         ASSIST.buffNow()');
+      console.log('  ASSIST.getBuffCountdowns()         // ดู countdown แต่ละตัว');
       console.log(`%c Auto-Loot `, 'color:#2196f3;font-weight:bold');
       console.log('  ASSIST.lootOn() / ASSIST.lootOff()');
       console.log('  ASSIST.setLootMode("all")         // "all" | "only" | "except"');
@@ -2210,7 +2287,63 @@
     },
     setHealToFull(on) { CFG.healAtMax = !!on; log('💉 ใช้ยาจนเต็ม =', CFG.healAtMax); },
 
-    // ---------- Auto-Rest ----------
+    // ---------- Auto-Buff ----------
+    //  buffItems: [{itemId, intervalMin}] — intervalMin = ทุกกี่นาทีจะใช้ซ้ำ
+    //  เก็บเวลาใช้ล่าสุดข้าม session (localStorage) กัน buff หายเมื่อ refresh
+    buffOn()  { CFG.buffEnabled = true;  log('✨ Auto-Buff: ON'); },
+    buffOff() { CFG.buffEnabled = false; log('✨ Auto-Buff: OFF'); },
+    // ★ setBuffItems([{itemId:656, intervalMin:30}, ...]) — แทนที่ทั้งรายการ
+    setBuffItems(items) {
+      CFG.buffItems = (items || []).filter(x => x && x.itemId && x.intervalMin > 0)
+        .map(x => ({ itemId: Number(x.itemId), intervalMin: Number(x.intervalMin) }));
+      CFG.buffEnabled = true;
+      log('✨ buffItems =', CFG.buffItems.map(x => nameOf(x.itemId) + '(ทุก' + x.intervalMin + 'นาที)').join(', '));
+    },
+    // ★ addBuffItem(itemId, intervalMin) — เพิ่ม 1 รายการ (ถ้ามี itemId อยู่แล้ว = update interval)
+    addBuffItem(itemId, intervalMin) {
+      itemId = Number(itemId); intervalMin = Number(intervalMin);
+      if (!itemId || intervalMin <= 0) { log('⚠️ itemId และ intervalMin ต้อง > 0'); return; }
+      const existing = CFG.buffItems.find(x => x.itemId === itemId);
+      if (existing) { existing.intervalMin = intervalMin; log('✨ แก้', nameOf(itemId), '→ ทุก', intervalMin + 'นาที'); }
+      else { CFG.buffItems.push({ itemId, intervalMin }); log('✨ เพิ่ม', nameOf(itemId), 'ทุก', intervalMin + 'นาที'); }
+    },
+    removeBuffItem(itemId) {
+      itemId = Number(itemId);
+      CFG.buffItems = CFG.buffItems.filter(x => x.itemId !== itemId);
+      lastBuffUse.delete(itemId);
+      saveBuffTimesDebounced();
+      log('✨ ลบ buff', nameOf(itemId));
+    },
+    // ★ ใช้ buff ทั้งหมดทันที (reset countdown) — เผื่ออยากใช้เลยไม่รอ
+    buffNow() {
+      if (!CFG.buffItems.length) { log('⚠️ ยังไม่ได้ตั้ง buffItems'); return; }
+      if (!activeWS || activeWS.readyState !== 1) { log('⚠️ ยังไม่ได้เชื่อมต่อ'); return; }
+      const now = nowMs();
+      let used = 0;
+      for (const item of CFG.buffItems) {
+        if (sendUseItem(item.itemId)) { lastBuffUse.set(item.itemId, now); used++; }
+      }
+      saveBuffTimesDebounced();
+      log('✨ ใช้ buff ทั้งหมด', used, 'รายการทันที');
+    },
+    // ★ ดู countdown ของแต่ละ buff (สำหรับ UI + debug)
+    getBuffCountdowns() {
+      const now = nowMs();
+      return CFG.buffItems.map(item => {
+        const last = lastBuffUse.get(item.itemId) || 0;
+        const intervalMs = item.intervalMin * 60 * 1000;
+        const nextUseAt = last + intervalMs;
+        return {
+          itemId: item.itemId,
+          name: itemDisplayName(item.itemId),
+          intervalMin: item.intervalMin,
+          lastUsed: last,
+          nextUseAt,
+          remainingMs: Math.max(0, nextUseAt - now),
+        };
+      });
+    },
+    clearBuffTimes() { lastBuffUse.clear(); saveBuffTimes(); log('✨ ล้างเวลา buff ทั้งหมด → จะใช้ใหม่ทันที'); },
     restOn()  { CFG.restEnabled = true;  log('🪑 Auto-Rest: ON (HP < ' + CFG.restHpPercent + '% → นั่งพัก)'); },
     restOff() { CFG.restEnabled = false; if (isResting) { sendStand(); isResting = false; } log('🪑 Auto-Rest: OFF'); },
     setRestHp(pct) { CFG.restHpPercent = pct; log('🪑 นั่งพักตอน HP <', pct + '%'); },
@@ -2410,7 +2543,7 @@
     getLogs() { return logBuf.slice(); },
     clearLogs() { logBuf.length = 0; log('🧹 ล้าง log'); },
     stopAll() {
-      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop); clearInterval(storageLoop);
+      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop); clearInterval(storageLoop); clearInterval(buffLoop);
       if (typeof uiLoop !== 'undefined') clearInterval(uiLoop);
       log('⏹ หยุดระบบทั้งหมดแล้ว');
     },
@@ -2752,6 +2885,15 @@
           <div class="btns"><button id="__assist_applyheal">ใช้ค่า heal</button></div>
           <div class="field"><label>โหมด heal</label><select id="__assist_healmode"><option value="order">order (ใช้ตัวเดิมจนหมด)</option><option value="random">random (สุ่ม)</option></select></div>
 
+          <h4>✨ Auto-Buff (ใช้ไอเทมบัพเป็นระยะ)</h4>
+          <div class="btns">
+            <button id="__assist_buffbtn" class="off">Buff: ?</button>
+            <button id="__assist_buffnow" class="primary">ใช้ buff เดี๋ยวนี้</button>
+          </div>
+          <div class="field"><label>buff: itemId,ทุกกี่นาที (คั่นบรรทัด เช่น 656,30) — เพิ่มได้หลายตัว</label><textarea id="__assist_buffitems" rows="3" style="width:100%;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:'Consolas',monospace;resize:vertical" placeholder="656,30&#10;645,30"></textarea></div>
+          <div class="btns"><button id="__assist_applybuff">ใช้ค่า buff</button><button id="__assist_clearbufftimes">รีเซ็ต countdown</button></div>
+          <div id="__assist_buffcountdown" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่ตั้ง buff)</div>
+
           <h4>⚔️ Combat (ส่ง attack packet จริง)</h4>
           <div class="btns"><button id="__assist_combatbtn" class="off">Combat: ?</button></div>
           <div class="field"><label>มอนที่จะตี — whitelist (ชื่อหรือ sprite id, คั่นจุลภาค) — ว่าง = ตีทุกมอน</label><input type="text" id="__assist_whitelist" placeholder="เช่น Poring,Lunatic หรือ 4000,1010"></div>
@@ -2935,6 +3077,20 @@
       if (ids.length) ASSIST.setHealItems(...ids);
     });
     root.querySelector('#__assist_healmode').addEventListener('change', e => ASSIST.setHealMode(e.target.value));
+    // ---- buff wires ----
+    root.querySelector('#__assist_buffbtn').addEventListener('click', () => CFG.buffEnabled ? ASSIST.buffOff() : ASSIST.buffOn());
+    root.querySelector('#__assist_buffnow').addEventListener('click', () => ASSIST.buffNow());
+    root.querySelector('#__assist_applybuff').addEventListener('click', () => {
+      const raw = root.querySelector('#__assist_buffitems').value;
+      const items = raw.split('\n').map(line => {
+        const parts = line.split(',').map(s => s.trim());
+        const itemId = parseInt(parts[0], 10);
+        const intervalMin = parseFloat(parts[1]);
+        return (!isNaN(itemId) && !isNaN(intervalMin) && intervalMin > 0) ? { itemId, intervalMin } : null;
+      }).filter(x => x);
+      ASSIST.setBuffItems(items);
+    });
+    root.querySelector('#__assist_clearbufftimes').addEventListener('click', () => ASSIST.clearBuffTimes());
     root.querySelector('#__assist_lootmode').addEventListener('change', e => ASSIST.setLootMode(e.target.value));
     root.querySelector('#__assist_manageonly').addEventListener('click', () => openItemListPopup('only'));
     root.querySelector('#__assist_manageexcept').addEventListener('click', () => openItemListPopup('except'));
@@ -3140,6 +3296,26 @@
     if (hi && document.activeElement !== hi) hi.value = CFG.healItems.join(',');
     const hm = root.querySelector('#__assist_healmode');
     if (hm && document.activeElement !== hm) hm.value = CFG.healMode;
+    // buff config sync + countdown display
+    const buffBtn = root.querySelector('#__assist_buffbtn');
+    if (buffBtn) { buffBtn.textContent = 'Buff: ' + (CFG.buffEnabled ? 'ON' : 'OFF'); buffBtn.className = CFG.buffEnabled ? 'on' : 'off'; }
+    const bi = root.querySelector('#__assist_buffitems');
+    if (bi && document.activeElement !== bi) bi.value = (CFG.buffItems || []).map(x => x.itemId + ',' + x.intervalMin).join('\n');
+    const cdEl = root.querySelector('#__assist_buffcountdown');
+    if (cdEl) {
+      if (!CFG.buffItems || !CFG.buffItems.length) {
+        cdEl.textContent = '(ยังไม่ตั้ง buff)';
+      } else {
+        const cds = ASSIST.getBuffCountdowns();
+        cdEl.innerHTML = cds.map(c => {
+          const icon = itemDB.loaded ? `<img src="${itemIconUrl(c.itemId)}" style="width:14px;height:14px;vertical-align:middle" onerror="this.style.display='none'"> ` : '';
+          const remSec = Math.ceil(c.remainingMs / 1000);
+          const remStr = remSec >= 60 ? Math.floor(remSec/60) + 'นาที' + (remSec%60 ? ' '+(remSec%60)+'s' : '') : remSec + 's';
+          const state = c.remainingMs <= 0 ? '<span style="color:#27ae60">พร้อมใช้</span>' : '<span style="color:#f39c12">' + remStr + '</span>';
+          return `<div>${icon}${c.name} <span style="color:#5f6368">(ทุก ${c.intervalMin}นาที)</span> → ${state}</div>`;
+        }).join('');
+      }
+    }
     const lm = root.querySelector('#__assist_lootmode');
     if (lm && document.activeElement !== lm) lm.value = CFG.filter.mode;
     const ld = root.querySelector('#__assist_lootdelay');
