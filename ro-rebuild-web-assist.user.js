@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.3.3
+// @version      4.3.4
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.3.3';
+  const VERSION = '4.3.4';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -2550,6 +2550,14 @@
     searchInput.addEventListener('input', () => { searchVal = searchInput.value; refresh(); });
     popup.querySelector('#__assist_itempopup_x').addEventListener('click', closePopup);
     popup.addEventListener('click', (ev) => { if (ev.target === popup) closePopup(); });
+    // ★ คลิก input ใน popup → focus ทันที (กัน Unity ขโมย focus เหมือน main panel)
+    popup.addEventListener('mousedown', (e) => {
+      if (e.target.matches && e.target.matches('input, select, textarea')) {
+        e.stopPropagation();
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        setTimeout(() => { try { e.target.focus(); } catch (_) {} }, 0);
+      }
+    }, true);
     refresh();
     searchInput.focus();
     popup.classList.add('open');
@@ -2734,6 +2742,8 @@
           </div>
           <div class="field"><label>ดีเลย์ก่อนเก็บ (ms หลังของตก) — 0 = เก็บทันที</label><input type="number" id="__assist_lootdelay" min="0" step="100"></div>
           <div class="btns"><button id="__assist_applylootdelay">ตั้งดีเลย์</button></div>
+		  <h4>🌀 Warp-to-Loot (วาร์ปไปเก็บของที่ติดกำแพง)</h4>
+          <div class="btns"><button id="__assist_warpbtn" class="off">วาร์ปไปเก็บของ: ?</button></div>
           <div class="btns">
             <button id="__assist_healbtn" class="off">Heal: ?</button>
           </div>
@@ -2741,9 +2751,6 @@
           <div class="field"><label>item id ที่จะใช้ heal (คั่นด้วยจุลภาค)</label><input type="text" id="__assist_healitems" placeholder="เช่น 501,502,503"></div>
           <div class="btns"><button id="__assist_applyheal">ใช้ค่า heal</button></div>
           <div class="field"><label>โหมด heal</label><select id="__assist_healmode"><option value="order">order (ใช้ตัวเดิมจนหมด)</option><option value="random">random (สุ่ม)</option></select></div>
-
-          <h4>🌀 Warp-to-Loot (วาร์ปไปเก็บของที่ติดกำแพง)</h4>
-          <div class="btns"><button id="__assist_warpbtn" class="off">วาร์ปไปเก็บของ: ?</button></div>
 
           <h4>⚔️ Combat (ส่ง attack packet จริง)</h4>
           <div class="btns"><button id="__assist_combatbtn" class="off">Combat: ?</button></div>
@@ -2820,7 +2827,11 @@
     //   วิธีแก้: intercept keydown ใน capture phase (ดักก่อน Unity) ถ้ามี input ของเรา active
     //   → หยุด propagation + จัดการ input เอง (แทรก/ลบตัวอักษรตรงๆ)
     const ASSIST_INPUT_SEL = 'input, select, textarea';
-    function isOurField(t) { return t && t.closest && root.contains(t) && t.matches && t.matches(ASSIST_INPUT_SEL); }
+    // ★ รองรับทั้ง main panel (root) และ item-list popup (append ที่ body แยก)
+    function isOurField(t) {
+      if (!t || !t.closest || !t.matches || !t.matches(ASSIST_INPUT_SEL)) return false;
+      return root.contains(t) || (t.closest && t.closest('#__assist_itempopup'));
+    }
     function ourActiveInput() {
       const ae = document.activeElement;
       return (ae && isOurField(ae)) ? ae : null;
