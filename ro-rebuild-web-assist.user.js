@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.6.5
+// @version      4.7.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.6.5';
+  const VERSION = '4.7.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -1221,10 +1221,49 @@
         if (m && m.kind === 1) m._lastEngagedByOtherAt = now;
       }
     }
-    // 0x18 MONSTER_SKILL: [18][srcId:4][dstId:4][skillId:2]... → aggro detection
+    // 0x18 MONSTER_SKILL: [18][srcId:4][dstId:4][skillId:2][x?][y?]... → aggro + x/y update
+    //   ★ mirror world.js:988-1004 — อัปเดต x/y ของ srcId (มอนนิ่งๆ) + aggro tracking
     else if (op === 0x18 && u.length >= 11 && playerId != null) {
       const srcId = u32(u, 1), dstId = u32(u, 5);
+      // ★ อัปเดต x/y ของ srcId ถ้ามี (offset ขึ้นกับ format แต่ลำดับต้นๆ มักมี x/y หลัง skillId)
+      if (u.length >= 15) {
+        const mx = i16(u, 11), my = i16(u, 13);
+        if (mx >= -500 && mx <= 1000 && my >= -500 && my <= 1000) {
+          const e = entities.get(srcId);
+          if (e) { e.x = mx; e.y = my; }
+        }
+      }
       if (dstId === playerId) { monsterAggro.set(srcId, nowMs()); markCombat(); }
+    }
+    // 0x17 DAMAGE_V2: [17][victimId:4][x?][y?][damage?]... → อัปเดต x/y ของ victim
+    //   ★ mirror world.js:867-924 — สำคัญสำหรับมอนนิ่งๆ (Hydra) ที่ไม่ส่ง MOVE
+    else if (op === 0x17 && u.length >= 5) {
+      const id = u32(u, 1);
+      if (id !== playerId && !isStaleId(id, nowMs())) {
+        const e = entities.get(id);
+        if (e && u.length >= 9) {
+          const mx = i16(u, 5), my = i16(u, 7);
+          if (mx >= -500 && mx <= 1000 && my >= -500 && my <= 1000) { e.x = mx; e.y = my; }
+        }
+      }
+    }
+    // 0x1d SKILL (IN): [1d][sub:1][srcId:4][dstId:4][unk:4][skillId:2][action:1][x:2][y:2]
+    //   ★ mirror world.js:234-246 — antiKS: ถ้า player อื่นใช้สกิลตีมอน → stamp _lastEngagedByOtherAt
+    else if (op === 0x1d && u.length >= 14 && playerId != null) {
+      const srcId = u32(u, 2), dstId = u32(u, 6);
+      // antiKS: player อื่น cast skill ใส่มอน
+      if (srcId !== playerId && dstId !== playerId && dstId !== 0) {
+        const m = entities.get(dstId);
+        if (m && m.kind === 1) m._lastEngagedByOtherAt = nowMs();
+      }
+      // อัปเดต x/y ของ srcId ถ้ามี (offset 17,19)
+      if (u.length >= 21) {
+        const mx = i16(u, 17), my = i16(u, 19);
+        if (mx >= -500 && mx <= 1000 && my >= -500 && my <= 1000) {
+          const e = entities.get(srcId);
+          if (e) { e.x = mx; e.y = my; }
+        }
+      }
     }
     // 0x0f ENTITY_ACTION: action=3 = ตาย (authoritative)
     else if (op === 0x0f && u.length >= 6 && u[5] === 3) {
@@ -1716,9 +1755,12 @@
   }
   function countMonsters(radius) {
     if (player.x == null) return 0;
+    const now = nowMs();
     let n = 0;
     for (const m of entities.values()) {
-      if (m.kind === 1 && m.alive && m.x != null && Math.hypot(m.x - player.x, m.y - player.y) <= radius) n++;
+      if (m.kind !== 1 || !m.alive || m.x == null) continue;
+      if (isStaleId(m.id, now)) continue;   // ★ skip stale player IDs (mirror world.js:1904)
+      if (Math.hypot(m.x - player.x, m.y - player.y) <= radius) n++;
     }
     return n;
   }
@@ -1727,7 +1769,7 @@
     const now = nowMs();
     let n = 0;
     for (const [id, t] of monsterAggro) {
-      if (now - t > 10000) { monsterAggro.delete(id); continue; }
+      if (now - t > (CFG.aggroKeepAliveMs || 10000)) { monsterAggro.delete(id); continue; }
       const m = entities.get(id);
       if (!m || !m.alive || m.x == null) { monsterAggro.delete(id); continue; }
       if (isStaleId(id, now)) { monsterAggro.delete(id); continue; }
