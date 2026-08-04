@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.7.0
+// @version      4.7.1
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.7.0';
+  const VERSION = '4.7.1';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -126,7 +126,7 @@
     'lootEnabled', 'lootDelayAfterDropMs', 'filter',
     'warpLootEnabled',
     'combatEnabled', 'targetWhitelist', 'targetBlacklist', 'attackRange', 'rangedAttackRange',
-    'maxAcquireDistance', 'maxChaseDistance', 'antiKS', 'avoidOtherPlayers', 'targetLowestHpFirst',
+    'maxAcquireDistance', 'searchRadii', 'maxChaseDistance', 'antiKS', 'avoidOtherPlayers', 'targetLowestHpFirst',
     'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius',
     'wanderEnabled', 'warpFindEnabled', 'warpToMonster', 'stuckWarpOnAbandon',
     'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs',
@@ -363,7 +363,8 @@
     targetBlacklist: [],          // ไม่ตีมอนเหล่านี้ (ชื่อหรือ sprite id)
     attackRange: 2,               // ระยะโจมตี (ช่อง) — ใกล้กว่านี้สั่งตี, ไกลกว่าเดินไป
     rangedAttackRange: 8,         // 0 = ใช้ attackRange; >0 = นักธนูตีไกลได้ N ช่อง
-    maxAcquireDistance: 30,       // ★ เลือกเป้า + ส่ง ATTACK ได้ในระยะนี้ (บอทหลัก search [5,10,20,30])
+    maxAcquireDistance: 30,       // ★ เลือกเป้า + ส่ง ATTACK ได้ในระยะนี้ (cap สูงสุด)
+    searchRadii: [1,3,5, 10, 15, 20, 30], // ★ progressive search — ค้นจากรัศมีเล็กก่อน ถ้าเจอใช้เลย (mirror bot.js:3944)
     maxChaseDistance: 40,         // ★ เดินไล่ตามมอนได้สูงสุด N ช่อง (ไกลกว่านี้ abandon หาตัวอื่น)
     walkStepDistance: 20,         // ★ สั่งเดินทีละ N ช่อง (game click-walk cap ~20)
     maxWalkDistance: 15,          // (legacy — ใช้น้อย เพราะ server walk-and-attack เอง)
@@ -1798,25 +1799,27 @@
   }
   // คำนวณ HP% (default 1.0 ถ้าไม่รู้)
   function monsterHpPct(m) { return (m.hpMax && m.hpMax > 0 && m.hp != null) ? m.hp / m.hpMax : 1.0; }
-  // เลือกมอนใกล้สุด (cap ระยะ maxAcquireDistance — กันเลือกมอนไกลเกินไป)
-  function findNearestMonster(now) {
+  // เลือกมอนใกล้สุด ในรัศมีที่กำหนด (default = maxAcquireDistance)
+  function findNearestMonster(now, radius) {
     if (player.x == null) return null;
+    const cap = (radius != null) ? radius : CFG.maxAcquireDistance;
     let best = null, bestD = Infinity;
     for (const m of getMonsters(now)) {
       const d = Math.hypot(m.x - player.x, m.y - player.y);
-      if (d > CFG.maxAcquireDistance) continue;   // ★ เกินระยะ acquire → ข้าม
+      if (d > cap) continue;   // ★ เกินรัศมีที่กำหนด → ข้าม
       if (d < bestD) { bestD = d; best = m; }
     }
     return best ? { m: best, dist: bestD } : null;
   }
-  // เลือกมอน HP% ต่ำสุด (tiebreak = ระยะ) — cap ระยะเหมือนกัน
-  function findLowestHpMonster(now) {
+  // เลือกมอน HP% ต่ำสุด (tiebreak = ระยะ) ในรัศมีที่กำหนด
+  function findLowestHpMonster(now, radius) {
     if (player.x == null) return null;
+    const cap = (radius != null) ? radius : CFG.maxAcquireDistance;
     let best = null, bestHp = 2, bestD = Infinity;
     for (const m of getMonsters(now)) {
       const hp = monsterHpPct(m);
       const d = Math.hypot(m.x - player.x, m.y - player.y);
-      if (d > CFG.maxAcquireDistance) continue;   // ★ เกินระยะ acquire → ข้าม
+      if (d > cap) continue;   // ★ เกินรัศมีที่กำหนด → ข้าม
       if (hp < bestHp || (hp === bestHp && d < bestD)) { bestHp = hp; bestD = d; best = m; }
     }
     return best ? { m: best, dist: bestD, hpPct: bestHp } : null;
@@ -1955,15 +1958,24 @@
     if (now - lastTargetSwitchAt < 1500) return null;
     // whitelist ว่าง = ตีทุกมอน kind=1 (ตามความหมายของ whitelist); ตั้งค่า = ตีเฉพาะที่ match
     const mobCount = getMobAttackerCount();
-    let found;
-    if (CFG.targetLowestHpFirst && mobCount >= 2) {
-      found = findLowestHpMonster(now);
-      if (found) log('🎯 เลือกเป้า HP ต่ำสุด (รุม', mobCount, 'ตัว):', found.m.name, (found.hpPct * 100).toFixed(0) + '%');
-    } else {
-      found = findNearestMonster(now);
-      if (found) log('🎯 เลือกเป้าใกล้สุด:', found.m.name, '@', found.dist.toFixed(1));
+    const useLowestHp = CFG.targetLowestHpFirst && mobCount >= 2;
+    // ★ progressive search — ค้นจากรัศมีเล็กก่อน ถ้าเจอใช้เลย (mirror bot.js:3957-3963)
+    //   ทำให้เลือกมอนใกล้ก่อนเสมอ แม้จะตั้ง maxAcquireDistance ไว้สูง
+    const radii = (Array.isArray(CFG.searchRadii) && CFG.searchRadii.length > 0)
+      ? [...CFG.searchRadii].sort((a, b) => a - b)
+      : [CFG.maxAcquireDistance];
+    let found = null;
+    let usedRadius = 0;
+    for (const r of radii) {
+      found = useLowestHp ? findLowestHpMonster(now, r) : findNearestMonster(now, r);
+      if (found) { usedRadius = r; break; }   // ★ เจอแล้วใช้เลย ไม่ขยายรัศมี
     }
     if (!found) return null;
+    if (useLowestHp) {
+      log('🎯 เลือกเป้า HP ต่ำสุด (รุม', mobCount, 'ตัว):', found.m.name, (found.hpPct * 100).toFixed(0) + '%', '@', found.dist.toFixed(1), '(r≤' + usedRadius + ')');
+    } else {
+      log('🎯 เลือกเป้าใกล้สุด:', found.m.name, '@', found.dist.toFixed(1), '(r≤' + usedRadius + ')');
+    }
     const m = found.m;
     target = {
       id: m.id, x: m.x, y: m.y, acquiredAt: now, engageAt: 0,
@@ -3110,6 +3122,11 @@
   //  UI — mini-bar + popup panel (ฝังในหน้าเกม)
   // ============================================================
   let uiLoop;          // render interval (clear ใน stopAll)
+  // ★ editing input tracking (module-level — ใช้ได้ทั้ง buildUI + renderUI)
+  //   Unity แย่ง focus ทุกเฟรม → document.activeElement ไม่เชื่อถือได้
+  //   track ด้วย focusin/focusout แทน
+  const editingInputs = new WeakSet();
+  const isEditing = (el) => el && editingInputs.has(el);
   // ============================================================
   //  ITEM-LIST POPUP — จัดการรายการ item (only/except) แบบ visual
   //    listType: 'only' | 'except' (สำหรับ loot filter)
@@ -3536,7 +3553,7 @@
     //   Unity เรียก canvas.focus() ทุกเฟรม → activeElement เปลี่ยนเป็น canvas ตลอด
     //   → syncInput ที่เช็ค activeElement จะเขียนทับค่าที่กำลังพิมพ์อยู่
     //   แก้: track ด้วย focusin/focusout (จับก่อน Unity แย่ง focus)
-    const editingInputs = new WeakSet();
+    //   ★ editingInputs + isEditing ประกาศที่ module-level (ใช้ได้ทั้ง buildUI + renderUI)
     root.addEventListener('focusin', (e) => {
       if (e.target.matches && e.target.matches('input, select, textarea')) editingInputs.add(e.target);
     });
@@ -3546,7 +3563,6 @@
         setTimeout(() => { try { editingInputs.delete(e.target); } catch (_) {} }, 100);
       }
     });
-    const isEditing = (el) => el && editingInputs.has(el);
 
     // ---------- wire events ----------
     // ★★ Unity WebGL (Emscripten) ดัก keyboard ที่ window ใน capture phase เหมือนกัน
