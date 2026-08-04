@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.4.0
+// @version      4.5.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.4.0';
+  const VERSION = '4.5.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -133,6 +133,7 @@
     'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellNpcX', 'sellNpcY', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
     'storageEnabled', 'kafraName', 'kafraMap', 'kafraMapX', 'kafraMapY', 'kafraChoice', 'depositOnFull', 'depositAfterSell', 'depositItemIds',
     'farmMap', 'farmMapX', 'farmMapY', 'warpBackToFarm',
+    'navRecording', 'navMergeRadius', 'navWanderUseNav',
     'itemNames',
   ];
   function saveConfig() {
@@ -281,6 +282,13 @@
     buffItems: [],                // ★ default ว่าง = ไม่ใช้ buff ใด ๆ
     buffCheckMs: 1000,            // ความถี่ในการเช็ค (1 วิ)
     buffRebuffDelayMs: 5000,      // รออย่างน้อย N ms ก่อนใช้ buff ตัวเดิมซ้ำ (กัน spurious)
+
+    // ---------- NAVIGATION (บันทึกเส้นทางเดิน + waypoint graph) ----------
+    //  เก็บตำแหน่งที่ผู้เล่นคลิกเดิน → สร้าง waypoint graph → bot เดินตามเส้นทางจริง
+    //  ★ ข้อมูลเก็บ localStorage (roAssistNav_<map>) + export/import + sync GitHub
+    navRecording: false,          // ★ default OFF — เปิดเพื่อบันทึกตอนเดินเก็บข้อมูล
+    navMergeRadius: 3,            // จุดที่อยู่ใกล้กัน <= N ช่อง = รวมเป็น node เดียว (dedup)
+    navWanderUseNav: true,        // wander ใช้ waypoint graph แทนสุ่ม (ถ้ามีข้อมูลแมปนั้น)
 
     // ---------- AUTO-REST (★ default OFF — นั่งพักเสี่ยงถ้ามีมอนรอบตัว) ----------
     //  เมื่อ HP ต่ำกว่า restHpPercent และไม่โดนรุม → นั่งพัก
@@ -1241,6 +1249,14 @@
   function handleOut(u) {
     if (!u.length) return;
     if (u[0] === 0x0b) markCombat();
+    // ★ ดัก click-move (0x07) ของผู้เล่น → บันทึก trail (ถ้า navRecording=on)
+    //   บอทสั่งเอง (sendMove) จะตั้ง navBotMoving=true ก่อน → ข้ามไม่บันทึก
+    if (u[0] === 0x07 && u.length >= 5) {
+      if (!navBotMoving && CFG.navRecording) {
+        navRecordMove(i16(u, 1), i16(u, 3));
+      }
+      navBotMoving = false;   // reset flag (บอทสั่งครั้งเดียว)
+    }
   }
 
   // ---------- loop เก็บของ ----------
@@ -1778,6 +1794,7 @@
     b[0] = 0x07;
     writeI16LE(b, 1, Math.round(x));
     writeI16LE(b, 3, Math.round(y));
+    navBotMoving = true;   // ★ flag: บอทสั่งเอง → handleOut ข้ามไม่บันทึก trail
     activeWS.send(b);
     return true;
   }
@@ -2152,16 +2169,221 @@
         return;
       }
       // wander — สุ่มเดิน ≤ walkStepDistance ช่องจากตำแหน่งปัจจุบัน
+      //   ★ ถ้าเปิด navWanderUseNav และมีข้อมูลแมป → ใช้ waypoint graph (เดินเป็นธรรมชาติกว่า)
       if (CFG.wanderEnabled && now - lastWanderAt > CFG.wanderCooldownMs && player.x != null) {
         lastWanderAt = now;
-        const angle = Math.random() * Math.PI * 2;
-        const step = 3 + Math.random() * Math.min(CFG.wanderMaxStep, CFG.walkStepDistance) - 3;
-        const tx = player.x + Math.cos(angle) * step;
-        const ty = player.y + Math.sin(angle) * step;
-        if (sendMove(tx, ty)) log('🚶 สุ่มเดิน @(', Math.round(tx), Math.round(ty) + ') | จาก player(', player.x.toFixed(0), player.y.toFixed(0) + ') step=' + Math.round(step));
+        let moved = false;
+        if (CFG.navWanderUseNav) {
+          const wp = navWander();
+          if (wp) {
+            const next = navNavigateTo(wp.x, wp.y) || wp;   // navigate ตาม graph, fallback ตรง
+            if (sendMove(next.x, next.y)) { log('🗺️ nav wander @(', next.x, next.y + ') → target(', wp.x, wp.y + ')'); moved = true; }
+          }
+        }
+        if (!moved) {
+          // fallback: สุ่มเดิน ≤ walkStepDistance ช่อง
+          const angle = Math.random() * Math.PI * 2;
+          const step = 3 + Math.random() * Math.min(CFG.wanderMaxStep, CFG.walkStepDistance) - 3;
+          const tx = player.x + Math.cos(angle) * step;
+          const ty = player.y + Math.sin(angle) * step;
+          if (sendMove(tx, ty)) log('🚶 สุ่มเดิน @(', Math.round(tx), Math.round(ty) + ') | จาก player(', player.x.toFixed(0), player.y.toFixed(0) + ') step=' + Math.round(step));
+        }
       }
     }
   }, CFG.combatTickMs);
+
+  // ============================================================
+  //  NAVIGATION — บันทึกเส้นทางเดิน + สร้าง waypoint graph
+  //    Trail (ตามเวลา) → merge nodes (ใกล้กัน) + edges (เชื่อมต่อกัน)
+  //    localStorage per-map (roAssistNav_<map>) + export/import + sync GitHub
+  // ============================================================
+  // ★ flag แยก: บอทสั่งเดิน (sendMove) vs ผู้เล่นคลิกเอง — บันทึกเฉพาะผู้เล่น
+  let navBotMoving = false;
+  const NAV_KEY_PREFIX = 'roAssistNav_';
+  // cache ของแต่ละแมปที่โหลดแล้ว: mapName → { nodes: [{x,y}], edges: [[i,j],...] }
+  const navCache = new Map();
+  // trail buffer สำหรับแมปปัจจุบัน (ตามเวลา) — rebuild graph เมื่อ save
+  let navTrail = [];   // [{x, y, t}]
+  // load nav data ของแมปจาก localStorage (cache ไว้)
+  function navLoadMap(mapName) {
+    if (!mapName) return null;
+    if (navCache.has(mapName)) return navCache.get(mapName);
+    try {
+      const raw = localStorage.getItem(NAV_KEY_PREFIX + mapName);
+      const data = raw ? JSON.parse(raw) : { nodes: [], edges: [], trail: [] };
+      navCache.set(mapName, data);
+      return data;
+    } catch (e) { const d = { nodes: [], edges: [], trail: [] }; navCache.set(mapName, d); return d; }
+  }
+  function navSaveMap(mapName) {
+    if (!mapName) return;
+    const data = navCache.get(mapName);
+    if (!data) return;
+    try { localStorage.setItem(NAV_KEY_PREFIX + mapName, JSON.stringify(data)); } catch (e) {}
+  }
+  let navSaveTimer = null;
+  function navSaveDebounced(mapName) {
+    if (navSaveTimer) clearTimeout(navSaveTimer);
+    navSaveTimer = setTimeout(() => navSaveMap(mapName), 1500);
+  }
+  // ★ rebuild graph จาก trail — merge nodes ใกล้กัน + สร้าง edges ตามลำดับเวลา
+  function navRebuildGraph(data) {
+    const r = CFG.navMergeRadius || 3;
+    const r2 = r * r;
+    const nodes = [];   // [{x, y}]
+    const nodeMap = []; // trail index → node index
+    // ★ pass 1: assign trail points ไปยัง node (merge ถ้าใกล้ node เดิม)
+    for (let i = 0; i < data.trail.length; i++) {
+      const p = data.trail[i];
+      let found = -1;
+      for (let j = 0; j < nodes.length; j++) {
+        const dx = nodes[j].x - p.x, dy = nodes[j].y - p.y;
+        if (dx * dx + dy * dy <= r2) { found = j; break; }
+      }
+      if (found < 0) { found = nodes.length; nodes.push({ x: p.x, y: p.y }); }
+      nodeMap[i] = found;
+    }
+    // ★ pass 2: edges จาก trail ติดกัน (ข้าม node ตัวเอง) + dedup
+    const edgeSet = new Set();
+    const edges = [];
+    for (let i = 1; i < nodeMap.length; i++) {
+      const a = nodeMap[i - 1], b = nodeMap[i];
+      if (a === b) continue;
+      const key = a < b ? a + '_' + b : b + '_' + a;
+      if (edgeSet.has(key)) continue;
+      edgeSet.add(key);
+      edges.push([a, b]);
+    }
+    data.nodes = nodes;
+    data.edges = edges;
+  }
+  // ★ บันทึกการคลิกเดินของผู้เล่น → trail
+  function navRecordMove(x, y) {
+    if (!CFG.navRecording || !currentMap) return;
+    const data = navLoadMap(currentMap);
+    if (!data) return;
+    const now = nowMs();
+    const last = data.trail[data.trail.length - 1];
+    // ★ dedup: ข้ามถี่เกิน (เดินที่เดิม)
+    if (last) {
+      const dx = last.x - x, dy = last.y - y;
+      if (dx * dx + dy * dy < 1) return;   // ขยับ < 1 ช่อง → ข้าม
+    }
+    data.trail.push({ x, y, t: now });
+    // ★ จำกัดขนาด trail (กัน localStorage เต็ม) — เก็บสูงสุด 2000 จุด/แมป
+    if (data.trail.length > 2000) data.trail = data.trail.slice(-2000);
+    navRebuildGraph(data);
+    navSaveDebounced(currentMap);
+  }
+  // ★ Navigation: หา node ที่ใกล้ (x,y) ที่สุด
+  function navFindNearestNode(data, x, y) {
+    if (!data || !data.nodes || !data.nodes.length) return -1;
+    let best = -1, bestD = Infinity;
+    for (let i = 0; i < data.nodes.length; i++) {
+      const dx = data.nodes[i].x - x, dy = data.nodes[i].y - y;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+  // ★ Build adjacency list จาก edges
+  function navAdjacency(data) {
+    const adj = data.nodes.map(() => []);
+    for (const [a, b] of data.edges) { adj[a].push(b); adj[b].push(a); }
+    return adj;
+  }
+  // ★ BFS pathfinding: shortest path from node A → node B
+  //   return [nodeIndex, ...] หรือ null ถ้าไม่ถึง
+  function navFindPath(data, fromNode, toNode) {
+    if (fromNode < 0 || toNode < 0 || fromNode >= data.nodes.length || toNode >= data.nodes.length) return null;
+    if (fromNode === toNode) return [fromNode];
+    const adj = navAdjacency(data);
+    const visited = new Set([fromNode]);
+    const queue = [[fromNode]];
+    while (queue.length) {
+      const path = queue.shift();
+      const cur = path[path.length - 1];
+      for (const next of adj[cur]) {
+        if (visited.has(next)) continue;
+        visited.add(next);
+        const newPath = [...path, next];
+        if (next === toNode) return newPath;
+        queue.push(newPath);
+      }
+    }
+    return null;
+  }
+  // ★ navigateTo(x, y): หา path จากตำแหน่งปัจจุบัน → (x,y) แล้วคืนจุดถัดไปที่ควรคลิกเดิน
+  //   return {x, y} ของ waypoint ถัดไป หรือ null ถ้าไม่มี path / ไม่มีข้อมูลแมป
+  function navNavigateTo(targetX, targetY) {
+    if (!currentMap || player.x == null) return null;
+    const data = navLoadMap(currentMap);
+    if (!data || !data.nodes.length) return null;
+    const startNode = navFindNearestNode(data, player.x, player.y);
+    const endNode = navFindNearestNode(data, targetX, targetY);
+    const path = navFindPath(data, startNode, endNode);
+    if (!path || path.length < 2) return null;
+    // ★ คืน node ถัดไป (path[1]) — bot จะคลิกเดินไปที่นั่น
+    return { x: data.nodes[path[1]].x, y: data.nodes[path[1]].y };
+  }
+  // ★ wander แบบใช้ nav: เลือก node สุ่มที่อยู่ไกลพอสมควร → navigate
+  //   return {x, y} หรือ null
+  let navWanderLastNode = -1;
+  function navWander() {
+    if (!currentMap || player.x == null) return null;
+    const data = navLoadMap(currentMap);
+    if (!data || data.nodes.length < 2) return null;
+    // ★ เลือก node สุ่มที่ห่างจากตำแหน่งปัจจุบันอย่างน้อย 10 ช่อง
+    const candidates = [];
+    for (let i = 0; i < data.nodes.length; i++) {
+      const dx = data.nodes[i].x - player.x, dy = data.nodes[i].y - player.y;
+      if (dx * dx + dy * dy >= 100 && i !== navWanderLastNode) candidates.push(i);
+    }
+    if (!candidates.length) return null;
+    const target = candidates[Math.floor(Math.random() * candidates.length)];
+    navWanderLastNode = navFindNearestNode(data, player.x, player.y);
+    return { x: data.nodes[target].x, y: data.nodes[target].y };
+  }
+  // ★ export ข้อมูล nav ทั้งหมด (สำหรับ download/backup)
+  function navExportAll() {
+    const out = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(NAV_KEY_PREFIX)) {
+        try { out[key.slice(NAV_KEY_PREFIX.length)] = JSON.parse(localStorage.getItem(key)); } catch (e) {}
+      }
+    }
+    return out;
+  }
+  // ★ import ข้อมูล nav (merge — ถ้ามีแมปซ้ำ = ทับ)
+  function navImportAll(data) {
+    if (!data || typeof data !== 'object') return 0;
+    let count = 0;
+    for (const [mapName, navData] of Object.entries(data)) {
+      if (!mapName || !navData || !Array.isArray(navData.nodes)) continue;
+      localStorage.setItem(NAV_KEY_PREFIX + mapName, JSON.stringify(navData));
+      navCache.set(mapName, navData);
+      count++;
+    }
+    return count;
+  }
+  // ★ clear nav ของแมปที่ระบุ (หรือทั้งหมดถ้าไม่ระบุ)
+  function navClear(mapName) {
+    if (mapName) {
+      localStorage.removeItem(NAV_KEY_PREFIX + mapName);
+      navCache.delete(mapName);
+      log('🗺️ ล้างข้อมูล nav แมป', mapName);
+    } else {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(NAV_KEY_PREFIX)) keys.push(key);
+      }
+      keys.forEach(k => localStorage.removeItem(k));
+      navCache.clear();
+      log('🗺️ ล้างข้อมูล nav ทั้งหมด (' + keys.length + ' แมป)');
+    }
+  }
 
   // ---------- patch WebSocket ----------
   function attach(ws) {
@@ -2239,6 +2461,10 @@
       console.log('  ASSIST.clearLootOnly()            ASSIST.clearLootExcept()');
       console.log('  ASSIST.setLootDelay(500)         // รอ 500ms หลังของตกแล้วค่อยเก็บ (0=ทันที)');
       console.log(`%c อื่นๆ `, 'color:#9c27b0;font-weight:bold');
+      console.log(`%c Navigation `, 'color:#26a69a;font-weight:bold');
+      console.log('  ASSIST.navRecordOn() / navRecordOff()   // บันทึกเส้นทางเดิน');
+      console.log('  ASSIST.navGetAllStats()                  // ดูข้อมูลทุกแมป');
+      console.log('  ASSIST.navExport() / navImport(json)     // export/import ไฟล์');
       console.log('  ASSIST.name(935,"Feather")        // ตั้งชื่อ item');
       console.log('  ASSIST.status()  ASSIST.config()  ASSIST.stopAll()');
     },
@@ -2412,6 +2638,50 @@
     },
     toggleWarpBack(on) { CFG.warpBackToFarm = !!on; log('🗺️ วาร์ปกลับแมปฟาร์มอัตโนมัติ =', CFG.warpBackToFarm); },
     getSellState() { return { state: sellState, full: inventoryFull, returnTo: sellReturnTo }; },
+
+    // ---------- Navigation (บันทึกเส้นทางเดิน + waypoint graph) ----------
+    navRecordOn()  { CFG.navRecording = true;  log('🗺️ บันทึกเส้นทาง: ON — เดินเก็บข้อมูลในแมปที่ต้องการ'); },
+    navRecordOff() { CFG.navRecording = false; log('🗺️ บันทึกเส้นทาง: OFF'); },
+    navSetMergeRadius(r) { CFG.navMergeRadius = Math.max(1, Number(r) || 3); log('🗺️ รัศมีรวมจุด =', CFG.navMergeRadius, 'ช่อง'); },
+    navToggleWander(on) { CFG.navWanderUseNav = !!on; log('🗺️ wander ใช้ nav =', CFG.navWanderUseNav); },
+    navGetStats(mapName) {
+      const data = navLoadMap(mapName || currentMap);
+      if (!data) return { maps: 0 };
+      return { map: mapName || currentMap, nodes: (data.nodes||[]).length, edges: (data.edges||[]).length, trail: (data.trail||[]).length };
+    },
+    navGetAllStats() {
+      const maps = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(NAV_KEY_PREFIX)) {
+          try {
+            const d = JSON.parse(localStorage.getItem(key));
+            maps[key.slice(NAV_KEY_PREFIX.length)] = { nodes: (d.nodes||[]).length, edges: (d.edges||[]).length, trail: (d.trail||[]).length };
+          } catch (e) {}
+        }
+      }
+      return maps;
+    },
+    navNavigateTo(x, y) { return navNavigateTo(x, y); },   // ทดสอบ path
+    navClearMap(mapName) { navClear(mapName); },
+    navClearAll() { navClear(); },
+    navExport() {
+      const data = navExportAll();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'ro-nav-data.json'; a.click();
+      URL.revokeObjectURL(url);
+      log('🗺️ export nav data:', Object.keys(data).length, 'แมป');
+    },
+    navImport(json) {
+      try {
+        const data = typeof json === 'string' ? JSON.parse(json) : json;
+        const count = navImportAll(data);
+        log('🗺️ import nav data:', count, 'แมป');
+        return count;
+      } catch (e) { log('⚠️ import nav ล้มเหลว:', e.message); return 0; }
+    },
 
     // ---------- Auto-Loot ----------
     lootOn()  { CFG.lootEnabled = true;  log('📦 Auto-Loot: ON'); },
@@ -2954,6 +3224,21 @@
           <div class="field"><label>พิกัดวาร์ป X</label><input type="number" id="__assist_kafrax" placeholder="0=ใช้ sell"><label style="margin-left:8px">Y</label><input type="number" id="__assist_kafray" placeholder="0=ใช้ sell"><button id="__assist_usekafrapos" style="margin-left:8px;font-size:10px">ใช้พิกัดตัวละคร</button></div>
           <div class="field"><label>เมนู choice (0=Save, 1=Storage, 2=Warp)</label><input type="number" id="__assist_kafrachoice" min="0" max="9" placeholder="1"></div>
           <div class="btns"><button id="__assist_applykafra">ใช้ค่า storage</button><button id="__assist_t_depfull" class="on">ฝากตอนเต็ม</button><button id="__assist_t_depaftersell" class="on">ฝากหลังขาย</button></div>
+
+          <h4>🗺️ Navigation (บันทึกเส้นทางเดิน + waypoint graph)</h4>
+          <div class="btns">
+            <button id="__assist_navrecbtn" class="off">บันทึก: ?</button>
+            <button id="__assist_navwanderbtn" class="on">เดินตาม nav</button>
+          </div>
+          <div class="field"><label>รัศมีรวมจุด (ช่อง) — จุดที่อยู่ใกล้กัน <= N ช่อง = รวม node เดียว</label><input type="number" id="__assist_navradius" min="1" max="20"></div>
+          <div class="btns">
+            <button id="__assist_applynav">ใช้ค่า nav</button>
+            <button id="__assist_navexport">export</button>
+            <button id="__assist_navimport">import</button>
+            <button id="__assist_navclear" class="danger">ล้าง</button>
+          </div>
+          <div id="__assist_navstats" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่มีข้อมูล)</div>
+          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เปิด 'บันทึก' แล้วเดินเก็บข้อมูลในแมปที่ต้องการ ปิดเมื่อเสร็จ<br>★ wander จะใช้ waypoint graph แทนสุ่ม (ถ้ามีข้อมูลแมปนั้น)</div>
         </div>
         <div class="__assist_page" data-page="log">
           <div class="logbox" id="__assist_logbox"></div>
@@ -3161,6 +3446,28 @@
     root.querySelector('#__assist_usekafrapos').addEventListener('click', () => { ASSIST.useCurrentPosAsKafra(); });
     root.querySelector('#__assist_t_depfull').addEventListener('click', () => { CFG.depositOnFull = !CFG.depositOnFull; ASSIST.toggleDepositOnFull(CFG.depositOnFull); });
     root.querySelector('#__assist_t_depaftersell').addEventListener('click', () => { CFG.depositAfterSell = !CFG.depositAfterSell; ASSIST.toggleDepositAfterSell(CFG.depositAfterSell); });
+    // ---- nav wires ----
+    root.querySelector('#__assist_navrecbtn').addEventListener('click', () => CFG.navRecording ? ASSIST.navRecordOff() : ASSIST.navRecordOn());
+    root.querySelector('#__assist_navwanderbtn').addEventListener('click', () => { CFG.navWanderUseNav = !CFG.navWanderUseNav; ASSIST.navToggleWander(CFG.navWanderUseNav); });
+    root.querySelector('#__assist_applynav').addEventListener('click', () => {
+      const r = parseInt(root.querySelector('#__assist_navradius').value, 10);
+      if (!isNaN(r)) ASSIST.navSetMergeRadius(r);
+    });
+    root.querySelector('#__assist_navexport').addEventListener('click', () => ASSIST.navExport());
+    root.querySelector('#__assist_navimport').addEventListener('click', () => {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = '.json,application/json';
+      inp.onchange = () => {
+        const file = inp.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => ASSIST.navImport(reader.result);
+        reader.readAsText(file);
+      };
+      inp.click();
+    });
+    root.querySelector('#__assist_navclear').addEventListener('click', () => {
+      if (confirm('ล้างข้อมูล nav ทั้งหมด? (ทุกแมป)')) ASSIST.navClearAll();
+    });
     // ---- farm map wires ----
     root.querySelector('#__assist_warptofarm').addEventListener('click', () => ASSIST.warpToFarm());
     root.querySelector('#__assist_t_warpback').addEventListener('click', () => { CFG.warpBackToFarm = !CFG.warpBackToFarm; ASSIST.toggleWarpBack(CFG.warpBackToFarm); });
@@ -3363,6 +3670,25 @@
     syncInput('#__assist_kafrachoice', CFG.kafraChoice);
     syncToggle('#__assist_t_depfull', CFG.depositOnFull);
     syncToggle('#__assist_t_depaftersell', CFG.depositAfterSell);
+    // nav config sync + stats display
+    const navRecBtn = root.querySelector('#__assist_navrecbtn');
+    if (navRecBtn) { navRecBtn.textContent = 'บันทึก: ' + (CFG.navRecording ? 'ON 🔴' : 'OFF'); navRecBtn.className = CFG.navRecording ? 'on' : 'off'; }
+    syncToggle('#__assist_navwanderbtn', CFG.navWanderUseNav);
+    syncInput('#__assist_navradius', CFG.navMergeRadius);
+    const navStatsEl = root.querySelector('#__assist_navstats');
+    if (navStatsEl) {
+      const all = ASSIST.navGetAllStats();
+      const mapNames = Object.keys(all);
+      if (!mapNames.length) {
+        navStatsEl.textContent = '(ยังไม่มีข้อมูล — เปิด "บันทึก" แล้วเดินเก็บข้อมูลในแมปที่ต้องการ)';
+      } else {
+        navStatsEl.innerHTML = mapNames.map(m => {
+          const s = all[m];
+          const cur = m === currentMap ? ' ✅' : '';
+          return `<div>📦 ${m}${cur}: ${s.nodes} nodes, ${s.edges} edges (${s.trail} trail)</div>`;
+        }).join('');
+      }
+    }
     // farm map config sync
     syncInput('#__assist_farmmap', CFG.farmMap);
     syncInput('#__assist_farmx', CFG.farmMapX);
