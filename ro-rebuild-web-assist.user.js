@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.7.2
+// @version      4.7.3
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.7.2';
+  const VERSION = '4.7.3';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -1721,6 +1721,7 @@
     if (!m || !m.alive) return false;
     if (m.kind !== 1) return false;                       // ตีเฉพาะ monster
     if (m.x == null || m.y == null) return false;
+    if (isStaleId(m.id, now)) return false;               // ★ skip stale player IDs (phantom)
     // ★ ข้ามมอนที่เพิ่ง abandon (กันเลือกตัวเดิมซ้ำทันที → วนลูป)
     const ab = abandonCooldown.get(m.id);
     if (ab && now < ab) return false;
@@ -2164,11 +2165,12 @@
       if (m && player.x != null && m.x != null && m.y != null) {
         const dist = Math.hypot(m.x - player.x, m.y - player.y);
         // ★★ guard: dist กระโดดผิดปกติ (เช่น 6 → 196 ใน 1 tick) = stale phantom entity
-        //   ถ้า dist เพิ่มขึ้น > 3x ของครั้งก่อน AND > 50 ช่อง → ถือว่า stale ไม่ abandon (รอ tick ถัดไป)
+        //   เกิดซ้ำ ๆ = target.id ทับซ้อนกับ entity อื่น → abandon เลย (ไม่ใช่รอ)
         if (target.lastDist != null && dist > target.lastDist * 3 && dist > 50) {
-          log('⚠️ dist กระโดด', target.lastDist.toFixed(0), '→', dist.toFixed(0), '(stale?) → รอ tick ถัดไป');
-          target.lastDist = dist;   // อัปเดตเผื่อทิ้งระยะเก่าไป
-          return;                   // ★ ไม่ abandon รอ tick ถัดไป
+          log('⚠️ dist กระโดด', target.lastDist.toFixed(0), '→', dist.toFixed(0), '(phantom target) → abandon เลย');
+          abandonTarget('phantom target (dist ' + dist.toFixed(0) + ')', true, 8000);
+          target = null;
+          return;
         }
         target.lastDist = dist;
         // ในระยะ acquire → ส่ง ATTACK ตรงๆ (server เดินเข้าไปตีเอง)
@@ -2197,7 +2199,15 @@
           return;
         }
         // ★ dist > maxChaseDistance → abandon ทันที (มอนไกลเกินไป ไม่สมควรไล่ตาม)
+        //   ★★ guard ต่อ: ถ้า dist เด้ง > 80 ช่อง (ผิดปกติ) ใน tick เดียวกัน → phantom entity
+        //   ไม่ abandon (เพราะ guard ด้านบนจับได้แล้ว แต่กัน double-trigger)
         if (dist > CFG.maxChaseDistance) {
+          // อ่าน dist จาก m.x/m.y ใหม่อีกครั้ง (กัน phantom)
+          //   ถ้า target.id ทับซ้อนกับ player เก่า → m.x/m.y อาจเป็นค่าขยะ
+          if (target.lastDist != null && dist > 80 && dist > target.lastDist * 3) {
+            // phantom — ข้าม abandon รอ tick ถัดไป (อาจจะ update ตำแหน่งถูก)
+            return;
+          }
           log('📏 abandon: มอนไกล', dist.toFixed(0), 'ช่อง (เกิน maxChase ' + CFG.maxChaseDistance + ')');
           abandonTarget('ไกลเกิน ' + CFG.maxChaseDistance, false, 10000);
           target = null;
