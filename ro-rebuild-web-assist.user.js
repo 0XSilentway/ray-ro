@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.7.3
+// @version      4.7.4
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.7.3';
+  const VERSION = '4.7.4';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -1222,48 +1222,22 @@
         if (m && m.kind === 1) m._lastEngagedByOtherAt = now;
       }
     }
-    // 0x18 MONSTER_SKILL: [18][srcId:4][dstId:4][skillId:2][x?][y?]... → aggro + x/y update
-    //   ★ mirror world.js:988-1004 — อัปเดต x/y ของ srcId (มอนนิ่งๆ) + aggro tracking
+    // 0x18 MONSTER_SKILL: [18][srcId:4][dstId:4][skillId:2]... → aggro tracking
+    //   ★ mirror world.js:988-1004 — aggro tracking (dstId=player)
+    //   ★★ ไม่อัปเดต x/y (offset ไม่แน่นอน → เคยทำให้ตำแหน่งมอนเสีย → dist กระโดด)
+    //      ตำแหน่งมอนอัปเดตจาก 0x07 MOVE / 0x06 SPAWN / 0x14 ENTITY_POS เท่านั้น
     else if (op === 0x18 && u.length >= 11 && playerId != null) {
       const srcId = u32(u, 1), dstId = u32(u, 5);
-      // ★ อัปเดต x/y ของ srcId ถ้ามี (offset ขึ้นกับ format แต่ลำดับต้นๆ มักมี x/y หลัง skillId)
-      if (u.length >= 15) {
-        const mx = i16(u, 11), my = i16(u, 13);
-        if (mx >= -500 && mx <= 1000 && my >= -500 && my <= 1000) {
-          const e = entities.get(srcId);
-          if (e) { e.x = mx; e.y = my; }
-        }
-      }
       if (dstId === playerId) { monsterAggro.set(srcId, nowMs()); markCombat(); }
     }
-    // 0x17 DAMAGE_V2: [17][victimId:4][x?][y?][damage?]... → อัปเดต x/y ของ victim
-    //   ★ mirror world.js:867-924 — สำคัญสำหรับมอนนิ่งๆ (Hydra) ที่ไม่ส่ง MOVE
-    else if (op === 0x17 && u.length >= 5) {
-      const id = u32(u, 1);
-      if (id !== playerId && !isStaleId(id, nowMs())) {
-        const e = entities.get(id);
-        if (e && u.length >= 9) {
-          const mx = i16(u, 5), my = i16(u, 7);
-          if (mx >= -500 && mx <= 1000 && my >= -500 && my <= 1000) { e.x = mx; e.y = my; }
-        }
-      }
-    }
-    // 0x1d SKILL (IN): [1d][sub:1][srcId:4][dstId:4][unk:4][skillId:2][action:1][x:2][y:2]
-    //   ★ mirror world.js:234-246 — antiKS: ถ้า player อื่นใช้สกิลตีมอน → stamp _lastEngagedByOtherAt
-    else if (op === 0x1d && u.length >= 14 && playerId != null) {
+    // 0x1d SKILL (IN): [1d][sub:1][srcId:4][dstId:4]... → antiKS
+    //   ★ mirror world.js:234-246 — antiKS: player อื่น cast skill ใส่มอน
+    //   ★★ ไม่อัปเดต x/y (offset ไม่แน่นอน — เหมือน 0x18)
+    else if (op === 0x1d && u.length >= 10 && playerId != null) {
       const srcId = u32(u, 2), dstId = u32(u, 6);
-      // antiKS: player อื่น cast skill ใส่มอน
       if (srcId !== playerId && dstId !== playerId && dstId !== 0) {
         const m = entities.get(dstId);
         if (m && m.kind === 1) m._lastEngagedByOtherAt = nowMs();
-      }
-      // อัปเดต x/y ของ srcId ถ้ามี (offset 17,19)
-      if (u.length >= 21) {
-        const mx = i16(u, 17), my = i16(u, 19);
-        if (mx >= -500 && mx <= 1000 && my >= -500 && my <= 1000) {
-          const e = entities.get(srcId);
-          if (e) { e.x = mx; e.y = my; }
-        }
       }
     }
     // 0x0f ENTITY_ACTION: action=3 = ตาย (authoritative)
@@ -2164,14 +2138,6 @@
       const m = entities.get(target.id);
       if (m && player.x != null && m.x != null && m.y != null) {
         const dist = Math.hypot(m.x - player.x, m.y - player.y);
-        // ★★ guard: dist กระโดดผิดปกติ (เช่น 6 → 196 ใน 1 tick) = stale phantom entity
-        //   เกิดซ้ำ ๆ = target.id ทับซ้อนกับ entity อื่น → abandon เลย (ไม่ใช่รอ)
-        if (target.lastDist != null && dist > target.lastDist * 3 && dist > 50) {
-          log('⚠️ dist กระโดด', target.lastDist.toFixed(0), '→', dist.toFixed(0), '(phantom target) → abandon เลย');
-          abandonTarget('phantom target (dist ' + dist.toFixed(0) + ')', true, 8000);
-          target = null;
-          return;
-        }
         target.lastDist = dist;
         // ในระยะ acquire → ส่ง ATTACK ตรงๆ (server เดินเข้าไปตีเอง)
         if (dist <= CFG.maxAcquireDistance) {
@@ -2199,15 +2165,7 @@
           return;
         }
         // ★ dist > maxChaseDistance → abandon ทันที (มอนไกลเกินไป ไม่สมควรไล่ตาม)
-        //   ★★ guard ต่อ: ถ้า dist เด้ง > 80 ช่อง (ผิดปกติ) ใน tick เดียวกัน → phantom entity
-        //   ไม่ abandon (เพราะ guard ด้านบนจับได้แล้ว แต่กัน double-trigger)
         if (dist > CFG.maxChaseDistance) {
-          // อ่าน dist จาก m.x/m.y ใหม่อีกครั้ง (กัน phantom)
-          //   ถ้า target.id ทับซ้อนกับ player เก่า → m.x/m.y อาจเป็นค่าขยะ
-          if (target.lastDist != null && dist > 80 && dist > target.lastDist * 3) {
-            // phantom — ข้าม abandon รอ tick ถัดไป (อาจจะ update ตำแหน่งถูก)
-            return;
-          }
           log('📏 abandon: มอนไกล', dist.toFixed(0), 'ช่อง (เกิน maxChase ' + CFG.maxChaseDistance + ')');
           abandonTarget('ไกลเกิน ' + CFG.maxChaseDistance, false, 10000);
           target = null;
