@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.6.3
+// @version      4.6.4
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.6.3';
+  const VERSION = '4.6.4';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -1873,7 +1873,8 @@
   // ---------- combat state machine ----------
   // abandon target + (ถ้าเป็น stuck/ล้มเหลว) ตั้ง cooldown กันเลือกตัวเดิมซ้ำทันที
   //   cooldownMs: 0 = ไม่ตั้ง (เช่น ฆ่าได้/defensive ที่เป็นการเปลี่ยนเป้าปกติ)
-  //   ★ หลัง abandon ทุกครั้ง → เดินสุ่ม 1 ครั้ง (กันยืนนิ่งหลังเลิกเป้า — ดูไม่เป็นธรรมชาติ)
+  //   ★ เดินหลีก 1 ครั้ง เฉพาะตอน stuck=true (กันยืนนิ่งหลังตีไม่ติด/server เงียบ)
+  //     กรณี stuck=false (ฆ่าได้/defensive/ไกลเกิน) ไม่เดิน เพราะมีเหตุผลอื่นหรือมีของตกต้องเก็บ
   function abandonTarget(reason, stuck, cooldownMs = 0) {
     if (target) {
       log('🚫 abandon target', target.id, '(' + reason + ')');
@@ -1882,18 +1883,18 @@
         stuckAbandonHistory.push(nowMs());
         stuckAbandonHistory = stuckAbandonHistory.filter(t => nowMs() - t < 60000);
         stuckAbandonCount = stuckAbandonHistory.length;
+        // ★ เดินหลีกเฉพาะตอน stuck (กันยืนนิ่งหลังตีไม่ติด)
+        if (player.x != null && player.y != null) {
+          const angle = Math.random() * Math.PI * 2;
+          const step = 5 + Math.random() * 7;   // 5-12 ช่อง
+          const tx = Math.round(player.x + Math.cos(angle) * step);
+          const ty = Math.round(player.y + Math.sin(angle) * step);
+          if (sendMove(tx, ty)) log('🚶 เดินหลีกหลัง abandon @(', tx, ty + ')');
+        }
       }
     }
     target = null;
     stuckWalkCount = 0;
-    // ★ เดินสุ่ม 1 ครั้งหลัง abandon (ถ้ารู้ตำแหน่ง) — กันยืนนิ่ง
-    if (player.x != null && player.y != null) {
-      const angle = Math.random() * Math.PI * 2;
-      const step = 5 + Math.random() * 7;   // 5-12 ช่อง
-      const tx = Math.round(player.x + Math.cos(angle) * step);
-      const ty = Math.round(player.y + Math.sin(angle) * step);
-      if (sendMove(tx, ty)) log('🚶 เดินหลีกหลัง abandon @(', tx, ty + ')');
-    }
   }
   function doFlee(reason) {
     const now = nowMs();
