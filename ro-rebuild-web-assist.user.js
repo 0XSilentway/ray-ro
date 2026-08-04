@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.7.1
+// @version      4.7.2
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.7.1';
+  const VERSION = '4.7.2';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -371,8 +371,8 @@
     combatTickMs: 200,            // tick loop (มี jitter ±25% เหมือนบอทหลัก)
     postCombatDelayMs: 800,      // ★ รอ N ms หลังสู้เสร็จ/เก็บของเสร็จ ก่อนทำอย่างอื่น (ดูเป็นธรรมชาติ)
     attackReIssueMs: 2000,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้ (เพิ่มจาก 2500 → pending เพิ่มช้าลง)
-    attackAbandonMs: 2000,       // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (เพิ่มจาก 8s → 20s รองรับ reset ล่าช้า)
-    attackPendingMax: 2,          // ★ abandon ถ้า pending ≥ N (ลดจาก 8 → 4 ใกล้บอทหลัก ตัดมอนตีไม่ได้เร็วขึ้น)
+    attackAbandonMs: 5000,       // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (เพิ่มจาก 8s → 20s รองรับ reset ล่าช้า)
+    attackPendingMax: 3,          // ★ abandon ถ้า pending ≥ N (ลดจาก 8 → 4 ใกล้บอทหลัก ตัดมอนตีไม่ได้เร็วขึ้น)
     aggroKeepAliveMs: 15000,      // ★ มอน aggro เรา → ถือว่ายังสู้อยู่ N ms (กัน abandon ตอนมอนเดินมาหา)
     maxEngageSec: 30,             // abandon target ถ้า engage นานกว่านี้ (ลดจาก 30 → 20 ใกล้บอทหลัก)
     // flee (วาร์ปหนี)
@@ -1980,7 +1980,7 @@
     target = {
       id: m.id, x: m.x, y: m.y, acquiredAt: now, engageAt: 0,
       lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, firstAttackAt: 0,
-      stuckCount: 0, warpCount: 0,
+      stuckCount: 0, warpCount: 0, lastDist: null,
     };
     lastTargetSwitchAt = now;
     return target;
@@ -2161,8 +2161,16 @@
     //     dist > maxAcquireDistance → บอทเดินเข้าไปเอง (MOVE) จนถึง ≤maxAcquireDistance แล้วค่อยส่ง ATTACK
     if (target) {
       const m = entities.get(target.id);
-      if (m && player.x != null) {
+      if (m && player.x != null && m.x != null && m.y != null) {
         const dist = Math.hypot(m.x - player.x, m.y - player.y);
+        // ★★ guard: dist กระโดดผิดปกติ (เช่น 6 → 196 ใน 1 tick) = stale phantom entity
+        //   ถ้า dist เพิ่มขึ้น > 3x ของครั้งก่อน AND > 50 ช่อง → ถือว่า stale ไม่ abandon (รอ tick ถัดไป)
+        if (target.lastDist != null && dist > target.lastDist * 3 && dist > 50) {
+          log('⚠️ dist กระโดด', target.lastDist.toFixed(0), '→', dist.toFixed(0), '(stale?) → รอ tick ถัดไป');
+          target.lastDist = dist;   // อัปเดตเผื่อทิ้งระยะเก่าไป
+          return;                   // ★ ไม่ abandon รอ tick ถัดไป
+        }
+        target.lastDist = dist;
         // ในระยะ acquire → ส่ง ATTACK ตรงๆ (server เดินเข้าไปตีเอง)
         if (dist <= CFG.maxAcquireDistance) {
           // (ลบ fallback เดินเข้า — server walk-and-attack ทำงานจริง แค่ reset ไม่ทำงานชั่วคราว)
