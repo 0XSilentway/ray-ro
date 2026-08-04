@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.6.1
+// @version      4.6.2
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.6.1';
+  const VERSION = '4.6.2';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -1653,6 +1653,7 @@
   let storageLastMoveAt = 0;      // throttle MOVE_TO_KAFRA + MOVE_ITEMS
   let noMonsterSince = 0;        // timestamp ที่เริ่มไม่เจอมอน
   let lastWanderAt = 0;
+  let lastNavLogTag = '';   // ★ track last nav log target (กัน spam log)
   let lastFleeAt = 0;
   let lastWarpFindAt = 0;        // throttle warpFind กัน spam
   let lastTargetSwitchAt = 0;    // throttle การสลับ target (กันสลับบ่อย)
@@ -2184,7 +2185,12 @@
           const wp = CFG.navWanderMode === 'patrol' ? navPatrol() : navWander();
           if (wp) {
             if (sendMove(wp.x, wp.y)) {
-              log(CFG.navWanderMode === 'patrol' ? '🔄 patrol @(' : '🗺️ nav wander @(', wp.x, wp.y + ')');
+              // ★ log เฉพาะตอน target เปลี่ยน (กัน spam — move command ซ้ำปกติ 1 วิต่อครั้ง)
+              const tag = Math.round(wp.x) + ',' + Math.round(wp.y);
+              if (tag !== lastNavLogTag) {
+                lastNavLogTag = tag;
+                log(CFG.navWanderMode === 'patrol' ? '🔄 patrol @(' : '🗺️ nav wander @(', wp.x, wp.y + ')');
+              }
               moved = true;
             }
           }
