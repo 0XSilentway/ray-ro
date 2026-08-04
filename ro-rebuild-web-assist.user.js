@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.6.4
+// @version      4.6.5
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.6.4';
+  const VERSION = '4.6.5';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -265,7 +265,7 @@
     //     เปิดใช้เองด้วย ASSIST.healOn() หรือ ASSIST.setHealItems(...) (จะเปิดให้อัตโนมัติ)
     healEnabled: false,           // เปิดใช้ตอนเริ่มหรือไม่
     healAtPercent: 60,            // HP% ที่จะเริ่มใช้ยา (เช่น 60 = ต่ำกว่า 60% ใช้ยา)
-    healItems: [512,507,501,502],                // ★ DEFAULT = ว่าง → จะไม่ส่ง packet heal ใด ๆ จนกว่าจะตั้ง item
+    healItems: [501,502],                // ★ DEFAULT = ว่าง → จะไม่ส่ง packet heal ใด ๆ จนกว่าจะตั้ง item
     healMode: 'order',            // 'order' = ใช้ตัวเดิมจนหมดแล้วค่อยข้าม, 'random' = สุ่มทุกครั้ง
     healDelayMs: 200,             // ดีเลย์ขั้นต่ำระหว่างการใช้ item แต่ละครั้ง
     healCheckMs: 100,             // ความถี่ในการเช็ค HP
@@ -279,8 +279,8 @@
     buffEnabled: false,           // เปิดใช้ตอนเริ่มหรือไม่
     // ★ รายการ buff: [{itemId, intervalMin}] — intervalMin = ทุกกี่นาทีจะใช้ซ้ำ
     //   ตัวอย่าง: [{itemId:656, intervalMin:30}] = Awakening Potion ทุก 30 นาที
-    buffItems: [],                // ★ default ว่าง = ไม่ใช้ buff ใด ๆ
-    buffCheckMs: 1000,            // ความถี่ในการเช็ค (1 วิ)
+    buffItems: [{itemId:645, intervalMin:30}],                // ★ default ว่าง = ไม่ใช้ buff ใด ๆ
+    buffCheckMs: 20000,            // ความถี่ในการเช็ค (1 วิ)
     buffRebuffDelayMs: 5000,      // รออย่างน้อย N ms ก่อนใช้ buff ตัวเดิมซ้ำ (กัน spurious)
 
     // ---------- NAVIGATION (บันทึกเส้นทางเดิน + waypoint graph) ----------
@@ -303,23 +303,23 @@
     // ---------- AUTO-SELL (★ default OFF) ----------
     //  trigger: ของเต็ม (0x20 'too full') OR ครบเวลา sellIntervalMin
     //  เลือก NPC + แมป เอง + เลือก item ที่จะขายเอง (default ไม่ขายอะไร)
-    sellEnabled: false,
+    sellEnabled: true,
     sellNpcName: 'Tool Dealer',   // ชื่อ NPC (หาจาก entities kind=2)
     sellNpcMap: 'izlude_in',     // แมปที่ NPC อยู่ (วาร์ปไปแมปนี้)
     sellNpcX: 116,                // ★ พิกัด X ที่จะวาร์ปไป (ใกล้ NPC ที่สุด, mirror บอทหลัก npcMapX)
     sellNpcY: 55,                 // ★ พิกัด Y ที่จะวาร์ปไป (-999 = random spawn, แต่อาจไกล NPC)
     sellIntervalMin: 0,           // 0=off, >0=ขายทุก N นาที
     sellOnFull: true,             // ขายเมื่อของเต็ม (server ส่ง 'too full')
-    sellItemIds: [],              // ★ item id ที่ติ๊กว่าจะขาย (default ว่าง = ไม่ขายอะไร)
+    sellItemIds: [908,909,910,911,918,919,920,921,924,926,928,940,943,946,949,950,951,955,960,961,962,1024,1052,7033,935,915,913,957,7032,902,1068,1067,948,907,1021,906,937,945,705,1023,1050,956,1057,963,914,905,511,711,721,1051,1054,1053,901,1094,1020,1019,7054,1022,7013,7094,7356,7317,7004,7049,1055,7064,967,912,1096,7070,7358,7357,942,7359,953,1501,2221,1035,1032,1031,1013,1402,1916,1026,947,1014,1040,1034,1012,737,904,7031,1056,7007,903,7041,930,958,934,1059,1099,1098,7174,1025,1042,1017,7318,1041,1061,7119,923,7012,1063,7009,7002,931,7005,1095,1097,938,2297,1301,932,1505,1060,734,7069,7072,7066,7068,954,7156,7053,7158,7157,7106,7107,7001,7159,7124,7063,7111,7112,1038,7015,713,936,2303,1016,2304,1202,7154,7155,7153,7152,7126,1044,922,1116,1064,1201,1039,1602,1033,7067,1048,1062,944,7003,7006,1036,7123,1037,941,7030,7150,7149,7151,959],              // ★ item id ที่ติ๊กว่าจะขาย (default ว่าง = ไม่ขายอะไร)
 
     // ---------- AUTO-STORAGE (ฝากของเข้า Kafra) ----------
     //  ★ default OFF — เปิดเองใน config tab หรือ ASSIST.storageOn()
     //  mirror บอทหลัก config.bot.autoStorage (config.json:743-924)
-    storageEnabled: false,        // เปิดใช้ตอนเริ่มหรือไม่
+    storageEnabled: true,        // เปิดใช้ตอนเริ่มหรือไม่
     kafraName: 'Kafra Staff',     // ชื่อ NPC Kafra (หาจาก entities kind=2)
     kafraMap: 'izlude',           // แมปที่ Kafra อยู่ (วาร์ปไปแมปนี้)
-    kafraMapX: 0,                 // พิกัดวาร์ป X (0 = ใช้ sellNpcX/Y แทน)
-    kafraMapY: 0,                 // พิกัดวาร์ป Y
+    kafraMapX: 134,                 // พิกัดวาร์ป X (0 = ใช้ sellNpcX/Y แทน)
+    kafraMapY: 79,                 // พิกัดวาร์ป Y
     kafraChoice: 1,               // index เมนู "Use Storage" (0=Save, 1=Use Storage, 2=Teleport)
     depositOnFull: true,          // ฝากเมื่อของเต็ม (server ส่ง 'too full')
     depositAfterSell: true,       // ★ chain: ฝากต่อทันทีหลังขายเสร็จ
@@ -329,7 +329,7 @@
     //  ใช้สำหรับ: (1) เผลอเดินเข้าวาร์ป → เปลี่ยนแมป → วาร์ปกลับอัตโนมัติ
     //             (2) กดปุ่ม "วาร์ปไปแมปฟาร์ม" เพื่อกลับทันที (manual)
     //  ★ farmMap ว่าง = ปิดฟีเจอร์ทั้งคู่ (mirror บอทหลัก autoTeleport.mapName)
-    farmMap: '',                  // ชื่อแมปฟาร์ม (เช่น 'cmd_fild01') — ว่าง = ไม่ใช้
+    farmMap: 'iz_dun00',                  // ชื่อแมปฟาร์ม (เช่น 'cmd_fild01') — ว่าง = ไม่ใช้
     farmMapX: -999,               // พิกัด X ที่จะวาร์ปไป (-999 = random spawn ในแมปนั้น)
     farmMapY: -999,               // พิกัด Y
     warpBackToFarm: true,         // ถ้า currentMap เปลี่ยนจาก farmMap → วาร์ปกลับอัตโนมัติ
@@ -338,10 +338,10 @@
     lootEnabled: true,
     pickRadius: 2,                // ระยะ (ช่อง) จากตัวเรา ที่จะถือว่าของเป็นของเรา
     combatWindowMs: 2500,         // ของตกต้องมาภายในเวลานี้หลังเราตี/ฆ่า
-    lootDelayAfterDropMs: 500,      // ★ รอ N ms หลังของตก แล้วค่อยเริ่มเก็บ (0 = เก็บทันที, กันดูเป็นบอท)
+    lootDelayAfterDropMs: 600,      // ★ รอ N ms หลังของตก แล้วค่อยเริ่มเก็บ (0 = เก็บทันที, กันดูเป็นบอท)
     attemptIntervalMs: 1200,      // ห่างระหว่างการลองเก็บชิ้นเดิม (1.2 วิ — รอ server เดินไปเก็บ)
-    sendThrottleMs: 400,          // ห่างระหว่างคำสั่งเก็บทุกชิ้น (กันสแปม)
-    maxAttempts: 5,               // เก็บไม่ได้ 6 ครั้ง → ปล่อย (นักธนูฆ่าไกล ตัวเดินไปเก็บนานขึ้น)
+    sendThrottleMs: 500,          // ห่างระหว่างคำสั่งเก็บทุกชิ้น (กันสแปม)
+    maxAttempts: 4,               // เก็บไม่ได้ 6 ครั้ง → ปล่อย (นักธนูฆ่าไกล ตัวเดินไปเก็บนานขึ้น)
     itemMaxAgeMs: 30000,          // ของเก่ากว่านี้ → ทิ้งออกจากคิว
     lootTickMs: 300,
 
@@ -369,9 +369,9 @@
     maxWalkDistance: 15,          // (legacy — ใช้น้อย เพราะ server walk-and-attack เอง)
     combatTickMs: 200,            // tick loop (มี jitter ±25% เหมือนบอทหลัก)
     postCombatDelayMs: 800,      // ★ รอ N ms หลังสู้เสร็จ/เก็บของเสร็จ ก่อนทำอย่างอื่น (ดูเป็นธรรมชาติ)
-    attackReIssueMs: 3000,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้ (เพิ่มจาก 2500 → pending เพิ่มช้าลง)
-    attackAbandonMs: 3000,       // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (เพิ่มจาก 8s → 20s รองรับ reset ล่าช้า)
-    attackPendingMax: 3,          // ★ abandon ถ้า pending ≥ N (ลดจาก 8 → 4 ใกล้บอทหลัก ตัดมอนตีไม่ได้เร็วขึ้น)
+    attackReIssueMs: 2000,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้ (เพิ่มจาก 2500 → pending เพิ่มช้าลง)
+    attackAbandonMs: 2000,       // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (เพิ่มจาก 8s → 20s รองรับ reset ล่าช้า)
+    attackPendingMax: 2,          // ★ abandon ถ้า pending ≥ N (ลดจาก 8 → 4 ใกล้บอทหลัก ตัดมอนตีไม่ได้เร็วขึ้น)
     aggroKeepAliveMs: 15000,      // ★ มอน aggro เรา → ถือว่ายังสู้อยู่ N ms (กัน abandon ตอนมอนเดินมาหา)
     maxEngageSec: 30,             // abandon target ถ้า engage นานกว่านี้ (ลดจาก 30 → 20 ใกล้บอทหลัก)
     // flee (วาร์ปหนี)
@@ -3490,6 +3490,22 @@
     `;
     document.body.appendChild(root);
 
+    // ★★ track "กำลังแก้ input" ด้วย focusin/focusout (แทน document.activeElement)
+    //   Unity เรียก canvas.focus() ทุกเฟรม → activeElement เปลี่ยนเป็น canvas ตลอด
+    //   → syncInput ที่เช็ค activeElement จะเขียนทับค่าที่กำลังพิมพ์อยู่
+    //   แก้: track ด้วย focusin/focusout (จับก่อน Unity แย่ง focus)
+    const editingInputs = new WeakSet();
+    root.addEventListener('focusin', (e) => {
+      if (e.target.matches && e.target.matches('input, select, textarea')) editingInputs.add(e.target);
+    });
+    root.addEventListener('focusout', (e) => {
+      if (e.target.matches && e.target.matches('input, select, textarea')) {
+        // ★ delay 100ms ก่อนล้าง — กัน Unity แย่ง focus ชั่วขณะ แล้ว browser คืน focus กลับ
+        setTimeout(() => { try { editingInputs.delete(e.target); } catch (_) {} }, 100);
+      }
+    });
+    const isEditing = (el) => el && editingInputs.has(el);
+
     // ---------- wire events ----------
     // ★★ Unity WebGL (Emscripten) ดัก keyboard ที่ window ใน capture phase เหมือนกัน
     //   + เรียก preventDefault ทำให้ input ไม่รับ key → พิมพ์ไม่ติด
@@ -3843,16 +3859,16 @@
     if (healBtn) { healBtn.textContent = 'Heal: ' + (CFG.healEnabled ? 'ON' : 'OFF'); healBtn.className = CFG.healEnabled ? 'on' : 'off'; }
     if (warpBtn) { warpBtn.textContent = 'วาร์ปไปเก็บของ: ' + (CFG.warpLootEnabled ? 'ON' : 'OFF') + (warpQueue.size ? ` (${warpQueue.size})` : ''); warpBtn.className = CFG.warpLootEnabled ? 'on' : 'off'; }
     const ha = root.querySelector('#__assist_healat');
-    if (ha && document.activeElement !== ha) ha.value = CFG.healAtPercent;
+    if (ha && !isEditing(ha)) ha.value = CFG.healAtPercent;
     const hi = root.querySelector('#__assist_healitems');
-    if (hi && document.activeElement !== hi) hi.value = CFG.healItems.join(',');
+    if (hi && !isEditing(hi)) hi.value = CFG.healItems.join(',');
     const hm = root.querySelector('#__assist_healmode');
-    if (hm && document.activeElement !== hm) hm.value = CFG.healMode;
+    if (hm && !isEditing(hm)) hm.value = CFG.healMode;
     // buff config sync + countdown display
     const buffBtn = root.querySelector('#__assist_buffbtn');
     if (buffBtn) { buffBtn.textContent = 'Buff: ' + (CFG.buffEnabled ? 'ON' : 'OFF'); buffBtn.className = CFG.buffEnabled ? 'on' : 'off'; }
     const bi = root.querySelector('#__assist_buffitems');
-    if (bi && document.activeElement !== bi) bi.value = (CFG.buffItems || []).map(x => x.itemId + ',' + x.intervalMin).join('\n');
+    if (bi && !isEditing(bi)) bi.value = (CFG.buffItems || []).map(x => x.itemId + ',' + x.intervalMin).join('\n');
     const cdEl = root.querySelector('#__assist_buffcountdown');
     if (cdEl) {
       if (!CFG.buffItems || !CFG.buffItems.length) {
@@ -3869,14 +3885,14 @@
       }
     }
     const lm = root.querySelector('#__assist_lootmode');
-    if (lm && document.activeElement !== lm) lm.value = CFG.filter.mode;
+    if (lm && !isEditing(lm)) lm.value = CFG.filter.mode;
     const ld = root.querySelector('#__assist_lootdelay');
-    if (ld && document.activeElement !== ld) ld.value = CFG.lootDelayAfterDropMs;
+    if (ld && !isEditing(ld)) ld.value = CFG.lootDelayAfterDropMs;
 
     // combat config sync
     const combatBtn = root.querySelector('#__assist_combatbtn');
     if (combatBtn) { combatBtn.textContent = 'Combat: ' + (CFG.combatEnabled ? 'ON' : 'OFF'); combatBtn.className = CFG.combatEnabled ? 'on' : 'off'; }
-    const syncInput = (sel, val) => { const el = root.querySelector(sel); if (el && document.activeElement !== el) el.value = val; };
+    const syncInput = (sel, val) => { const el = root.querySelector(sel); if (el && !isEditing(el)) el.value = val; };
     syncInput('#__assist_whitelist', CFG.targetWhitelist.join(','));
     syncInput('#__assist_blacklist', CFG.targetBlacklist.join(','));
     syncInput('#__assist_attackrange', CFG.rangedAttackRange > 0 ? CFG.rangedAttackRange : CFG.attackRange);
@@ -3921,7 +3937,7 @@
     if (navRecBtn) { navRecBtn.textContent = 'บันทึก: ' + (CFG.navRecording ? 'ON 🔴' : 'OFF'); navRecBtn.className = CFG.navRecording ? 'on' : 'off'; }
     syncToggle('#__assist_navwanderbtn', CFG.navWanderUseNav);
     const nm = root.querySelector('#__assist_navmode');
-    if (nm && document.activeElement !== nm) nm.value = CFG.navWanderMode;
+    if (nm && !isEditing(nm)) nm.value = CFG.navWanderMode;
     syncInput('#__assist_navradius', CFG.navMergeRadius);
     const navStatsEl = root.querySelector('#__assist_navstats');
     if (navStatsEl) {
