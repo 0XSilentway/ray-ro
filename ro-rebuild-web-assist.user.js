@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.5.4
+// @version      4.6.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.5.4';
+  const VERSION = '4.6.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -133,7 +133,7 @@
     'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellNpcX', 'sellNpcY', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
     'storageEnabled', 'kafraName', 'kafraMap', 'kafraMapX', 'kafraMapY', 'kafraChoice', 'depositOnFull', 'depositAfterSell', 'depositItemIds',
     'farmMap', 'farmMapX', 'farmMapY', 'warpBackToFarm',
-    'navRecording', 'navMergeRadius', 'navWanderUseNav',
+    'navRecording', 'navMergeRadius', 'navWanderUseNav', 'navWanderMode',
     'itemNames',
   ];
   function saveConfig() {
@@ -288,7 +288,8 @@
     //  ★ ข้อมูลเก็บ localStorage (roAssistNav_<map>) + export/import + sync GitHub
     navRecording: false,          // ★ default OFF — เปิดเพื่อบันทึกตอนเดินเก็บข้อมูล
     navMergeRadius: 3,            // จุดที่อยู่ใกล้กัน <= N ช่อง = รวมเป็น node เดียว (dedup)
-    navWanderUseNav: true,        // wander ใช้ waypoint graph แทนสุ่ม (ถ้ามีข้อมูลแมปนั้น)
+    navWanderUseNav: true,        // wander ใช้ nav แทนสุ่ม (ถ้ามีข้อมูลแมปนั้น)
+    navWanderMode: 'patrol',      // ★ 'patrol' = เดินตามลำดับ route ครบแล้วย้อนกลับ, 'graph' = wander สุ่มตาม graph
 
     // ---------- AUTO-REST (★ default OFF — นั่งพักเสี่ยงถ้ามีมอนรอบตัว) ----------
     //  เมื่อ HP ต่ำกว่า restHpPercent และไม่โดนรุม → นั่งพัก
@@ -836,6 +837,7 @@
           currentMap = name;
           log('🗺️ แมป:', name);
           navWanderReset();   // ★ เปลี่ยนแมป → reset wander state (ล้าง target เก่า)
+          navPatrolReset();   // ★ reset patrol state ด้วย
           // ★ warp-back-to-farm: เผลอเดินเข้าวาร์ปจนเปลี่ยนแมป → วาร์ปกลับแมปฟาร์ม
           //   เงื่อนไข: warpBackToFarm=on AND farmMap ไม่ว่าง AND มาจาก farmMap AND ตอนนี้ไม่ใช่ farmMap
           //   (กันวาร์ปซ้ำ: ต้องมาจาก farmMap เท่านั้น — เข้าแมปอื่น→farmMap ปกติจะไม่ trigger)
@@ -2178,10 +2180,13 @@
         lastWanderAt = now;
         let moved = false;
         if (CFG.navWanderUseNav) {
-          const wp = navWander();
+          // ★ เลือก mode: patrol (เดินตามลำดับ route) หรือ graph (wander สุ่ม)
+          const wp = CFG.navWanderMode === 'patrol' ? navPatrol() : navWander();
           if (wp) {
-            // ★ navWander คืน target สุดท้าย (≤18 ช่องเสมอ เพราะ cap ในฟังก์ชัน) → คลิกเดินตรง
-            if (sendMove(wp.x, wp.y)) { log('🗺️ nav wander @(', wp.x, wp.y + ')'); moved = true; }
+            if (sendMove(wp.x, wp.y)) {
+              log(CFG.navWanderMode === 'patrol' ? '🔄 patrol @(' : '🗺️ nav wander @(', wp.x, wp.y + ')');
+              moved = true;
+            }
           }
         }
         if (!moved) {
@@ -2260,6 +2265,14 @@
     }
     data.nodes = nodes;
     data.edges = edges;
+    // ★ build route: ลำดับ node ตามที่เดินจริง (compact nodeMap — เอาซ้ำติดกันออก)
+    //   ใช้สำหรับ patrol mode (เดินตามลำดับ → ครบแล้วย้อนกลับ)
+    const route = [];
+    let lastNode = -1;
+    for (let i = 0; i < nodeMap.length; i++) {
+      if (nodeMap[i] !== lastNode) { route.push(nodeMap[i]); lastNode = nodeMap[i]; }
+    }
+    data.route = route;
   }
   // ★ บันทึกการคลิกเดินของผู้เล่น → trail
   function navRecordMove(x, y) {
@@ -2330,6 +2343,87 @@
     // ★ คืน node ถัดไป (path[1]) — bot จะคลิกเดินไปที่นั่น
     return { x: data.nodes[path[1]].x, y: data.nodes[path[1]].y };
   }
+  // ★ PATROL MODE — เดินตามลำดับ route (ลำดับที่บันทึก) ครบแล้วย้อนกลับ
+  //   ง่าย + เป็นธรรมชาติที่สุด เพราะเดินตามเส้นทางที่มนุษย์เคยเดินจริง
+  //   state: patrolIdx = index ใน route ปัจจุบัน, patrolDir = 1 (ไป) | -1 (กลับ)
+  let patrolIdx = -1;       // index ใน route ของ node ที่กำลังเดินไป
+  let patrolDir = 1;        // ทิศทาง: 1 = ไปข้างหน้า, -1 = ย้อนกลับ
+  let patrolTargetAt = 0;   // timestamp ที่ตั้ง target (timeout)
+  function navPatrol() {
+    if (!currentMap || player.x == null) return null;
+    const data = navLoadMap(currentMap);
+    if (!data || !data.route || data.route.length < 2) return null;
+    const now = nowMs();
+    const ARRIVAL_RADIUS = (CFG.navMergeRadius || 3);
+    const MAX_STEP = 18;
+    const TARGET_TIMEOUT_MS = 10000;
+
+    // ★ เริ่มต้น: หา index ใน route ที่ใกล้ player สุด
+    if (patrolIdx < 0) {
+      let bestDist = Infinity;
+      for (let i = 0; i < data.route.length; i++) {
+        const n = data.nodes[data.route[i]];
+        const dx = n.x - player.x, dy = n.y - player.y;
+        const d = dx * dx + dy * dy;
+        if (d < bestDist) { bestDist = d; patrolIdx = i; }
+      }
+      patrolTargetAt = now;
+    }
+
+    // ★ หา target node ปัจจุบัน
+    const targetNodeIdx = data.route[patrolIdx];
+    if (targetNodeIdx == null) { patrolIdx = -1; return null; }
+    const tx = data.nodes[targetNodeIdx].x, ty = data.nodes[targetNodeIdx].y;
+    const dx = tx - player.x, dy = ty - player.y;
+    const dist2 = dx * dx + dy * dy;
+
+    // ★ arrival check: ถึงแล้ว → เลื่อนไป node ถัดไปใน route
+    if (dist2 <= ARRIVAL_RADIUS * ARRIVAL_RADIUS) {
+      patrolIdx += patrolDir;
+      // ★ ครบ route → ย้อนกลับ (ping-pong ไม่วนกลับจุดเริ่มต้น เพราะเสียเวลา)
+      if (patrolIdx >= data.route.length) { patrolIdx = data.route.length - 2; patrolDir = -1; }
+      else if (patrolIdx < 0) { patrolIdx = 1; patrolDir = 1; }
+      // กัน index ออกนอก (route สั้น)
+      if (patrolIdx < 0) patrolIdx = 0;
+      if (patrolIdx >= data.route.length) patrolIdx = data.route.length - 1;
+      patrolTargetAt = now;
+      const nextNodeIdx = data.route[patrolIdx];
+      return { x: data.nodes[nextNodeIdx].x, y: data.nodes[nextNodeIdx].y };
+    }
+
+    // ★ target timeout: ถ้าเกิน 10 วิ ยังไม่ถึง → ข้ามไป node ถัดไป
+    if (now - patrolTargetAt > TARGET_TIMEOUT_MS) {
+      patrolIdx += patrolDir;
+      if (patrolIdx >= data.route.length) { patrolIdx = data.route.length - 2; patrolDir = -1; }
+      else if (patrolIdx < 0) { patrolIdx = 1; patrolDir = 1; }
+      if (patrolIdx < 0) patrolIdx = 0;
+      if (patrolIdx >= data.route.length) patrolIdx = data.route.length - 1;
+      patrolTargetAt = now;
+      const nextNodeIdx = data.route[patrolIdx];
+      log('🗺️ patrol timeout → ข้ามไป node', patrolIdx);
+      return { x: data.nodes[nextNodeIdx].x, y: data.nodes[nextNodeIdx].y };
+    }
+
+    // ★ ยังอยู่ระหว่างทาง → คืน target ปัจจุบัน (cap ระยะ ≤ MAX_STEP)
+    if (dist2 > MAX_STEP * MAX_STEP) {
+      // ไกลเกิน → หา node ถัดไปที่อยู่ใกล้ player บน route
+      //   ง่ายสุด: หา index ใน route ที่ใกล้ player สุด แล้วเริ่มจากตรงนั้น
+      let bestI = patrolIdx, bestD = dist2;
+      for (let i = 0; i < data.route.length; i++) {
+        const n = data.nodes[data.route[i]];
+        const ddx = n.x - player.x, ddy = n.y - player.y;
+        const d = ddx * ddx + ddy * ddy;
+        if (d < bestD) { bestD = d; bestI = i; }
+      }
+      patrolIdx = bestI;
+      patrolTargetAt = now;
+      const nn = data.nodes[data.route[patrolIdx]];
+      return { x: nn.x, y: nn.y };
+    }
+    return { x: tx, y: ty };
+  }
+  function navPatrolReset() { patrolIdx = -1; patrolDir = 1; patrolTargetAt = 0; }
+
   // ★ wander แบบใช้ nav — stateful: track current target + arrival → เดินต่อเนื่อง
   //   ★ หลีกเลี่ยง ping-pong: track node ที่เพิ่งมาจาก (prevNode) → ไม่สุ่มกลับ
   //     ถ้าเหลือทางเดียว (dead-end 2 node) → ขยายหา node ที่ไกลขึ้นผ่าน BFS
@@ -2468,7 +2562,9 @@
   function navHasData() {
     if (!currentMap) return false;
     const data = navCache.get(currentMap);
-    return !!(data && data.nodes && data.nodes.length >= 2);
+    if (!data || !data.nodes || data.nodes.length < 2) return false;
+    if (CFG.navWanderMode === 'patrol') return !!(data.route && data.route.length >= 2);
+    return true;   // graph mode ใช้แค่ nodes
   }
   // ★ export ข้อมูล nav ทั้งหมด (สำหรับ download/backup)
   function navExportAll() {
@@ -3357,6 +3453,7 @@
             <button id="__assist_navrecbtn" class="off">บันทึก: ?</button>
             <button id="__assist_navwanderbtn" class="on">เดินตาม nav</button>
           </div>
+          <div class="field"><label>โหมดเดินตาม nav</label><select id="__assist_navmode"><option value="patrol">patrol (เดินตามลำดับ route ครบแล้วย้อนกลับ)</option><option value="graph">graph (wander สุ่มตามกราฟ)</option></select></div>
           <div class="field"><label>รัศมีรวมจุด (ช่อง) — จุดที่อยู่ใกล้กัน <= N ช่อง = รวม node เดียว</label><input type="number" id="__assist_navradius" min="1" max="20"></div>
           <div class="btns">
             <button id="__assist_applynav">ใช้ค่า nav</button>
@@ -3578,6 +3675,7 @@
     // ---- nav wires ----
     root.querySelector('#__assist_navrecbtn').addEventListener('click', () => CFG.navRecording ? ASSIST.navRecordOff() : ASSIST.navRecordOn());
     root.querySelector('#__assist_navwanderbtn').addEventListener('click', () => { CFG.navWanderUseNav = !CFG.navWanderUseNav; ASSIST.navToggleWander(CFG.navWanderUseNav); });
+    root.querySelector('#__assist_navmode').addEventListener('change', e => { CFG.navWanderMode = e.target.value; navPatrolReset(); log('🗺️ nav mode =', CFG.navWanderMode); });
     root.querySelector('#__assist_applynav').addEventListener('click', () => {
       const r = parseInt(root.querySelector('#__assist_navradius').value, 10);
       if (!isNaN(r)) ASSIST.navSetMergeRadius(r);
@@ -3804,6 +3902,8 @@
     const navRecBtn = root.querySelector('#__assist_navrecbtn');
     if (navRecBtn) { navRecBtn.textContent = 'บันทึก: ' + (CFG.navRecording ? 'ON 🔴' : 'OFF'); navRecBtn.className = CFG.navRecording ? 'on' : 'off'; }
     syncToggle('#__assist_navwanderbtn', CFG.navWanderUseNav);
+    const nm = root.querySelector('#__assist_navmode');
+    if (nm && document.activeElement !== nm) nm.value = CFG.navWanderMode;
     syncInput('#__assist_navradius', CFG.navMergeRadius);
     const navStatsEl = root.querySelector('#__assist_navstats');
     if (navStatsEl) {
