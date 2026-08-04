@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.5.0
+// @version      4.5.1
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.5.0';
+  const VERSION = '4.5.1';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -370,7 +370,7 @@
     postCombatDelayMs: 800,      // ★ รอ N ms หลังสู้เสร็จ/เก็บของเสร็จ ก่อนทำอย่างอื่น (ดูเป็นธรรมชาติ)
     attackReIssueMs: 3000,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้ (เพิ่มจาก 2500 → pending เพิ่มช้าลง)
     attackAbandonMs: 10000,       // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (เพิ่มจาก 8s → 20s รองรับ reset ล่าช้า)
-    attackPendingMax: 4,          // ★ abandon ถ้า pending ≥ N (ลดจาก 8 → 4 ใกล้บอทหลัก ตัดมอนตีไม่ได้เร็วขึ้น)
+    attackPendingMax: 2,          // ★ abandon ถ้า pending ≥ N (ลดจาก 8 → 4 ใกล้บอทหลัก ตัดมอนตีไม่ได้เร็วขึ้น)
     aggroKeepAliveMs: 15000,      // ★ มอน aggro เรา → ถือว่ายังสู้อยู่ N ms (กัน abandon ตอนมอนเดินมาหา)
     maxEngageSec: 30,             // abandon target ถ้า engage นานกว่านี้ (ลดจาก 30 → 20 ใกล้บอทหลัก)
     // flee (วาร์ปหนี)
@@ -835,6 +835,7 @@
           const prevMap = currentMap;
           currentMap = name;
           log('🗺️ แมป:', name);
+          navWanderReset();   // ★ เปลี่ยนแมป → reset wander state (ล้าง target เก่า)
           // ★ warp-back-to-farm: เผลอเดินเข้าวาร์ปจนเปลี่ยนแมป → วาร์ปกลับแมปฟาร์ม
           //   เงื่อนไข: warpBackToFarm=on AND farmMap ไม่ว่าง AND มาจาก farmMap AND ตอนนี้ไม่ใช่ farmMap
           //   (กันวาร์ปซ้ำ: ต้องมาจาก farmMap เท่านั้น — เข้าแมปอื่น→farmMap ปกติจะไม่ trigger)
@@ -2169,15 +2170,18 @@
         return;
       }
       // wander — สุ่มเดิน ≤ walkStepDistance ช่องจากตำแหน่งปัจจุบัน
-      //   ★ ถ้าเปิด navWanderUseNav และมีข้อมูลแมป → ใช้ waypoint graph (เดินเป็นธรรมชาติกว่า)
-      if (CFG.wanderEnabled && now - lastWanderAt > CFG.wanderCooldownMs && player.x != null) {
+      //   ★ ถ้าเปิด navWanderUseNav และมีข้อมูลแมป → ใช้ waypoint graph (เดินต่อเนื่อง stateful)
+      //   ★ navWander เป็น stateful: track target + arrival → เดินต่อทันทีไม่รอ cooldown
+      //     ใช้ cooldown สั้น 1s แทน wanderCooldownMs (3s) เพื่อความต่อเนื่อง
+      const navCooldown = (CFG.navWanderUseNav && navHasData()) ? 1000 : CFG.wanderCooldownMs;
+      if (CFG.wanderEnabled && now - lastWanderAt > navCooldown && player.x != null) {
         lastWanderAt = now;
         let moved = false;
         if (CFG.navWanderUseNav) {
           const wp = navWander();
           if (wp) {
-            const next = navNavigateTo(wp.x, wp.y) || wp;   // navigate ตาม graph, fallback ตรง
-            if (sendMove(next.x, next.y)) { log('🗺️ nav wander @(', next.x, next.y + ') → target(', wp.x, wp.y + ')'); moved = true; }
+            // ★ navWander คืน target สุดท้าย (≤18 ช่องเสมอ เพราะ cap ในฟังก์ชัน) → คลิกเดินตรง
+            if (sendMove(wp.x, wp.y)) { log('🗺️ nav wander @(', wp.x, wp.y + ')'); moved = true; }
           }
         }
         if (!moved) {
@@ -2326,23 +2330,106 @@
     // ★ คืน node ถัดไป (path[1]) — bot จะคลิกเดินไปที่นั่น
     return { x: data.nodes[path[1]].x, y: data.nodes[path[1]].y };
   }
-  // ★ wander แบบใช้ nav: เลือก node สุ่มที่อยู่ไกลพอสมควร → navigate
-  //   return {x, y} หรือ null
-  let navWanderLastNode = -1;
+  // ★ wander แบบใช้ nav — stateful: track current target + arrival → เดินต่อเนื่อง
+  //   ★ ไม่เลือก node สุ่มไกลแล้วเดินตรง (เคยทำให้ค้างเพราะติดกำแพง)
+  //   วิธีใหม่: เดินไป node ข้างเคียง (adjacent) ทีละขั้น → ถึงแล้วเลือก neighbor ถัดไปทันที
+  let navWanderTarget = null;     // {x, y} เป้าหมายปัจจุบัน (null = ต้องเลือกใหม่)
+  let navWanderNodeIdx = -1;      // index ของ node ที่กำลังเดินไป
+  let navWanderStuckSince = 0;    // timestamp ที่เริ่ม stuck (ไม่ถึง target)
+  let navWanderLastPos = null;    // {x,y,t} ตำแหน่งก่อนหน้า (เช็ค stuck)
   function navWander() {
     if (!currentMap || player.x == null) return null;
     const data = navLoadMap(currentMap);
     if (!data || data.nodes.length < 2) return null;
-    // ★ เลือก node สุ่มที่ห่างจากตำแหน่งปัจจุบันอย่างน้อย 10 ช่อง
-    const candidates = [];
-    for (let i = 0; i < data.nodes.length; i++) {
-      const dx = data.nodes[i].x - player.x, dy = data.nodes[i].y - player.y;
-      if (dx * dx + dy * dy >= 100 && i !== navWanderLastNode) candidates.push(i);
+    const now = nowMs();
+    const ARRIVAL_RADIUS = CFG.navMergeRadius || 3;   // ถือว่าถึงถ้าอยู่ใกล้ <= N ช่อง
+    const MAX_STEP = 18;            // ★ cap: ระยะคลิกเดินไม่เกิน 18 ช่อง (server ปฏิเสธถ้าไกลเกิน)
+
+    // ★ เช็ค arrival: ถ้ามี target และอยู่ใกล้แล้ว → เลือก neighbor ถัดไปทันที
+    if (navWanderTarget) {
+      const dx = navWanderTarget.x - player.x, dy = navWanderTarget.y - player.y;
+      const dist2 = dx * dx + dy * dy;
+      if (dist2 <= ARRIVAL_RADIUS * ARRIVAL_RADIUS) {
+        // ★ ถึงแล้ว → เลือก neighbor ถัดไป (สุ่ม ไม่กลับมาจุดเดิม)
+        const curIdx = navWanderNodeIdx >= 0 ? navWanderNodeIdx : navFindNearestNode(data, player.x, player.y);
+        const adj = navAdjacency(data);
+        const neighbors = (adj[curIdx] || []).filter(n => n !== navWanderNodeIdx);
+        if (neighbors.length) {
+          const next = neighbors[Math.floor(Math.random() * neighbors.length)];
+          navWanderNodeIdx = next;
+          const nx = data.nodes[next].x, ny = data.nodes[next].y;
+          // ★ cap ระยะ: ถ้า neighbor ไกลเกิน MAX_STEP → ใช้ navigateTo แบบ step-by-step
+          const sdx = nx - player.x, sdy = ny - player.y;
+          if (sdx * sdx + sdy * sdy > MAX_STEP * MAX_STEP) {
+            const step = navNavigateTo(nx, ny);
+            navWanderTarget = step || { x: nx, y: ny };
+          } else {
+            navWanderTarget = { x: nx, y: ny };
+          }
+          return navWanderTarget;
+        }
+        // ไม่มี neighbor → เลือก node สุ่มใหม่ (dead-end)
+        navWanderTarget = null;
+      }
     }
-    if (!candidates.length) return null;
-    const target = candidates[Math.floor(Math.random() * candidates.length)];
-    navWanderLastNode = navFindNearestNode(data, player.x, player.y);
-    return { x: data.nodes[target].x, y: data.nodes[target].y };
+
+    // ★ stuck detection: ถ้าตำแหน่งไม่เปลี่ยน > 5 วิ → เลือก target ใหม่
+    if (navWanderLastPos) {
+      const pdx = player.x - navWanderLastPos.x, pdy = player.y - navWanderLastPos.y;
+      if (pdx * pdx + pdy * pdy < 4) {   // ขยับ < 2 ช่อง
+        if (!navWanderStuckSince) navWanderStuckSince = now;
+        else if (now - navWanderStuckSince > 5000) {
+          navWanderTarget = null;   // reset → เลือกใหม่
+          navWanderStuckSince = 0;
+        }
+      } else { navWanderStuckSince = 0; }
+    }
+    navWanderLastPos = { x: player.x, y: player.y, t: now };
+
+    // ★ เลือก target ใหม่ (ไม่มี target หรือ reset): node ข้างเคียงจากตำแหน่งปัจจุบัน
+    if (!navWanderTarget) {
+      const curIdx = navFindNearestNode(data, player.x, player.y);
+      const adj = navAdjacency(data);
+      const neighbors = adj[curIdx] || [];
+      if (neighbors.length) {
+        const next = neighbors[Math.floor(Math.random() * neighbors.length)];
+        navWanderNodeIdx = next;
+        const nx = data.nodes[next].x, ny = data.nodes[next].y;
+        const sdx = nx - player.x, sdy = ny - player.y;
+        // ★ cap ระยะ
+        if (sdx * sdx + sdy * sdy > MAX_STEP * MAX_STEP) {
+          navWanderTarget = navNavigateTo(nx, ny) || { x: nx, y: ny };
+        } else {
+          navWanderTarget = { x: nx, y: ny };
+        }
+      } else {
+        // ★ ไม่ได้อยู่ใกล้ node ไหน → หา node ใกล้สุดแล้วเดินไป (≤ MAX_STEP)
+        const nearest = navFindNearestNode(data, player.x, player.y);
+        if (nearest >= 0) {
+          const nx = data.nodes[nearest].x, ny = data.nodes[nearest].y;
+          const sdx = nx - player.x, sdy = ny - player.y;
+          if (sdx * sdx + sdy * sdy <= MAX_STEP * MAX_STEP) {
+            navWanderNodeIdx = nearest;
+            navWanderTarget = { x: nx, y: ny };
+          }
+        }
+      }
+      return navWanderTarget;
+    }
+    return navWanderTarget;
+  }
+  // ★ reset wander state (เรียกตอนเปลี่ยนแมป/วาร์ป)
+  function navWanderReset() {
+    navWanderTarget = null;
+    navWanderNodeIdx = -1;
+    navWanderStuckSince = 0;
+    navWanderLastPos = null;
+  }
+  // ★ เช็คว่าแมปปัจจุบันมีข้อมูล nav หรือไม่ (ใช้ใน combatLoop เพื่อเลือก cooldown)
+  function navHasData() {
+    if (!currentMap) return false;
+    const data = navCache.get(currentMap);
+    return !!(data && data.nodes && data.nodes.length >= 2);
   }
   // ★ export ข้อมูล nav ทั้งหมด (สำหรับ download/backup)
   function navExportAll() {
