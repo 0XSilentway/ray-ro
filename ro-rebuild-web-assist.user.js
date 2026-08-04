@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.5.1
+// @version      4.5.2
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.5.1';
+  const VERSION = '4.5.2';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -128,7 +128,7 @@
     'combatEnabled', 'targetWhitelist', 'targetBlacklist', 'attackRange', 'rangedAttackRange',
     'maxAcquireDistance', 'maxChaseDistance', 'antiKS', 'avoidOtherPlayers', 'targetLowestHpFirst',
     'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius',
-    'wanderEnabled', 'warpFindEnabled', 'warpToMonster',
+    'wanderEnabled', 'warpFindEnabled', 'warpToMonster', 'stuckWarpOnAbandon',
     'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs',
     'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellNpcX', 'sellNpcY', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
     'storageEnabled', 'kafraName', 'kafraMap', 'kafraMapX', 'kafraMapY', 'kafraChoice', 'depositOnFull', 'depositAfterSell', 'depositItemIds',
@@ -3270,6 +3270,7 @@
             <button id="__assist_t_warpfind" class="off">วาร์ปหามอน</button>
             <button id="__assist_t_warptomon" class="off">วาร์ปไปหามอนที่ตี</button>
           </div>
+          <div class="field"><label>stuck abandon N ครั้งใน 60s → วาร์ปสุ่ม (0=ปิด)</label><input type="number" id="__assist_stuckwarp" min="0" max="20"></div>
           <div class="btns"><button id="__assist_applycombat">ใช้ค่า flee + range</button></div>
 
           <h4>🪑 Rest (นั่งพักฟื้น HP)</h4>
@@ -3491,6 +3492,8 @@
       if (!isNaN(fm)) ASSIST.setFleeMob(fm);
       if (!isNaN(fa)) ASSIST.setFleeAggro(fa);
       if (!isNaN(fp)) ASSIST.setFleeProximity(fp);
+      const sw = parseInt(root.querySelector('#__assist_stuckwarp').value, 10);
+      if (!isNaN(sw)) { CFG.stuckWarpOnAbandon = sw; log('⚔️ stuck abandon → วาร์ปสุ่ม =', sw === 0 ? 'ปิด' : sw + ' ครั้ง'); }
     });
     // ---- rest wires ----
     root.querySelector('#__assist_restbtn').addEventListener('click', () => CFG.restEnabled ? ASSIST.restOff() : ASSIST.restOn());
@@ -3731,6 +3734,7 @@
     syncInput('#__assist_restuntil', CFG.restUntilPercent);
     syncInput('#__assist_restmaxsec', CFG.restMaxSec);
     syncInput('#__assist_fleeprox', CFG.fleeOnProximityCount);
+    syncInput('#__assist_stuckwarp', CFG.stuckWarpOnAbandon);
     const syncToggle = (sel, on) => { const el = root.querySelector(sel); if (el) el.className = on ? 'on' : 'off'; };
     syncToggle('#__assist_t_antiks', CFG.antiKS);
     syncToggle('#__assist_t_avoidp', CFG.avoidOtherPlayers);
