@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.5.3
+// @version      4.5.4
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.5.3';
+  const VERSION = '4.5.4';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -391,7 +391,7 @@
     warpToMonster: false,         // ติดกำแพง → วาร์ปไปหามอน (toggle, default OFF)
     warpToMonsterCooldownMs: 10000,
     warpToMonsterMaxPerEntity: 2,
-    stuckWarpOnAbandon: 3,        // abandon 3 ครั้งใน 60s → วาร์ปสุ่ม
+    stuckWarpOnAbandon: 0,        // abandon 3 ครั้งใน 60s → วาร์ปสุ่ม
     // หามอน
     wanderEnabled: true,          // ไม่เจอมอน → สุ่มเดิน
     wanderMaxStep: 20,            // สุ่มระยะ ≤20 ช่อง
@@ -2338,6 +2338,7 @@
   let navWanderPrevNode = -1;     // ★ index ของ node ที่เพิ่งจากมา (กันย้อนกลับ)
   let navWanderStuckSince = 0;    // timestamp ที่เริ่ม stuck (ไม่ถึง target)
   let navWanderLastPos = null;    // {x,y,t} ตำแหน่งก่อนหน้า (เช็ค stuck)
+  let navWanderTargetAt = 0;      // ★ timestamp ที่ตั้ง target (timeout ถ้าไม่ถึง)
   // ★ helper: เลือก neighbor ถัดไป หลีกเลี่ยง prevNode — ถ้าเหลือแค่ prevNode ให้ BFS หา node ไกลขึ้น
   function navPickNextNode(data, curIdx) {
     const adj = navAdjacency(data);
@@ -2377,6 +2378,17 @@
     const now = nowMs();
     const ARRIVAL_RADIUS = CFG.navMergeRadius || 3;
     const MAX_STEP = 18;
+    const TARGET_TIMEOUT_MS = 8000;   // ★ ทิ้ง target ถ้าไม่ถึงใน 8 วิ (ติดกำแพง)
+
+    // ★ target timeout: ถ้ามี target และเกิน 8 วิยังไม่ถึง → ทิ้ง เลือกใหม่
+    //   (กันค้างที่ target เดิม เพราะติดกำแพง/สิ่งกีดขวาง)
+    if (navWanderTarget && navWanderTargetAt && (now - navWanderTargetAt > TARGET_TIMEOUT_MS)) {
+      const tdx = navWanderTarget.x - player.x, tdy = navWanderTarget.y - player.y;
+      if (tdx * tdx + tdy * tdy > ARRIVAL_RADIUS * ARRIVAL_RADIUS) {
+        // ยังไม่ถึง + เกินเวลา → ทิ้ง target + ล้าง prevNode (กันติดต่อ)
+        navWanderTarget = null; navWanderPrevNode = -1;
+      }
+    }
 
     // ★ เช็ค arrival: ถ้ามี target และอยู่ใกล้แล้ว → เลือก neighbor ถัดไปทันที
     if (navWanderTarget) {
@@ -2395,6 +2407,7 @@
           } else {
             navWanderTarget = { x: nx, y: ny };
           }
+          navWanderTargetAt = now;   // ★ ตั้ง timeout ใหม่
           return navWanderTarget;
         }
         navWanderTarget = null;
@@ -2437,6 +2450,7 @@
           }
         }
       }
+      navWanderTargetAt = now;   // ★ ตั้ง timeout ใหม่
       return navWanderTarget;
     }
     return navWanderTarget;
@@ -2448,6 +2462,7 @@
     navWanderPrevNode = -1;
     navWanderStuckSince = 0;
     navWanderLastPos = null;
+    navWanderTargetAt = 0;
   }
   // ★ เช็คว่าแมปปัจจุบันมีข้อมูล nav หรือไม่ (ใช้ใน combatLoop เพื่อเลือก cooldown)
   function navHasData() {
