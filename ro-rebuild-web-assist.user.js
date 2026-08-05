@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.8.0
+// @version      4.8.1
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.8.0';
+  const VERSION = '4.8.1';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -650,6 +650,7 @@
 
   // ---------- WARP-TO-LOOT state ----------
   let currentMap = null;               // ชื่อแมปปัจจุบัน (จาก opcode 0x12) — จำเป็นสำหรับ warp
+  let lastFarmWarpBackAt = 0;          // ★ throttle retry วาร์ปกลับแมปฟาร์ม (กันติดแมปผิด)
   const warpQueue = new Map();         // dropId -> {dropId,itemId,x,y,offsetIdx,warpAt,pickupSentAt}
   let lastWarpAt = 0;                  // throttle การวาร์ป
   let warpGuardUntil = 0;              // ★ ระยะหลังวาร์ป — รอ player pos อัปเดตก่อนคำนวณ dist
@@ -848,12 +849,15 @@
           log('🗺️ แมป:', name);
           navWanderReset();   // ★ เปลี่ยนแมป → reset wander state (ล้าง target เก่า)
           navPatrolReset();   // ★ reset patrol state ด้วย
-          // ★ warp-back-to-farm: เผลอเดินเข้าวาร์ปจนเปลี่ยนแมป → วาร์ปกลับแมปฟาร์ม
-          //   เงื่อนไข: warpBackToFarm=on AND farmMap ไม่ว่าง AND มาจาก farmMap AND ตอนนี้ไม่ใช่ farmMap
-          //   (กันวาร์ปซ้ำ: ต้องมาจาก farmMap เท่านั้น — เข้าแมปอื่น→farmMap ปกติจะไม่ trigger)
-          if (CFG.warpBackToFarm && CFG.farmMap && prevMap === CFG.farmMap && name !== CFG.farmMap) {
-            log('🌀 ออกจากแมปฟาร์ม (' + prevMap + '→' + name + ') → วาร์ปกลับ', CFG.farmMap);
+          // ★ warp-back-to-farm: ออกจากแมปฟาร์ม → วาร์ปกลับ
+          //   เงื่อนไข: warpBackToFarm=on AND farmMap ไม่ว่าง AND ตอนนี้ไม่ใช่ farmMap
+          //   ★★ ไม่จำกัดแค่ "มาจาก farmMap" — ถ้าอยู่แมปผิดก็วาร์ปกลับเสมอ (กันติดแมปอื่น)
+          //   ยกเว้น: อยู่ใน sell/storage routine (sellNpcMap/kafraMap) — ไม่วาร์ปกลับ
+          if (CFG.warpBackToFarm && CFG.farmMap && name !== CFG.farmMap
+              && name !== CFG.sellNpcMap && name !== CFG.kafraMap) {
+            log('🌀 อยู่แมปผิด (' + name + '≠' + CFG.farmMap + ') → วาร์ปกลับ');
             sendTeleport(CFG.farmMap, CFG.farmMapX, CFG.farmMapY);
+            lastFarmWarpBackAt = nowMs();
           }
         }
       }
@@ -2028,8 +2032,17 @@
     if (isDead) { return; }
     if (!activeWS || activeWS.readyState !== 1) return;
     // ★ farm map guard: ถ้าตั้ง farmMap ไว้ และตอนนี้ไม่ได้อยู่แมปฟาร์ม → ไม่ฟาร์ม
-    //   (วาร์ปกลับจัดการโดย 0x12 handler แล้ว ที่นี่แค่หยุด combat ไม่ให้ตีมอนในแมปผิด)
-    if (CFG.farmMap && currentMap && currentMap !== CFG.farmMap) return;
+    //   + retry วาร์ปกลับทุก 5s (กันติดแมปผิดถ้าวาร์ปครั้งแรกไม่สำเร็จ)
+    if (CFG.farmMap && currentMap && currentMap !== CFG.farmMap
+        && currentMap !== CFG.sellNpcMap && currentMap !== CFG.kafraMap) {
+      const now2 = nowMs();
+      if (now2 - (lastFarmWarpBackAt || 0) > 5000) {
+        log('🌀 ยังอยู่แมปผิด (' + currentMap + ') → วาร์ปกลับอีกครั้ง');
+        sendTeleport(CFG.farmMap, CFG.farmMapX, CFG.farmMapY);
+        lastFarmWarpBackAt = now2;
+      }
+      return;
+    }
     const now = nowMs();
     const pct = hpPct();
     const mobCount = getMobAttackerCount();
