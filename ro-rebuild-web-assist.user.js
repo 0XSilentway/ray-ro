@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.7.5
+// @version      4.8.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.7.5';
+  const VERSION = '4.8.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -420,6 +420,8 @@
   // ---------- state ทั่วไป ----------
   let activeWS = null;                 // game socket (ใช้ส่งคำสั่ง)
   let playerId = null;                 // ไอดีตัวเรา
+  let playerName = null;               // ★ ชื่อตัวเรา — guard กัน false ID change (mirror world.js:1235)
+  let hpStatGraceUntil = 0;            // ★ grace period หลัง ID เปลี่ยน (ข้าม STAT HP ที่อาจผิด)
   const player = { x: null, y: null }; // ตำแหน่งตัวเรา
 
   // ---------- log buffer (สำหรับ panel log console) ----------
@@ -481,6 +483,13 @@
   function applyStat(id, cur, m) {
     if (id !== playerId) return;
     if (!(m > 0) || cur < 0 || cur > m) return;          // sanity check
+    // ★★ grace period หลัง ID เปลี่ยน — ข้าม STAT HP ที่อาจผิด (mirror world.js:1620-1626)
+    //   แต่ถ้า HP เป็น null (ยังไม่รู้เลย) → รับเลย (null HP แย่กว่าค่าที่อาจผิด)
+    const now = nowMs();
+    if (hpStatGraceUntil && now < hpStatGraceUntil && hp.cur != null) {
+      return;   // ยังอยู่ใน grace + มี HP เก่า → ข้าม (รอค่าจริง)
+    }
+    if (hpStatGraceUntil && now >= hpStatGraceUntil) hpStatGraceUntil = 0;   // หมด grace → consume
     // ★ respawn detection: HP จาก 0/ตาย → กลับมา > 0 = เกิดใหม่แล้ว
     if (isDead && cur > 0) {
       isDead = false;
@@ -1061,18 +1070,30 @@
         const flag = u[1];
         const id = u32(u, 7);            // offset 7 (ข้าม marker 0x0f @6)
         const sub = u32(u, 11);          // offset 11
-        // ★ flag=1 = SPAWN ตัวเอง → ใช้หา/อัปเดต playerId (mirror world.js:1280)
-        //   ถ้า playerId เปลี่ยน (respawn/warp) → track oldId เป็น stale + clear entities
+        // ★ flag=1 = SPAWN ตัวเอง → ใช้หา/อัปเดต playerId (mirror world.js:1230-1281)
+        //   ★★ CRITICAL guard: flag=1 ไม่ได้แปลว่าเป็นเราเสมอ! (mirror world.js:1230-1244)
+        //   ปัญหา: SPAWN flag=1 ของผู้เล่นอื่นถูกมองเป็นตัวเรา → playerId ทับเป็นคนอื่น
+        //   → STAT ของคนอื่นเข้ามาอัปเดต hp → กดยารัว ๆ
+        //   แก้: เช็คชื่อต้องตรงกับ playerName (defense-in-depth)
         if (flag === 1) {
           if (playerId == null) {
             playerId = id; log('👤 player_id =', id.toString(16), '(จาก SPAWN flag=1)');
           } else if (playerId !== id) {
-            // ID เปลี่ยน (respawn/warp) → track oldId + clear entities (mirror world.js:1250-1278)
-            log('🔄 player_id เปลี่ยน:', playerId.toString(16), '→', id.toString(16));
-            stalePlayerIds.set(playerId, nowMs() + 300000);  // stale 5 นาที
-            entities.clear();
-            monsterAggro.clear(); mobAttackers.clear();
-            playerId = id;
+            // ★★ guard: ถ้าเรารู้ชื่อตัวเองแล้ว และชื่อใน packet นี้ไม่ตรง → เป็นคนอื่น → ไม่ทับ playerId
+            //   (กัน false ID change ในที่คนเยอะ — mirror world.js:1235-1238)
+            if (playerName && name && name !== playerName) {
+              log('⚠️ flag=1 แต่ชื่อ "' + name + '" ≠ "' + playerName + '" → ไม่ใช่เรา → ข้าม');
+            } else {
+              // ID เปลี่ยนจริง (respawn/warp) → track oldId + clear + grace period
+              log('🔄 player_id เปลี่ยน:', playerId.toString(16), '→', id.toString(16));
+              stalePlayerIds.set(playerId, nowMs() + 300000);  // stale 5 นาที
+              entities.clear();
+              monsterAggro.clear(); mobAttackers.clear();
+              playerId = id;
+              // ★ grace period 3s — ข้าม STAT HP ที่อาจผิดหลัง ID เปลี่ยน (mirror world.js:1265)
+              hpStatGraceUntil = nowMs() + 3000;
+              hp.cur = null; hp.max = null;   // reset กันค่าเก่าทับ
+            }
           }
         }
         // z @ 19-22 (i32 signed) — ข้าม
@@ -1140,6 +1161,8 @@
           });
           // ★ (C) SPAWN อัปเดต player.x/y ด้วย (mirror world.js:1289-1292) — กัน stale หลังวาร์ป
           if (id === playerId && x != null) { player.x = x; player.y = y; }
+          // ★ เก็บ playerName — ใช้เป็น guard กัน false ID change (mirror world.js:1235)
+          if (id === playerId && name && !playerName) { playerName = name; log('👤 player_name =', name); }
         }
       } catch (e) { /* SPAWN parse error ข้าม */ }
     }
