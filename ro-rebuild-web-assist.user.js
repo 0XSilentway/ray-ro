@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.10.4
+// @version      4.11.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.10.4';
+  const VERSION = '4.11.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -500,16 +500,6 @@
     if (id !== playerId) return;
     if (!(m > 0) || cur < 0 || cur > m) return;          // sanity check
     const now = nowMs();
-    // ★★ heuristic แยก HP vs SP: STAT ส่ง HP กับ SP สลับกันใน packet คนละรอบ
-    //   - ถ้าเรายังไม่รู้ HP → STAT แรก = HP
-    //   - ถ้ารู้ HP แล้ว และ m ต่างจาก hp.max (เกิน ±10%) → น่าจะเป็น SP
-    //   - ถ้า m เท่ากับ hp.max (ใกล้เคียง) → เป็น HP
-    const isLikelySP = hp.max != null && Math.abs(m - hp.max) > hp.max * 0.1;
-    if (isLikelySP) {
-      // ★ SP update (สำหรับ autoSkill)
-      sp.cur = cur; sp.max = m;
-      return;
-    }
     // ★★ grace period หลัง ID เปลี่ยน — ข้าม STAT HP ที่อาจผิด (mirror world.js:1620-1626)
     if (hpStatGraceUntil && now < hpStatGraceUntil && hp.cur != null) {
       return;   // ยังอยู่ใน grace + มี HP เก่า → ข้าม (รอค่าจริง)
@@ -787,6 +777,13 @@
       const id = u32(u, 1);
       const cur = u32(u, 9), m = u32(u, 13);
       applyStat(id, cur, m);
+    }
+    // 0x27 SP_UPDATE: SP ปัจจุบัน + max ของ player (regen ทุก 6s)
+    //   ★ mirror world.js:468-477 — STAT (0x25) ส่งแค่ HP ไม่มี SP → SP ต้องอ่านจาก 0x27 เท่านั้น
+    //   [27][sp:4][spMax:4] (9 bytes)
+    else if (op === 0x27 && u.length >= 9) {
+      sp.cur = u32(u, 1);
+      sp.max = u32(u, 5);
     }
     // 0x07 MOVE: ตำแหน่ง entity (ทั้ง player + monster/NPC)
     //   ★ player ใช้ i16 (offset 5/7) เหมือน monster เพื่อให้ระบบพิกัดตรงกัน (combat คำนวณระยะ/ทิศได้แม่น)
