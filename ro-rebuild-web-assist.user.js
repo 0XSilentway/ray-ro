@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.9.0';
+  const VERSION = '4.9.1';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -293,7 +293,7 @@
     disabledSkillIds: [],         // skillId ที่ toggle ปิดชั่วคราว
 
     // ---------- MISC ----------
-    autoClearConsoleMin: 0,       // ★ 0=off, >0=clear browser console ทุก N นาที (กัน log เยอะค้างหน่วย)
+    autoClearConsoleMin: 10,       // ★ 0=off, >0=clear browser console ทุก N นาที (กัน log เยอะค้างหน่วย)
 
     // ---------- NAVIGATION (บันทึกเส้นทางเดิน + waypoint graph) ----------
     //  เก็บตำแหน่งที่ผู้เล่นคลิกเดิน → สร้าง waypoint graph → bot เดินตามเส้นทางจริง
