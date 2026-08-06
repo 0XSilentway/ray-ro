@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.8.4
+// @version      4.9.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,13 +116,14 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.8.4';
+  const VERSION = '4.9.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
   const PERSIST_KEYS = [
     'healEnabled', 'healAtPercent', 'healItems', 'healMode', 'healDelayMs', 'healAtMax',
     'buffEnabled', 'buffItems', 'buffRebuffDelayMs', 'autoClearConsoleMin',
+    'skillEnabled', 'skills', 'disabledSkillIds',
     'lootEnabled', 'lootDelayAfterDropMs', 'filter',
     'warpLootEnabled',
     'combatEnabled', 'targetWhitelist', 'targetBlacklist', 'attackRange', 'rangedAttackRange',
@@ -283,6 +284,14 @@
     buffCheckMs: 20000,            // ความถี่ในการเช็ค (1 วิ)
     buffRebuffDelayMs: 5000,      // รออย่างน้อย N ms ก่อนใช้ buff ตัวเดิมซ้ำ (กัน spurious)
 
+    // ---------- AUTO-SKILL (ใช้สกิลตามเงื่อนไข — mirror bot.js autoSkill) ----------
+    //  3 mode: targeted (Bash/Charge), AoE (Magnum Break), self-cast (Two-Hand Quicken)
+    //  แต่ละ skill: {name, skillId, level, targeted, selfCast, intervalMin, mobCountMin,
+    //                 maxUsesPerTarget, maxDistance, minDistance, spMin, cooldownMs}
+    skillEnabled: false,          // ★ default OFF
+    skills: [],                   // รายการ skill config
+    disabledSkillIds: [],         // skillId ที่ toggle ปิดชั่วคราว
+
     // ---------- MISC ----------
     autoClearConsoleMin: 0,       // ★ 0=off, >0=clear browser console ทุก N นาที (กัน log เยอะค้างหน่วย)
 
@@ -421,6 +430,7 @@
   // ★ โหลดค่าที่บันทึกไว้จาก localStorage (ทับ default)
   loadConfig();
   loadBuffTimes();   // ★ โหลดเวลา buff ล่าสุดข้าม session
+  loadSkillTimes();  // ★ โหลดเวลา skill ล่าสุดข้าม session
 
   // ---------- state ทั่วไป ----------
   let activeWS = null;                 // game socket (ใช้ส่งคำสั่ง)
@@ -485,12 +495,22 @@
   //    (ก่อนหน้านี้ใช้เทคนิค "เก็บ max สูงสุด" → ผิด! ถ้า server ส่ง sub-stat ที่ max=6774 → ทับ hp.max
   //     → แสดง 549/6774 ทั้งที่ HP จริง 408)
   const hp = { cur: null, max: null };
+  const sp = { cur: null, max: null };   // ★ SP สำหรับ autoSkill — ตรวจ spMin
   function applyStat(id, cur, m) {
     if (id !== playerId) return;
     if (!(m > 0) || cur < 0 || cur > m) return;          // sanity check
-    // ★★ grace period หลัง ID เปลี่ยน — ข้าม STAT HP ที่อาจผิด (mirror world.js:1620-1626)
-    //   แต่ถ้า HP เป็น null (ยังไม่รู้เลย) → รับเลย (null HP แย่กว่าค่าที่อาจผิด)
     const now = nowMs();
+    // ★★ heuristic แยก HP vs SP: STAT ส่ง HP กับ SP สลับกันใน packet คนละรอบ
+    //   - ถ้าเรายังไม่รู้ HP → STAT แรก = HP
+    //   - ถ้ารู้ HP แล้ว และ m ต่างจาก hp.max (เกิน ±10%) → น่าจะเป็น SP
+    //   - ถ้า m เท่ากับ hp.max (ใกล้เคียง) → เป็น HP
+    const isLikelySP = hp.max != null && Math.abs(m - hp.max) > hp.max * 0.1;
+    if (isLikelySP) {
+      // ★ SP update (สำหรับ autoSkill)
+      sp.cur = cur; sp.max = m;
+      return;
+    }
+    // ★★ grace period หลัง ID เปลี่ยน — ข้าม STAT HP ที่อาจผิด (mirror world.js:1620-1626)
     if (hpStatGraceUntil && now < hpStatGraceUntil && hp.cur != null) {
       return;   // ยังอยู่ใน grace + มี HP เก่า → ข้าม (รอค่าจริง)
     }
@@ -850,6 +870,9 @@
       stats.deaths++;
       // ★ ล้างเวลา buff — ตายแล้ว buff หายหมด → ใช้ใหม่ได้ทันทีหลัง respawn (mirror bot.js:743-746)
       if (lastBuffUse.size > 0) { lastBuffUse.clear(); saveBuffTimesDebounced(); }
+      // ★ ล้างเวลา skill + per-target uses (mirror bot.js:744-747)
+      if (lastSkillUse.size > 0) { lastSkillUse.clear(); saveSkillTimesDebounced(); }
+      skillUsesOnTarget.clear();
       log('☠️ ตัวละครตาย — หยุด heal จนกว่าจะ respawn');
     }
     // 0x12 MAP_NAME: ชื่อแมปปัจจุบัน → เก็บไว้ใช้สำหรับ warp
@@ -1854,6 +1877,58 @@
     activeWS.send(b);
     return true;
   }
+  // ★ SKILL OUT (mirror protocol.js:223-248):
+  //   targeted (sub=01): [1d][01][targetId:4][skillId:1][level:1]  — Bash, Charge Attack
+  //   AoE/self (sub=05): [1d][05][skillId:2 LE][level:1]           — Magnum Break, Two-Hand Quicken
+  function sendSkill(skillId, level, targetId) {
+    if (!activeWS || activeWS.readyState !== 1) return false;
+    if (targetId != null) {
+      // ★ targeted: [1d][01][targetId:4][skillId:1][level:1]
+      const b = new Uint8Array(7);
+      b[0] = 0x1d; b[1] = 0x01;
+      b[2] = targetId & 0xff; b[3] = (targetId >> 8) & 0xff;
+      b[4] = (targetId >> 16) & 0xff; b[5] = (targetId >>> 24) & 0xff;
+      b[6] = skillId & 0xff;   // skillId 1 byte (Bash=3, Charge=40)
+      // ★ level ส่งต่อท้าย (byte ที่ 7) — แต่ packet มีแค่ 7 bytes (0-6) → ขยายเป็น 8
+      const b8 = new Uint8Array(8);
+      b8.set(b); b8[7] = level & 0xff;
+      activeWS.send(b8);
+    } else {
+      // ★ AoE/self-cast: [1d][05][skillId:2 LE][level:1]
+      const b = new Uint8Array(5);
+      b[0] = 0x1d; b[1] = 0x05;
+      b[2] = skillId & 0xff; b[3] = (skillId >> 8) & 0xff;
+      b[4] = level & 0xff;
+      activeWS.send(b);
+    }
+    return true;
+  }
+  // ★ Auto-Skill tracking (mirror bot.js:48-56)
+  const lastSkillUse = new Map();        // skillId → timestamp (cooldown)
+  const skillUsesOnTarget = new Map();   // skillId → Map<targetId, count> (maxUsesPerTarget)
+  // persist skill times ข้าม session
+  const SKILL_TIMES_KEY = 'roAssistSkillTimes_v1';
+  function loadSkillTimes() {
+    try {
+      const raw = localStorage.getItem(SKILL_TIMES_KEY);
+      if (!raw) return;
+      const obj = JSON.parse(raw);
+      for (const [id, ts] of Object.entries(obj)) lastSkillUse.set(Number(id), Number(ts) || 0);
+      log('✨ โหลดเวลา skill ล่าสุด:', lastSkillUse.size, 'รายการ');
+    } catch (e) {}
+  }
+  function saveSkillTimes() {
+    try {
+      const obj = {};
+      for (const [id, ts] of lastSkillUse) obj[id] = ts;
+      localStorage.setItem(SKILL_TIMES_KEY, JSON.stringify(obj));
+    } catch (e) {}
+  }
+  let skillSaveTimer = null;
+  function saveSkillTimesDebounced() {
+    if (skillSaveTimer) clearTimeout(skillSaveTimer);
+    skillSaveTimer = setTimeout(saveSkillTimes, 1000);
+  }
   // MOVE OUT (click-move): [07][x:i16][y:i16] (signed)
   function sendMove(x, y) {
     if (!activeWS || activeWS.readyState !== 1) return false;
@@ -2001,6 +2076,7 @@
       stuckCount: 0, warpCount: 0, lastDist: null,
     };
     lastTargetSwitchAt = now;
+    skillUsesOnTarget.clear();   // ★ reset per-target skill uses (mirror bot.js:4083)
     return target;
   }
   // เดินไปหามอน — เดินเส้นตรงไปทางมอน + stuck detection ดูระยะลดลง
@@ -2183,6 +2259,65 @@
       if (!target && CFG.stuckWarpOnAbandon > 0 && stuckAbandonCount >= CFG.stuckWarpOnAbandon) {
         log('🌀 stuck abandon', stuckAbandonCount, 'ครั้ง → วาร์ปสุ่ม');
         sendRandomWarp(); stuckAbandonCount = 0; stuckAbandonHistory = [];
+      }
+    }
+
+    // === 2.8 Auto-Skill (ใช้สกิลตามเงื่อนไข — ก่อน attack) ===
+    //   mirror bot.js _maybeSkill:3440-3538 — ทีละสกิลต่อ tick
+    //   mode: targeted (Bash/Charge), AoE (Magnum), self-cast (Quicken)
+    if (CFG.skillEnabled && CFG.skills && CFG.skills.length && target) {
+      const mobCount = getMobAttackerCount();
+      const curSP = sp.cur;
+      const curSPmax = sp.max;
+      const disabled = Array.isArray(CFG.disabledSkillIds) ? CFG.disabledSkillIds : [];
+      for (const skill of CFG.skills) {
+        if (!skill || skill.skillId == null) continue;
+        if (disabled.includes(skill.skillId)) continue;
+        const lastUse = lastSkillUse.get(skill.skillId) || 0;
+        // ★ timer mode (intervalMin > 0) — self-cast buff
+        const intervalMin = Number(skill.intervalMin) || 0;
+        if (intervalMin > 0) {
+          if (lastUse > 0 && (now - lastUse) < intervalMin * 60 * 1000) continue;
+        } else {
+          const cooldown = skill.cooldownMs ?? 2000;
+          if (now - lastUse < cooldown) continue;
+        }
+        // ★ SP gate
+        const spMin = skill.spMin ?? 0;
+        if (spMin > 0 && curSP != null && curSP < spMin) continue;
+        // ★ mob count gate (AoE skill)
+        const mobMin = skill.mobCountMin ?? 0;
+        if (mobCount < mobMin) continue;
+        // ★ targeted skill: ต้องมี target + ในระยะ + ไม่เกิน maxUses
+        //   selfCast=true ข้ามเงื่อนไขนี้ทั้งหมด
+        if (skill.targeted && !skill.selfCast) {
+          const m = entities.get(target.id);
+          if (!m || m.x == null || player.x == null) continue;
+          const dist = Math.hypot(m.x - player.x, m.y - player.y);
+          const minDist = skill.minDistance ?? 0;
+          const maxDist = skill.maxDistance ?? 0;
+          if (maxDist > 0 && dist > maxDist) continue;
+          if (minDist > 0 && dist < minDist) continue;
+          const maxUses = skill.maxUsesPerTarget ?? 1;
+          const targetUses = skillUsesOnTarget.get(skill.skillId) || new Map();
+          const used = targetUses.get(target.id) || 0;
+          if (used >= maxUses) continue;
+        }
+        // ★ ผ่านเงื่อนไข → ใช้สกิล!
+        const skillTarget = (skill.targeted && !skill.selfCast) ? target.id : null;
+        if (sendSkill(skill.skillId, skill.level || 1, skillTarget)) {
+          lastSkillUse.set(skill.skillId, now);
+          saveSkillTimesDebounced();
+          if (skill.targeted && !skill.selfCast) {
+            const tu = skillUsesOnTarget.get(skill.skillId) || new Map();
+            tu.set(target.id, (tu.get(target.id) || 0) + 1);
+            skillUsesOnTarget.set(skill.skillId, tu);
+          }
+          const spInfo = curSP != null ? (curSPmax ? ` ${curSP}/${curSPmax}` : ` ${curSP}`) : ' ?';
+          const modeTag = skill.selfCast ? ' (self)' : (skill.targeted ? '' : ' (AoE)');
+          log('✨ ใช้สกิล', skill.name || ('id=' + skill.skillId), modeTag, '(sp' + spInfo + ' mob=' + mobCount + ')');
+          break;   // ทีละสกิลต่อ tick
+        }
       }
     }
 
@@ -2895,6 +3030,58 @@
       });
     },
     clearBuffTimes() { lastBuffUse.clear(); saveBuffTimes(); log('✨ ล้างเวลา buff ทั้งหมด → จะใช้ใหม่ทันที'); },
+
+    // ---------- Auto-Skill ----------
+    skillOn()  { CFG.skillEnabled = true;  log('✨ Auto-Skill: ON'); },
+    skillOff() { CFG.skillEnabled = false; log('✨ Auto-Skill: OFF'); },
+    // ★ setSkills([{skillId:3, level:10, targeted:true, maxUsesPerTarget:2, maxDistance:2, spMin:15, cooldownMs:2000}, ...])
+    setSkills(skills) {
+      CFG.skills = (skills || []).filter(s => s && s.skillId != null).map(s => ({
+        name: s.name || ('skill_' + s.skillId),
+        skillId: Number(s.skillId),
+        level: Number(s.level) || 1,
+        targeted: !!s.targeted,
+        selfCast: !!s.selfCast,
+        intervalMin: Number(s.intervalMin) || 0,
+        mobCountMin: Number(s.mobCountMin) || 0,
+        maxUsesPerTarget: Number(s.maxUsesPerTarget) || 1,
+        maxDistance: Number(s.maxDistance) || 0,
+        minDistance: Number(s.minDistance) || 0,
+        spMin: Number(s.spMin) || 0,
+        cooldownMs: Number(s.cooldownMs) || 2000,
+      }));
+      log('✨ skills =', CFG.skills.length, 'รายการ');
+    },
+    addSkill(skill) {
+      if (!skill || skill.skillId == null) { log('⚠️ ต้องมี skillId'); return; }
+      const existing = CFG.skills.find(s => s.skillId === skill.skillId);
+      if (existing) { Object.assign(existing, skill); log('✨ แก้ skill', skill.skillId); }
+      else { CFG.skills.push(skill); log('✨ เพิ่ม skill', skill.skillId); }
+    },
+    removeSkill(skillId) {
+      CFG.skills = CFG.skills.filter(s => s.skillId !== skillId);
+      log('✨ ลบ skill', skillId);
+    },
+    skillNow() {
+      if (!CFG.skills.length) { log('⚠️ ยังไม่ได้ตั้ง skills'); return; }
+      const now = nowMs();
+      for (const s of CFG.skills) {
+        const tid = (s.targeted && !s.selfCast && target) ? target.id : null;
+        sendSkill(s.skillId, s.level || 1, tid);
+        lastSkillUse.set(s.skillId, now);
+      }
+      saveSkillTimesDebounced();
+      log('✨ ใช้ skill ทั้งหมด', CFG.skills.length, 'รายการทันที');
+    },
+    clearSkillTimes() { lastSkillUse.clear(); saveSkillTimes(); log('✨ ล้างเวลา skill ทั้งหมด'); },
+    getSkillCooldowns() {
+      const now = nowMs();
+      return CFG.skills.map(s => {
+        const last = lastSkillUse.get(s.skillId) || 0;
+        const cd = (s.intervalMin > 0) ? s.intervalMin * 60 * 1000 : (s.cooldownMs || 2000);
+        return { skillId: s.skillId, name: s.name, lastUsed: last, nextUseAt: last + cd, remainingMs: Math.max(0, last + cd - now) };
+      });
+    },
     restOn()  { CFG.restEnabled = true;  log('🪑 Auto-Rest: ON (HP < ' + CFG.restHpPercent + '% → นั่งพัก)'); },
     restOff() { CFG.restEnabled = false; if (isResting) { sendStand(); isResting = false; } log('🪑 Auto-Rest: OFF'); },
     setRestHp(pct) { CFG.restHpPercent = pct; log('🪑 นั่งพักตอน HP <', pct + '%'); },
@@ -3296,6 +3483,124 @@
     popup.classList.add('open');
   }
 
+  // ============================================================
+  //  SKILL POPUP — จัดการรายการ skill (เพิ่ม/แก้/ลบ)
+  // ============================================================
+  function openSkillPopup() {
+    const old = document.getElementById('__assist_skillpopup');
+    if (old) old.remove();
+    const popup = document.createElement('div');
+    popup.id = '__assist_skillpopup';
+    document.body.appendChild(popup);
+
+    function render() {
+      const skills = CFG.skills || [];
+      let html = '';
+      html += `<div style="padding:6px 8px;color:#8ab4f8;font-size:11px;font-weight:600;border-bottom:1px solid #2a2d35">🔮 skill list (${skills.length})</div>`;
+      html += skills.length ? skills.map((s, i) => {
+        const mode = s.selfCast ? 'self' : (s.targeted ? 'target' : 'AoE');
+        const modeColor = s.selfCast ? '#27ae60' : (s.targeted ? '#e67e22' : '#8e44ad');
+        const spStr = s.spMin ? ` SP≥${s.spMin}` : '';
+        const cdStr = s.intervalMin > 0 ? ` ทุก${s.intervalMin}นาที` : (s.cooldownMs ? ` cd${(s.cooldownMs/1000).toFixed(0)}s` : '');
+        const distStr = s.maxDistance ? ` ≤${s.maxDistance}ช่อง` : '';
+        return `<div style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-bottom:1px solid rgba(255,255,255,.04)">
+          <span style="flex:1;font-size:11px;color:#e8e8e8">${s.name || 'skill_'+s.skillId} <span style="color:#5f6368">(#${s.skillId} Lv${s.level})</span></span>
+          <span style="font-size:10px;color:${modeColor};background:${modeColor}22;padding:1px 6px;border-radius:3px">${mode}</span>
+          <span style="font-size:10px;color:#9aa0a6">${spStr}${cdStr}${distStr}</span>
+          <button class="rmbtn" data-rmskill="${i}" style="background:#4a2020;border:1px solid #6a3030;border-radius:4px;color:#e8e8e8;cursor:pointer;font-size:11px;padding:3px 8px">✕</button>
+        </div>`;
+      }).join('') : `<div class="empty">(ยังว่าง — เพิ่มด้านล่าง)</div>`;
+
+      html += `<div style="padding:6px 8px;color:#8ab4f8;font-size:11px;font-weight:600;border-bottom:1px solid #2a2d35;margin-top:6px">➕ เพิ่ม skill ใหม่</div>`;
+      html += `<div style="padding:8px">
+        <input id="__assist_skill_name" placeholder="ชื่อ (เช่น Bash)" style="width:100%;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit;margin-bottom:4px">
+        <div style="display:flex;gap:4px;margin-bottom:4px">
+          <input id="__assist_skill_id" type="number" placeholder="skillId" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit">
+          <input id="__assist_skill_lvl" type="number" placeholder="Lv" value="1" style="width:50px;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit">
+        </div>
+        <select id="__assist_skill_mode" style="width:100%;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit;margin-bottom:4px">
+          <option value="targeted">targeted (Bash/Charge — ตีมอน)</option>
+          <option value="aoe">AoE (Magnum Break — รุม)</option>
+          <option value="self">self-cast (Quicken — บัพตัวเอง)</option>
+        </select>
+        <div style="display:flex;gap:4px;margin-bottom:4px">
+          <input id="__assist_skill_sp" type="number" placeholder="spMin" value="0" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit">
+          <input id="__assist_skill_cd" type="number" placeholder="cd ms" value="2000" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit">
+        </div>
+        <div style="display:flex;gap:4px;margin-bottom:6px">
+          <input id="__assist_skill_maxdist" type="number" placeholder="maxDist" value="2" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit">
+          <input id="__assist_skill_maxuse" type="number" placeholder="maxUse/target" value="1" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit">
+          <input id="__assist_skill_mobmin" type="number" placeholder="mobMin" value="0" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit">
+        </div>
+        <div style="display:flex;gap:4px;margin-bottom:6px">
+          <input id="__assist_skill_interval" type="number" placeholder="intervalMin (self)" value="0" step="0.5" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit">
+          <input id="__assist_skill_mindist" type="number" placeholder="minDist" value="0" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit">
+        </div>
+        <button id="__assist_skill_addbtn" style="width:100%;background:#1b5e20;border:1px solid #2e7d32;border-radius:5px;color:#a5d6a7;cursor:pointer;font-size:11px;padding:6px;font-family:inherit">+ เพิ่ม skill</button>
+      </div>`;
+      return html;
+    }
+
+    popup.innerHTML = `
+      <div class="modal" style="background:rgba(20,22,28,.98);border:1px solid #3a3f4b;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.7);width:420px;max-width:92vw;max-height:80vh;display:flex;flex-direction:column;overflow:hidden;color:#e8e8e8;font-family:'Segoe UI',system-ui,sans-serif;font-size:12px">
+        <div class="hdr" style="padding:10px 14px;background:#15171c;border-bottom:1px solid #3a3f4b;display:flex;justify-content:space-between;align-items:center">
+          <span style="color:#8ab4f8;font-weight:600;font-size:13px">🔮 จัดการ skill list</span>
+          <span id="__assist_skillpopup_x" style="cursor:pointer;color:#9aa0a6;font-size:18px;line-height:1">✕</span>
+        </div>
+        <div id="__assist_skillpopup_body" style="overflow-y:auto;flex:1;padding:6px 8px"></div>
+      </div>`;
+    const bodyEl = popup.querySelector('#__assist_skillpopup_body');
+    const refresh = () => { bodyEl.innerHTML = render(); wireButtons(); };
+    function wireButtons() {
+      bodyEl.querySelectorAll('[data-rmskill]').forEach(b => {
+        b.onclick = () => {
+          const i = parseInt(b.getAttribute('data-rmskill'), 10);
+          CFG.skills.splice(i, 1);
+          saveConfigDebounced();
+          refresh();
+        };
+      });
+      const addBtn = bodyEl.querySelector('#__assist_skill_addbtn');
+      if (addBtn) {
+        addBtn.onclick = () => {
+          const name = bodyEl.querySelector('#__assist_skill_name').value.trim() || undefined;
+          const skillId = parseInt(bodyEl.querySelector('#__assist_skill_id').value, 10);
+          const level = parseInt(bodyEl.querySelector('#__assist_skill_lvl').value, 10) || 1;
+          const mode = bodyEl.querySelector('#__assist_skill_mode').value;
+          const spMin = parseInt(bodyEl.querySelector('#__assist_skill_sp').value, 10) || 0;
+          const cooldownMs = parseInt(bodyEl.querySelector('#__assist_skill_cd').value, 10) || 2000;
+          const maxDistance = parseInt(bodyEl.querySelector('#__assist_skill_maxdist').value, 10) || 0;
+          const maxUsesPerTarget = parseInt(bodyEl.querySelector('#__assist_skill_maxuse').value, 10) || 1;
+          const mobCountMin = parseInt(bodyEl.querySelector('#__assist_skill_mobmin').value, 10) || 0;
+          const intervalMin = parseFloat(bodyEl.querySelector('#__assist_skill_interval').value) || 0;
+          const minDistance = parseInt(bodyEl.querySelector('#__assist_skill_mindist').value, 10) || 0;
+          if (isNaN(skillId)) { return; }
+          ASSIST.addSkill({
+            name, skillId, level,
+            targeted: mode === 'targeted',
+            selfCast: mode === 'self',
+            intervalMin, mobCountMin, maxUsesPerTarget, maxDistance, minDistance, spMin, cooldownMs,
+          });
+          saveConfigDebounced();
+          refresh();
+        };
+      }
+    }
+    const closePopup = () => { popup.classList.remove('open'); setTimeout(() => popup.remove(), 200); };
+    popup.querySelector('#__assist_skillpopup_x').addEventListener('click', closePopup);
+    popup.addEventListener('click', (ev) => { if (ev.target === popup) closePopup(); });
+    // ★ focus tracking (เหมือน item popup)
+    popup.addEventListener('mousedown', (e) => {
+      if (e.target.matches && e.target.matches('input, select, textarea')) {
+        e.stopPropagation();
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        setTimeout(() => { try { e.target.focus(); } catch (_) {} }, 0);
+      }
+    }, true);
+    refresh();
+    popup.classList.add('open');
+  }
+
   function buildUI() {
     if (document.getElementById('__assist_root')) return;   // สร้างแล้ว
 
@@ -3426,6 +3731,7 @@
         <span class="pill off" data-heal>Heal</span>
         <span class="pill off" data-rest>Rest</span>
         <span class="pill off" data-combat>Combat</span>
+        <span class="pill off" data-skill>Skill</span>
         <span class="pill off" data-sell>Sell</span>
         <span class="pill off" data-storage>Kafra</span>
         <span class="pill" data-teleport style="background:#4a2c6a;color:#d1b3ff">🌀</span>
@@ -3495,6 +3801,15 @@
           <div class="field"><label>buff: itemId,ทุกกี่นาที (คั่นบรรทัด เช่น 656,30) — เพิ่มได้หลายตัว</label><textarea id="__assist_buffitems" rows="3" style="width:100%;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:'Consolas',monospace;resize:vertical" placeholder="656,30&#10;645,30"></textarea></div>
           <div class="btns"><button id="__assist_applybuff">ใช้ค่า buff</button><button id="__assist_clearbufftimes">รีเซ็ต countdown</button></div>
           <div id="__assist_buffcountdown" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่ตั้ง buff)</div>
+
+          <h4>🔮 Auto-Skill (ใช้สกิลตามเงื่อนไข)</h4>
+          <div class="btns">
+            <button id="__assist_skillbtn" class="off">Skill: ?</button>
+            <button id="__assist_skillnow" class="primary">ใช้ skill เดี๋ยวนี้</button>
+            <button id="__assist_manageskill">📋 จัดการ skill</button>
+          </div>
+          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เพิ่ม/แก้/ลบ skill list ผ่าน popup — รองรับ targeted (Bash), AoE (Magnum), self-cast (Quicken)</div>
+          <div id="__assist_skillcountdown" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่ตั้ง skill)</div>
 
           <h4>⚔️ Combat (ส่ง attack packet จริง)</h4>
           <div class="btns"><button id="__assist_combatbtn" class="off">Combat: ?</button></div>
@@ -3681,6 +3996,7 @@
           if (!CFG.combatEnabled && !confirm('เปิด Auto-Combat?\n\nส่ง packet โจมตีจริง — ตั้ง whitelist ก่อน (เช่น ASSIST.setTargetWhitelist("Poring"))\nใช้ในความรับผิดชอบของคุณ')) return;
           CFG.combatEnabled ? ASSIST.combatOff() : ASSIST.combatOn();
         }
+        if (pill.hasAttribute('data-skill')) CFG.skillEnabled ? ASSIST.skillOff() : ASSIST.skillOn();
         if (pill.hasAttribute('data-sell')) CFG.sellEnabled ? ASSIST.sellOff() : ASSIST.sellOn();
         if (pill.hasAttribute('data-storage')) CFG.storageEnabled ? ASSIST.storageOff() : ASSIST.storageOn();
         if (pill.hasAttribute('data-teleport')) {
@@ -3729,6 +4045,10 @@
       ASSIST.setBuffItems(items);
     });
     root.querySelector('#__assist_clearbufftimes').addEventListener('click', () => ASSIST.clearBuffTimes());
+    // ---- skill wires ----
+    root.querySelector('#__assist_skillbtn').addEventListener('click', () => CFG.skillEnabled ? ASSIST.skillOff() : ASSIST.skillOn());
+    root.querySelector('#__assist_skillnow').addEventListener('click', () => ASSIST.skillNow());
+    root.querySelector('#__assist_manageskill').addEventListener('click', () => openSkillPopup());
     root.querySelector('#__assist_lootmode').addEventListener('change', e => ASSIST.setLootMode(e.target.value));
     root.querySelector('#__assist_manageonly').addEventListener('click', () => openItemListPopup('only'));
     root.querySelector('#__assist_manageexcept').addEventListener('click', () => openItemListPopup('except'));
@@ -3887,6 +4207,7 @@
       else if (p.hasAttribute('data-heal')) { on = CFG.healEnabled; label = 'Heal'; }
       else if (p.hasAttribute('data-rest')) { on = CFG.restEnabled; label = isResting ? '🪑' : 'Rest'; }
       else if (p.hasAttribute('data-combat')) { on = CFG.combatEnabled; label = 'Combat'; }
+      else if (p.hasAttribute('data-skill')) { on = CFG.skillEnabled; label = 'Skill'; }
       else if (p.hasAttribute('data-sell')) { on = CFG.sellEnabled; label = 'Sell'; }
       else if (p.hasAttribute('data-storage')) { on = CFG.storageEnabled; label = 'Kafra'; }
       else return;
@@ -3978,6 +4299,24 @@
           const state = c.remainingMs <= 0 ? '<span style="color:#27ae60">พร้อมใช้</span>' : '<span style="color:#f39c12">' + remStr + '</span>';
           return `<div>${icon}${c.name} <span style="color:#5f6368">(ทุก ${c.intervalMin}นาที)</span> → ${state}</div>`;
         }).join('');
+      }
+    }
+    // skill config sync + countdown display
+    const skillBtn = root.querySelector('#__assist_skillbtn');
+    if (skillBtn) { skillBtn.textContent = 'Skill: ' + (CFG.skillEnabled ? 'ON' : 'OFF'); skillBtn.className = CFG.skillEnabled ? 'on' : 'off'; }
+    const skCdEl = root.querySelector('#__assist_skillcountdown');
+    if (skCdEl) {
+      if (!CFG.skills || !CFG.skills.length) {
+        skCdEl.textContent = '(ยังไม่ตั้ง skill — กด "📋 จัดการ skill")';
+      } else {
+        const cds = ASSIST.getSkillCooldowns();
+        const spStr = sp.cur != null ? (sp.max ? ` | SP ${sp.cur}/${sp.max}` : ` | SP ${sp.cur}`) : '';
+        skCdEl.innerHTML = cds.map(c => {
+          const remSec = Math.ceil(c.remainingMs / 1000);
+          const remStr = remSec >= 60 ? Math.floor(remSec/60) + 'นาที' : remSec + 's';
+          const state = c.remainingMs <= 0 ? '<span style="color:#27ae60">พร้อม</span>' : '<span style="color:#f39c12">' + remStr + '</span>';
+          return `<div>🔮 ${c.name} <span style="color:#5f6368">(#${c.skillId})</span> → ${state}</div>`;
+        }).join('') + `<div style="color:#5f6368;margin-top:2px">${spStr}</div>`;
       }
     }
     const lm = root.querySelector('#__assist_lootmode');
