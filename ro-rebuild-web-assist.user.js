@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.8.3
+// @version      4.8.4
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.8.3';
+  const VERSION = '4.8.4';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3428,6 +3428,7 @@
         <span class="pill off" data-combat>Combat</span>
         <span class="pill off" data-sell>Sell</span>
         <span class="pill off" data-storage>Kafra</span>
+        <span class="pill" data-teleport style="background:#4a2c6a;color:#d1b3ff">🌀</span>
         <span class="expand">⚙</span>
       </div>
       <div id="__assist_popup">
@@ -3682,6 +3683,9 @@
         }
         if (pill.hasAttribute('data-sell')) CFG.sellEnabled ? ASSIST.sellOff() : ASSIST.sellOn();
         if (pill.hasAttribute('data-storage')) CFG.storageEnabled ? ASSIST.storageOff() : ASSIST.storageOn();
+        if (pill.hasAttribute('data-teleport')) {
+          if (sendRandomWarp()) log('🌀 วาร์ปสุ่ม (กดจาก mini-bar)');
+        }
         return;
       }
       popup.classList.toggle('open');
