@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.10.2
+// @version      4.10.3
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.10.2';
+  const VERSION = '4.10.3';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3582,7 +3582,7 @@
             </div>
             <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
               ${fld('SP ขั้นต่ำ', inp('spMin', s.spMin||0, '55px'), 'SP ต้องมากกว่าหรือเท่ากับค่านี้ถึงจะใช้')}
-              ${fld('Cooldown (ms)', inp('cooldownMs', s.cooldownMs||2000, '65px'), 'ระยะเวลารอก่อนใช้ซ้ำ (มิลลิวินาที)')}
+              ${fld('Cooldown (วินาที)', `<input data-edit="cooldownSec" type="text" inputmode="decimal" value="${((s.cooldownMs||2000)/1000).toFixed(1)}" style="width:60px;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">`, 'ระยะเวลารอก่อนใช้ซ้ำ (วินาที) เช่น 2 = 2 วินาที')}
               ${fld('ระยะสูงสุด', inp('maxDistance', s.maxDistance||0, '55px'), 'ต้องอยู่ใกล้ไม่เกินกี่ช่อง (0=ไม่จำกัด)')}
               ${fld('ครั้ง/มอน', inp('maxUsesPerTarget', s.maxUsesPerTarget||1, '55px'), 'ใช้สกิลนี้ได้กี่ครั้งต่อมอน 1 ตัว')}
               ${fld('มอนขั้นต่ำ', inp('mobCountMin', s.mobCountMin||0, '55px'), 'ใช้เมื่อมอนรุมมากกว่าหรือเท่ากับ N ตัว')}
@@ -3693,7 +3693,8 @@
           s.targeted = mode === 'targeted';
           s.selfCast = mode === 'self';
           s.spMin = parseInt(getVal('spMin'), 10) || 0;
-          s.cooldownMs = parseInt(getVal('cooldownMs'), 10) || 2000;
+          const cdSec = parseFloat(getVal('cooldownSec'));
+          s.cooldownMs = isNaN(cdSec) ? (s.cooldownMs || 2000) : Math.round(cdSec * 1000);
           s.maxDistance = parseInt(getVal('maxDistance'), 10) || 0;
           s.maxUsesPerTarget = parseInt(getVal('maxUsesPerTarget'), 10) || 1;
           s.mobCountMin = parseInt(getVal('mobCountMin'), 10) || 0;
