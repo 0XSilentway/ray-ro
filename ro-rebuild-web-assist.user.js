@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.9.0
+// @version      4.9.2
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.9.1';
+  const VERSION = '4.9.2';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3615,16 +3615,16 @@
       /* mini-bar */
       #__assist_bar {
         background: rgba(20,22,28,.92); border: 1px solid #3a3f4b; border-radius: 8px;
-        padding: 6px 10px; display: flex; align-items: center; gap: 10px;
+        padding: 5px 8px; display: flex; align-items: center; gap: 4px;
         cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.4); transition: opacity .15s;
-        max-width: 360px;
+        max-width: 600px; flex-wrap: wrap; justify-content: flex-end;
       }
       #__assist_bar:hover { opacity: .85; }
-      #__assist_bar .hpbar { width: 80px; height: 8px; background: #2a2d35; border-radius: 4px; overflow: hidden; }
+      #__assist_bar .hpbar { width: 60px; height: 8px; background: #2a2d35; border-radius: 4px; overflow: hidden; }
       #__assist_bar .hpfill { height: 100%; background: linear-gradient(90deg,#e53935,#ef5350); transition: width .3s; }
       #__assist_bar .hpfill.warn { background: linear-gradient(90deg,#fb8c00,#ffa726); }
       #__assist_bar .hpfill.good { background: linear-gradient(90deg,#43a047,#66bb6a); }
-      #__assist_bar .pill { font-size: 10px; padding: 1px 6px; border-radius: 8px; font-weight: 600; }
+      #__assist_bar .pill { font-size: 9px; padding: 1px 5px; border-radius: 8px; font-weight: 600; white-space: nowrap; }
       #__assist_bar .pill.on  { background: #1b5e20; color: #a5d6a7; }
       #__assist_bar .pill.off { background: #4a2020; color: #ef9a9a; }
       #__assist_bar .expand { color: #8ab4f8; font-weight: 700; }
@@ -3672,13 +3672,13 @@
       .__assist_page .logline .ts { color: #5f6368; }
       .__assist_dead { animation: __assist_blink 1s infinite; }
       @keyframes __assist_blink { 50% { opacity: .4; } }
-      /* ===== item-list popup (จัดการรายการ item) ===== */
-      #__assist_itempopup {
+      /* ===== item-list popup + skill popup (รวม CSS) ===== */
+      #__assist_itempopup, #__assist_skillpopup {
         position: fixed; inset: 0; z-index: 2147483648;
         background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center;
       }
-      #__assist_itempopup.open { display: flex; }
-      #__assist_itempopup .modal {
+      #__assist_itempopup.open, #__assist_skillpopup.open { display: flex; }
+      #__assist_itempopup .modal, #__assist_skillpopup .modal {
         background: rgba(20,22,28,.98); border: 1px solid #3a3f4b; border-radius: 10px;
         box-shadow: 0 8px 32px rgba(0,0,0,.7); width: 480px; max-width: 92vw; max-height: 80vh;
         display: flex; flex-direction: column; overflow: hidden; color: #e8e8e8;
