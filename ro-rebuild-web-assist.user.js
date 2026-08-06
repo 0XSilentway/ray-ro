@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.10.1
+// @version      4.10.2
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.10.1';
+  const VERSION = '4.10.2';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3565,31 +3565,35 @@
         // ★ ฟอร์มแก้ไข (แสดงเมื่อกด ✎)
         if (editingSkillIdx === i) {
           const modeVal = s.selfCast ? 'self' : (s.targeted ? 'targeted' : 'aoe');
-          row += `<div style="padding:6px 4px;background:rgba(0,0,0,.2);border-radius:4px;margin-top:4px">
-            <div style="display:flex;gap:4px;margin-bottom:4px">
-              <input data-edit="name" value="${s.name||''}" placeholder="ชื่อ" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
-              <input data-edit="skillId" type="number" value="${s.skillId}" style="width:55px;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
-              <input data-edit="level" type="number" value="${s.level}" style="width:40px;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
+          const fld = (label, inner, title) => `<label style="display:flex;flex-direction:column;gap:1px;font-size:9px;color:#9aa0a6" title="${title}">${label}${inner}</label>`;
+          const inp = (key, val, w) => `<input data-edit="${key}" type="number" value="${val}" style="width:${w};background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">`;
+          row += `<div style="padding:8px;background:rgba(0,0,0,.2);border-radius:4px;margin-top:4px">
+            <div style="display:flex;gap:6px;margin-bottom:6px">
+              ${fld('ชื่อ', `<input data-edit="name" value="${s.name||''}" placeholder="ชื่อสกิล" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">`, 'ชื่อสกิล (แสดงใน log)')}
+              ${fld('skillId', inp('skillId', s.skillId, '60px'), 'เลข ID ของสกิล (จาก packet capture)')}
+              ${fld('เลเวล', inp('level', s.level, '45px'), 'เลเวลสกิลที่จะส่ง (1-10)')}
             </div>
-            <select data-edit="mode" style="width:100%;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit;margin-bottom:4px">
-              <option value="targeted"${modeVal==='targeted'?' selected':''}>targeted</option>
-              <option value="aoe"${modeVal==='aoe'?' selected':''}>AoE</option>
-              <option value="self"${modeVal==='self'?' selected':''}>self-cast</option>
-            </select>
-            <div style="display:flex;gap:4px;margin-bottom:4px;flex-wrap:wrap">
-              <input data-edit="spMin" type="number" value="${s.spMin||0}" placeholder="sp" style="width:50px;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
-              <input data-edit="cooldownMs" type="number" value="${s.cooldownMs||2000}" placeholder="cd" style="width:60px;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
-              <input data-edit="maxDistance" type="number" value="${s.maxDistance||0}" placeholder="dist" style="width:50px;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
-              <input data-edit="maxUsesPerTarget" type="number" value="${s.maxUsesPerTarget||1}" placeholder="use" style="width:50px;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
-              <input data-edit="mobCountMin" type="number" value="${s.mobCountMin||0}" placeholder="mob" style="width:50px;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
+            <div style="margin-bottom:6px">
+              ${fld('โหมดการใช้งาน', `<select data-edit="mode" style="width:100%;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
+                <option value="targeted"${modeVal==='targeted'?' selected':''}>targeted — เลือกเป้า (Bash, Double Strafe)</option>
+                <option value="aoe"${modeVal==='aoe'?' selected':''}>AoE — รอบตัว (Magnum Break)</option>
+                <option value="self"${modeVal==='self'?' selected':''}>self-cast — ใช้กับตัวเอง (Quicken, Blessing)</option>
+              </select>`, 'targeted=ต้องมีมอนเป้าหมาย, AoE=ใช้รอบตัว, self=ใช้กับตัวเอง')}
             </div>
-            <div style="display:flex;gap:4px;margin-bottom:4px">
-              <input data-edit="intervalMin" type="number" step="0.5" value="${s.intervalMin||0}" placeholder="interval (self)" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
-              <input data-edit="minDistance" type="number" value="${s.minDistance||0}" placeholder="minDist" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
+            <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+              ${fld('SP ขั้นต่ำ', inp('spMin', s.spMin||0, '55px'), 'SP ต้องมากกว่าหรือเท่ากับค่านี้ถึงจะใช้')}
+              ${fld('Cooldown (ms)', inp('cooldownMs', s.cooldownMs||2000, '65px'), 'ระยะเวลารอก่อนใช้ซ้ำ (มิลลิวินาที)')}
+              ${fld('ระยะสูงสุด', inp('maxDistance', s.maxDistance||0, '55px'), 'ต้องอยู่ใกล้ไม่เกินกี่ช่อง (0=ไม่จำกัด)')}
+              ${fld('ครั้ง/มอน', inp('maxUsesPerTarget', s.maxUsesPerTarget||1, '55px'), 'ใช้สกิลนี้ได้กี่ครั้งต่อมอน 1 ตัว')}
+              ${fld('มอนขั้นต่ำ', inp('mobCountMin', s.mobCountMin||0, '55px'), 'ใช้เมื่อมอนรุมมากกว่าหรือเท่ากับ N ตัว')}
+            </div>
+            <div style="display:flex;gap:6px;margin-bottom:6px">
+              ${fld('ระยะเวลา (นาที) — self', `<input data-edit="intervalMin" type="number" step="0.5" value="${s.intervalMin||0}" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">`, 'สำหรับ self-cast: ร่ายใหม่ทุก N นาที (0=ใช้ cooldownMs แทน)')}
+              ${fld('ระยะต่ำสุด (ช่อง)', `<input data-edit="minDistance" type="number" value="${s.minDistance||0}" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">`, 'ต้องอยู่ไกลอย่างน้อย N ช่อง (เช่น Charge Attack)')}
             </div>
             <div style="display:flex;gap:4px">
-              <button data-saveedit="${i}" style="flex:1;background:#1b5e20;border:1px solid #2e7d32;border-radius:4px;color:#a5d6a7;cursor:pointer;font-size:10px;padding:4px;font-family:inherit">✓ บันทึก</button>
-              <button data-canceledit style="flex:1;background:#4a2020;border:1px solid #6a3030;border-radius:4px;color:#ef9a9a;cursor:pointer;font-size:10px;padding:4px;font-family:inherit">ยกเลิก</button>
+              <button data-saveedit="${i}" style="flex:1;background:#1b5e20;border:1px solid #2e7d32;border-radius:4px;color:#a5d6a7;cursor:pointer;font-size:10px;padding:5px;font-family:inherit">✓ บันทึก</button>
+              <button data-canceledit style="flex:1;background:#4a2020;border:1px solid #6a3030;border-radius:4px;color:#ef9a9a;cursor:pointer;font-size:10px;padding:5px;font-family:inherit">ยกเลิก</button>
             </div>
           </div>`;
         }
