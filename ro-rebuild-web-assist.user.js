@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.9.2
+// @version      4.10.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.9.2';
+  const VERSION = '4.10.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3365,6 +3365,56 @@
     }
     return entries;
   }
+  // ============================================================
+  //  SKILL PRESETS — ฐานข้อมูลสกิลสำเร็จรูป (เลือกใช้ได้เลย)
+  //    แต่ละสกิลมีค่า default ที่ทดสอบแล้ว — ผู้ใช้ปรับแต่งเพิ่มเติมได้หลังเพิ่ม
+  //    skillId จาก packet capture: targeted=1 byte, AoE/self=2 bytes LE
+  // ============================================================
+  const SKILL_PRESETS = [
+    // ---- Swordsman/Knight ----
+    { name: 'Bash', skillId: 3, level: 10, targeted: true, maxUsesPerTarget: 2, maxDistance: 2, spMin: 15, cooldownMs: 2000, job: 'Swordsman/Knight', desc: 'ตีแรง + สตัน' },
+    { name: 'Magnum Break', skillId: 6, level: 10, targeted: false, mobCountMin: 3, spMin: 30, cooldownMs: 5000, job: 'Knight', desc: 'AoE รอบตัว' },
+    { name: 'Provoke', skillId: 7, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, spMin: 5, cooldownMs: 3000, job: 'Swordsman', desc: 'ลด def มอน' },
+    { name: 'Endure', skillId: 8, level: 10, selfCast: true, intervalMin: 3, spMin: 10, cooldownMs: 1000, job: 'Swordsman', desc: 'บัพ ไม่กระตุก' },
+    { name: 'Twohand Quicken', skillId: 30, level: 10, selfCast: true, intervalMin: 3, spMin: 50, cooldownMs: 1000, job: 'Knight', desc: 'บัพ ASPD ดาบสองมือ' },
+    { name: 'Bowling Bash', skillId: 32, level: 10, targeted: true, mobCountMin: 2, maxUsesPerTarget: 1, maxDistance: 2, spMin: 22, cooldownMs: 3000, job: 'Knight Lord', desc: 'ตีกระแทก' },
+    { name: 'Charge Attack', skillId: 40, level: 1, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, minDistance: 5, spMin: 30, cooldownMs: 2000, job: 'Knight', desc: 'พุ่งเข้าหามอน' },
+    // ---- Archer/Hunter ----
+    { name: 'Double Strafe', skillId: 24, level: 10, targeted: true, maxUsesPerTarget: 2, maxDistance: 12, spMin: 14, cooldownMs: 2000, job: 'Archer/Hunter', desc: 'ยิง 2 ลูก' },
+    { name: 'Improve Concentration', skillId: 27, level: 10, selfCast: true, intervalMin: 4, spMin: 44, cooldownMs: 1000, job: 'Archer/Hunter', desc: 'บัพ DEX+AGI' },
+    { name: 'Arrow Shower', skillId: 47, level: 10, targeted: false, mobCountMin: 3, spMin: 15, cooldownMs: 3000, job: 'Hunter', desc: 'AoE ธนู' },
+    // ---- Mage/Wizard ----
+    { name: 'Napalm Beat', skillId: 11, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 9, spMin: 9, cooldownMs: 1500, job: 'Mage', desc: 'Ghost damage' },
+    { name: 'Soul Strike', skillId: 13, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 9, spMin: 18, cooldownMs: 2000, job: 'Mage', desc: 'โจมตีไร้ธาตุ' },
+    { name: 'Frost Diver', skillId: 15, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 9, spMin: 25, cooldownMs: 2500, job: 'Mage', desc: 'แช่แข็ง' },
+    { name: 'Fire Bolt', skillId: 17, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 9, spMin: 12, cooldownMs: 3000, job: 'Mage', desc: 'ไฟลูกต่อ Lv' },
+    { name: 'Lightning Bolt', skillId: 20, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 9, spMin: 12, cooldownMs: 3000, job: 'Mage', desc: 'สายฟ้าลูกต่อ Lv' },
+    { name: 'Energy Coat', skillId: 62, level: 1, selfCast: true, intervalMin: 5, spMin: 30, cooldownMs: 1000, job: 'Mage', desc: 'บัพลด damage' },
+    { name: 'Thunderstorm', skillId: 21, level: 10, targeted: false, mobCountMin: 3, spMin: 24, cooldownMs: 4000, job: 'Wizard', desc: 'AoE สายฟ้า' },
+    // ---- Acolyte/Priest ----
+    { name: 'Heal', skillId: 28, level: 10, selfCast: true, intervalMin: 0, spMin: 40, cooldownMs: 1000, job: 'Acolyte/Priest', desc: 'รักษาตัวเอง' },
+    { name: 'Increase AGI', skillId: 29, level: 10, selfCast: true, intervalMin: 5, spMin: 45, cooldownMs: 1000, job: 'Acolyte', desc: 'บัพความเร็ว' },
+    { name: 'Blessing', skillId: 36, level: 10, selfCast: true, intervalMin: 5, spMin: 64, cooldownMs: 1000, job: 'Acolyte', desc: 'บัพ STR+INT+DEX' },
+    { name: 'Pneuma', skillId: 25, level: 1, targeted: false, mobCountMin: 0, spMin: 10, cooldownMs: 5000, job: 'Acolyte', desc: 'กันโจมตีไกล' },
+    // ---- Merchant/Blacksmith ----
+    { name: 'Cart Revolution', skillId: 87, level: 1, targeted: false, mobCountMin: 2, spMin: 12, cooldownMs: 2000, job: 'Merchant', desc: 'AoE รถเข็น' },
+    { name: 'Over Thrust', skillId: 84, level: 5, selfCast: true, intervalMin: 3, spMin: 18, cooldownMs: 1000, job: 'Blacksmith', desc: 'บัพดาเมจ' },
+    { name: 'Weaponry Research', skillId: 114, level: 10, selfCast: true, intervalMin: 5, spMin: 10, cooldownMs: 1000, job: 'Blacksmith', desc: 'บัพ HIT+ATK' },
+    // ---- Thief/Assassin/Rogue ----
+    { name: 'Envenom', skillId: 52, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 2, spMin: 12, cooldownMs: 1500, job: 'Thief', desc: 'ตี+พิษ' },
+    { name: 'Hiding', skillId: 51, level: 1, selfCast: true, intervalMin: 0, spMin: 10, cooldownMs: 1000, job: 'Thief', desc: 'ล่องหา' },
+    { name: 'Sonic Blow', skillId: 135, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 2, spMin: 16, cooldownMs: 3000, job: 'Assassin', desc: '8 ฮิต' },
+    { name: 'Enchant Poison', skillId: 132, level: 10, selfCast: true, intervalMin: 5, spMin: 20, cooldownMs: 1000, job: 'Assassin', desc: 'บัพธาตุพิษ' },
+    { name: 'Grimtooth', skillId: 137, level: 5, targeted: true, maxUsesPerTarget: 1, maxDistance: 5, spMin: 3, cooldownMs: 1500, job: 'Assassin', desc: 'แทงใต้ดิน' },
+    // ---- Ninja/Gunslinger ----
+    { name: 'Throw Shuriken', skillId: 221, level: 10, targeted: true, maxUsesPerTarget: 3, maxDistance: 9, spMin: 3, cooldownMs: 500, job: 'Ninja', desc: 'ขว้างดาว' },
+    { name: 'Flip Tatami', skillId: 227, level: 1, targeted: false, mobCountMin: 2, spMin: 15, cooldownMs: 2000, job: 'Ninja', desc: 'AoE รอบตัว' },
+  ];
+  function skillPresetGroups() {
+    const groups = {};
+    for (const s of SKILL_PRESETS) { (groups[s.job] = groups[s.job] || []).push(s); }
+    return groups;
+  }
   function openItemListPopup(listType) {
     // ★ สร้าง popup ใหม่ทุกครั้ง (กัน closure/listener ค้างจากครั้งก่อน)
     const old = document.getElementById('__assist_itempopup');
@@ -3511,7 +3561,25 @@
         </div>`;
       }).join('') : `<div class="empty">(ยังว่าง — เพิ่มด้านล่าง)</div>`;
 
-      html += `<div style="padding:6px 8px;color:#8ab4f8;font-size:11px;font-weight:600;border-bottom:1px solid #2a2d35;margin-top:6px">➕ เพิ่ม skill ใหม่</div>`;
+      // ★ preset dropdown — เลือกสกิลสำเร็จรูปจาก database
+      const groups = skillPresetGroups();
+      const presetOpts = Object.entries(groups).map(([job, skills]) => {
+        const skillOpts = skills.map((s, i) => {
+          const idx = SKILL_PRESETS.indexOf(s);
+          const mode = s.selfCast ? 'self' : (s.targeted ? 'target' : 'AoE');
+          return `<option value="${idx}">${s.name} (Lv${s.level}, ${mode}) — ${s.desc || ''}</option>`;
+        }).join('');
+        return `<optgroup label="${job}">${skillOpts}</optgroup>`;
+      }).join('');
+      html += `<div style="padding:6px 8px;color:#27ae60;font-size:11px;font-weight:600;border-bottom:1px solid #2a2d35;margin-top:6px">⚡ เลือกจาก preset (แนะนำ)</div>`;
+      html += `<div style="padding:8px">
+        <select id="__assist_skill_preset" style="width:100%;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit;margin-bottom:6px">
+          <option value="">— เลือกสกิลที่จะเพิ่ม —</option>
+          ${presetOpts}
+        </select>
+        <button id="__assist_skill_presetbtn" style="width:100%;background:#1b5e20;border:1px solid #2e7d32;border-radius:5px;color:#a5d6a7;cursor:pointer;font-size:11px;padding:6px;font-family:inherit;margin-bottom:4px">+ เพิ่มจาก preset</button>
+      </div>`;
+      html += `<div style="padding:6px 8px;color:#8ab4f8;font-size:11px;font-weight:600;border-bottom:1px solid #2a2d35;margin-top:6px">➕ เพิ่ม skill ใหม่ (กำหนดเอง)</div>`;
       html += `<div style="padding:8px">
         <input id="__assist_skill_name" placeholder="ชื่อ (เช่น Bash)" style="width:100%;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit;margin-bottom:4px">
         <div style="display:flex;gap:4px;margin-bottom:4px">
@@ -3561,6 +3629,26 @@
         };
       });
       const addBtn = bodyEl.querySelector('#__assist_skill_addbtn');
+      // ★ preset button — เพิ่มจาก database สำเร็จรูป
+      const presetBtn = bodyEl.querySelector('#__assist_skill_presetbtn');
+      if (presetBtn) {
+        presetBtn.onclick = () => {
+          const sel = bodyEl.querySelector('#__assist_skill_preset');
+          const idx = parseInt(sel.value, 10);
+          if (isNaN(idx) || !SKILL_PRESETS[idx]) return;
+          const p = SKILL_PRESETS[idx];
+          ASSIST.addSkill({
+            name: p.name, skillId: p.skillId, level: p.level,
+            targeted: !!p.targeted, selfCast: !!p.selfCast,
+            intervalMin: p.intervalMin || 0, mobCountMin: p.mobCountMin || 0,
+            maxUsesPerTarget: p.maxUsesPerTarget || 1, maxDistance: p.maxDistance || 0,
+            minDistance: p.minDistance || 0, spMin: p.spMin || 0, cooldownMs: p.cooldownMs || 2000,
+          });
+          saveConfigDebounced();
+          log('⚡ เพิ่ม preset:', p.name, '(#' + p.skillId + ')');
+          refresh();
+        };
+      }
       if (addBtn) {
         addBtn.onclick = () => {
           const name = bodyEl.querySelector('#__assist_skill_name').value.trim() || undefined;
