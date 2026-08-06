@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.10.0
+// @version      4.10.1
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.10.0';
+  const VERSION = '4.10.1';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3543,6 +3543,7 @@
     popup.id = '__assist_skillpopup';
     document.body.appendChild(popup);
 
+    let editingSkillIdx = -1;   // index ของ skill ที่กำลังแก้ (-1 = ไม่มี)
     function render() {
       const skills = CFG.skills || [];
       let html = '';
@@ -3553,12 +3554,47 @@
         const spStr = s.spMin ? ` SP≥${s.spMin}` : '';
         const cdStr = s.intervalMin > 0 ? ` ทุก${s.intervalMin}นาที` : (s.cooldownMs ? ` cd${(s.cooldownMs/1000).toFixed(0)}s` : '');
         const distStr = s.maxDistance ? ` ≤${s.maxDistance}ช่อง` : '';
-        return `<div style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-bottom:1px solid rgba(255,255,255,.04)">
-          <span style="flex:1;font-size:11px;color:#e8e8e8">${s.name || 'skill_'+s.skillId} <span style="color:#5f6368">(#${s.skillId} Lv${s.level})</span></span>
-          <span style="font-size:10px;color:${modeColor};background:${modeColor}22;padding:1px 6px;border-radius:3px">${mode}</span>
-          <span style="font-size:10px;color:#9aa0a6">${spStr}${cdStr}${distStr}</span>
-          <button class="rmbtn" data-rmskill="${i}" style="background:#4a2020;border:1px solid #6a3030;border-radius:4px;color:#e8e8e8;cursor:pointer;font-size:11px;padding:3px 8px">✕</button>
-        </div>`;
+        let row = `<div style="padding:5px 6px;border-bottom:1px solid rgba(255,255,255,.04)">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="flex:1;font-size:11px;color:#e8e8e8">${s.name || 'skill_'+s.skillId} <span style="color:#5f6368">(#${s.skillId} Lv${s.level})</span></span>
+            <span style="font-size:10px;color:${modeColor};background:${modeColor}22;padding:1px 6px;border-radius:3px">${mode}</span>
+            <span style="font-size:10px;color:#9aa0a6">${spStr}${cdStr}${distStr}</span>
+            <button data-editskill="${i}" style="background:#2a3441;border:1px solid #3a3f4b;border-radius:4px;color:#8ab4f8;cursor:pointer;font-size:11px;padding:3px 8px">✎</button>
+            <button class="rmbtn" data-rmskill="${i}" style="background:#4a2020;border:1px solid #6a3030;border-radius:4px;color:#e8e8e8;cursor:pointer;font-size:11px;padding:3px 8px">✕</button>
+          </div>`;
+        // ★ ฟอร์มแก้ไข (แสดงเมื่อกด ✎)
+        if (editingSkillIdx === i) {
+          const modeVal = s.selfCast ? 'self' : (s.targeted ? 'targeted' : 'aoe');
+          row += `<div style="padding:6px 4px;background:rgba(0,0,0,.2);border-radius:4px;margin-top:4px">
+            <div style="display:flex;gap:4px;margin-bottom:4px">
+              <input data-edit="name" value="${s.name||''}" placeholder="ชื่อ" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
+              <input data-edit="skillId" type="number" value="${s.skillId}" style="width:55px;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
+              <input data-edit="level" type="number" value="${s.level}" style="width:40px;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
+            </div>
+            <select data-edit="mode" style="width:100%;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit;margin-bottom:4px">
+              <option value="targeted"${modeVal==='targeted'?' selected':''}>targeted</option>
+              <option value="aoe"${modeVal==='aoe'?' selected':''}>AoE</option>
+              <option value="self"${modeVal==='self'?' selected':''}>self-cast</option>
+            </select>
+            <div style="display:flex;gap:4px;margin-bottom:4px;flex-wrap:wrap">
+              <input data-edit="spMin" type="number" value="${s.spMin||0}" placeholder="sp" style="width:50px;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
+              <input data-edit="cooldownMs" type="number" value="${s.cooldownMs||2000}" placeholder="cd" style="width:60px;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
+              <input data-edit="maxDistance" type="number" value="${s.maxDistance||0}" placeholder="dist" style="width:50px;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
+              <input data-edit="maxUsesPerTarget" type="number" value="${s.maxUsesPerTarget||1}" placeholder="use" style="width:50px;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
+              <input data-edit="mobCountMin" type="number" value="${s.mobCountMin||0}" placeholder="mob" style="width:50px;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
+            </div>
+            <div style="display:flex;gap:4px;margin-bottom:4px">
+              <input data-edit="intervalMin" type="number" step="0.5" value="${s.intervalMin||0}" placeholder="interval (self)" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
+              <input data-edit="minDistance" type="number" value="${s.minDistance||0}" placeholder="minDist" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
+            </div>
+            <div style="display:flex;gap:4px">
+              <button data-saveedit="${i}" style="flex:1;background:#1b5e20;border:1px solid #2e7d32;border-radius:4px;color:#a5d6a7;cursor:pointer;font-size:10px;padding:4px;font-family:inherit">✓ บันทึก</button>
+              <button data-canceledit style="flex:1;background:#4a2020;border:1px solid #6a3030;border-radius:4px;color:#ef9a9a;cursor:pointer;font-size:10px;padding:4px;font-family:inherit">ยกเลิก</button>
+            </div>
+          </div>`;
+        }
+        row += `</div>`;
+        return row;
       }).join('') : `<div class="empty">(ยังว่าง — เพิ่มด้านล่าง)</div>`;
 
       // ★ preset dropdown — เลือกสกิลสำเร็จรูปจาก database
@@ -3625,8 +3661,49 @@
           const i = parseInt(b.getAttribute('data-rmskill'), 10);
           CFG.skills.splice(i, 1);
           saveConfigDebounced();
+          editingSkillIdx = -1;
           refresh();
         };
+      });
+      // ★ แก้ไข skill — ขยายฟอร์ม
+      bodyEl.querySelectorAll('[data-editskill]').forEach(b => {
+        b.onclick = () => {
+          editingSkillIdx = parseInt(b.getAttribute('data-editskill'), 10);
+          refresh();
+        };
+      });
+      // ★ บันทึกการแก้ไข
+      bodyEl.querySelectorAll('[data-saveedit]').forEach(b => {
+        b.onclick = () => {
+          const i = parseInt(b.getAttribute('data-saveedit'), 10);
+          const s = CFG.skills[i];
+          if (!s) return;
+          const getVal = (key) => {
+            const el = bodyEl.querySelector(`[data-edit="${key}"]`);
+            return el ? el.value : '';
+          };
+          s.name = getVal('name').trim() || s.name;
+          s.skillId = parseInt(getVal('skillId'), 10) || s.skillId;
+          s.level = parseInt(getVal('level'), 10) || 1;
+          const mode = getVal('mode');
+          s.targeted = mode === 'targeted';
+          s.selfCast = mode === 'self';
+          s.spMin = parseInt(getVal('spMin'), 10) || 0;
+          s.cooldownMs = parseInt(getVal('cooldownMs'), 10) || 2000;
+          s.maxDistance = parseInt(getVal('maxDistance'), 10) || 0;
+          s.maxUsesPerTarget = parseInt(getVal('maxUsesPerTarget'), 10) || 1;
+          s.mobCountMin = parseInt(getVal('mobCountMin'), 10) || 0;
+          s.intervalMin = parseFloat(getVal('intervalMin')) || 0;
+          s.minDistance = parseInt(getVal('minDistance'), 10) || 0;
+          saveConfigDebounced();
+          editingSkillIdx = -1;
+          log('✎ แก้ไข skill', s.name);
+          refresh();
+        };
+      });
+      // ★ ยกเลิกการแก้ไข
+      bodyEl.querySelectorAll('[data-canceledit]').forEach(b => {
+        b.onclick = () => { editingSkillIdx = -1; refresh(); };
       });
       const addBtn = bodyEl.querySelector('#__assist_skill_addbtn');
       // ★ preset button — เพิ่มจาก database สำเร็จรูป
