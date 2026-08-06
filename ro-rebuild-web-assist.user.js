@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.10.3
+// @version      4.10.4
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.10.3';
+  const VERSION = '4.10.4';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -4091,7 +4091,9 @@
     // ★ รองรับทั้ง main panel (root) และ item-list popup (append ที่ body แยก)
     function isOurField(t) {
       if (!t || !t.closest || !t.matches || !t.matches(ASSIST_INPUT_SEL)) return false;
-      return root.contains(t) || (t.closest && t.closest('#__assist_itempopup'));
+      return root.contains(t)
+        || (t.closest && t.closest('#__assist_itempopup'))
+        || (t.closest && t.closest('#__assist_skillpopup'));
     }
     function ourActiveInput() {
       const ae = document.activeElement;
