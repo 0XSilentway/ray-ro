@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.8.1
+// @version      4.8.2
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.8.1';
+  const VERSION = '4.8.2';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -127,7 +127,7 @@
     'warpLootEnabled',
     'combatEnabled', 'targetWhitelist', 'targetBlacklist', 'attackRange', 'rangedAttackRange',
     'maxAcquireDistance', 'searchRadii', 'maxChaseDistance', 'antiKS', 'avoidOtherPlayers', 'targetLowestHpFirst',
-    'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius',
+    'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius', 'maxEngageSecSlow', 'slowMonsterSubIds',
     'wanderEnabled', 'warpFindEnabled', 'warpToMonster', 'stuckWarpOnAbandon',
     'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs',
     'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellNpcX', 'sellNpcY', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
@@ -374,7 +374,9 @@
     attackAbandonMs: 5000,       // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (เพิ่มจาก 8s → 20s รองรับ reset ล่าช้า)
     attackPendingMax: 3,          // ★ abandon ถ้า pending ≥ N (ลดจาก 8 → 4 ใกล้บอทหลัก ตัดมอนตีไม่ได้เร็วขึ้น)
     aggroKeepAliveMs: 15000,      // ★ มอน aggro เรา → ถือว่ายังสู้อยู่ N ms (กัน abandon ตอนมอนเดินมาหา)
-    maxEngageSec: 30,             // abandon target ถ้า engage นานกว่านี้ (ลดจาก 30 → 20 ใกล้บอทหลัก)
+    maxEngageSec: 30,             // abandon target ถ้า engage นานกว่านี้
+    maxEngageSecSlow: 180,        // ★ abandon มอน "ตีช้า/เจาะไม่เข้า" (เห็ด/พืช) ถ้านานกว่านี้ (3 นาที)
+    slowMonsterSubIds: [4010, 4011, 4013, 4017, 4041, 4030, 4106, 4153],  // ★ sub-ID ที่ตี damage 1
     // flee (วาร์ปหนี)
     fleeOnMobCount: 3,            // มอนรุม N ตัว (ที่ตีเรา) → วาร์ปหนี (0=off)
     fleeOnAggroCount: 5,          // มอนจับเราเป็นเป้า N ตัว → วาร์ปหนี (0=off)
@@ -2149,10 +2151,13 @@
         const targetDamaged = m._lastDamageAt;   // ★ เราตีมอนแล้วโดน (HP ลด)
         const lastCombatSignal = Math.max(targetAggro || 0, targetHitUs || 0, targetDamaged || 0);
         const isTargetStillEngaged = lastCombatSignal && (now - lastCombatSignal < CFG.aggroKeepAliveMs);
-        if (target.engageAt && engageAge > CFG.maxEngageSec && !isTargetStillEngaged) {
-          abandonTarget('engage นาน ' + engageAge.toFixed(0) + 's', true, 10000); target = null;
+        // ★ มอน "ตีช้า" (mushroom/plant/เจาะไม่เข้า) → ใช้ maxEngageSecSlow (ยาวกว่า) กัน abandon ก่อนฆ่าทัน
+        const isSlowMonster = m.sub != null && Array.isArray(CFG.slowMonsterSubIds) && CFG.slowMonsterSubIds.includes(m.sub);
+        const engageLimit = isSlowMonster ? (CFG.maxEngageSecSlow || 180) : CFG.maxEngageSec;
+        if (target.engageAt && engageAge > engageLimit && !isTargetStillEngaged) {
+          abandonTarget('engage นาน ' + engageAge.toFixed(0) + 's' + (isSlowMonster ? ' (slow)' : ''), true, 10000); target = null;
         }
-        else if (!target.engageAt && acquireAge > CFG.maxEngageSec && !isTargetStillEngaged) {
+        else if (!target.engageAt && acquireAge > engageLimit && !isTargetStillEngaged) {
           abandonTarget('ไม่ได้ตี ' + acquireAge.toFixed(0) + 's', true, 10000); target = null;
         }
         // ★ pending ≥ attackPendingMax abandon ถ้า server ไม่ตอบนานเกินไป — แต่ถ้ามอนยัง aggro เรา ข้าม (ยังสู้อยู่)
