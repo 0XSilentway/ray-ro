@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.8.2
+// @version      4.8.3
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,13 +116,13 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.8.2';
+  const VERSION = '4.8.3';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
   const PERSIST_KEYS = [
     'healEnabled', 'healAtPercent', 'healItems', 'healMode', 'healDelayMs', 'healAtMax',
-    'buffEnabled', 'buffItems', 'buffRebuffDelayMs',
+    'buffEnabled', 'buffItems', 'buffRebuffDelayMs', 'autoClearConsoleMin',
     'lootEnabled', 'lootDelayAfterDropMs', 'filter',
     'warpLootEnabled',
     'combatEnabled', 'targetWhitelist', 'targetBlacklist', 'attackRange', 'rangedAttackRange',
@@ -282,6 +282,9 @@
     buffItems: [{itemId:645, intervalMin:30}],                // ★ default ว่าง = ไม่ใช้ buff ใด ๆ
     buffCheckMs: 20000,            // ความถี่ในการเช็ค (1 วิ)
     buffRebuffDelayMs: 5000,      // รออย่างน้อย N ms ก่อนใช้ buff ตัวเดิมซ้ำ (กัน spurious)
+
+    // ---------- MISC ----------
+    autoClearConsoleMin: 0,       // ★ 0=off, >0=clear browser console ทุก N นาที (กัน log เยอะค้างหน่วย)
 
     // ---------- NAVIGATION (บันทึกเส้นทางเดิน + waypoint graph) ----------
     //  เก็บตำแหน่งที่ผู้เล่นคลิกเดิน → สร้าง waypoint graph → bot เดินตามเส้นทางจริง
@@ -642,6 +645,17 @@
       }
     }
   }, CFG.buffCheckMs);
+
+  // ★ auto clear browser console — กัน log เยอะค้างหน่วย (0=off)
+  let lastConsoleClearAt = Date.now();
+  const consoleClearLoop = setInterval(() => {
+    if (!CFG.autoClearConsoleMin || CFG.autoClearConsoleMin <= 0) return;
+    if (Date.now() - lastConsoleClearAt >= CFG.autoClearConsoleMin * 60 * 1000) {
+      try { console.clear(); } catch (_) {}
+      lastConsoleClearAt = Date.now();
+      log('🧹 clear console (ทุก ' + CFG.autoClearConsoleMin + ' นาที)');
+    }
+  }, 30000);   // เช็คทุก 30s
 
   // ============================================================
   //  AUTO-LOOT
@@ -3124,7 +3138,7 @@
     getLogs() { return logBuf.slice(); },
     clearLogs() { logBuf.length = 0; log('🧹 ล้าง log'); },
     stopAll() {
-      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop); clearInterval(storageLoop); clearInterval(buffLoop);
+      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop); clearInterval(storageLoop); clearInterval(buffLoop); clearInterval(consoleClearLoop);
       if (typeof uiLoop !== 'undefined') clearInterval(uiLoop);
       log('⏹ หยุดระบบทั้งหมดแล้ว');
     },
