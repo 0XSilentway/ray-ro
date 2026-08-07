@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.11.2
+// @version      4.12.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.11.2';
+  const VERSION = '4.12.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -1877,19 +1877,30 @@
   // ★ SKILL OUT (mirror protocol.js:223-248):
   //   targeted (sub=01): [1d][01][targetId:4][skillId:1][level:1]  — Bash, Charge Attack
   //   AoE/self (sub=05): [1d][05][skillId:2 LE][level:1]           — Magnum Break, Two-Hand Quicken
-  function sendSkill(skillId, level, targetId) {
+  // ★ SKILL OUT (mirror protocol.js:223-248 + capture Arrow Shower):
+  //   targeted (sub=01): [1d][01][targetId:4][skillId:1][level:1]  — Bash, Charge Arrow
+  //   ground (sub=04):   [1d][04][x:2][y:2][skillId:1][level:1]    — Arrow Shower (เลือกพื้นที่)
+  //   AoE/self (sub=05): [1d][05][skillId:2 LE][level:1]           — Magnum Break, Quicken
+  function sendSkill(skillId, level, targetId, groundX, groundY) {
     if (!activeWS || activeWS.readyState !== 1) return false;
     if (targetId != null) {
       // ★ targeted: [1d][01][targetId:4][skillId:1][level:1]
-      const b = new Uint8Array(7);
-      b[0] = 0x1d; b[1] = 0x01;
-      b[2] = targetId & 0xff; b[3] = (targetId >> 8) & 0xff;
-      b[4] = (targetId >> 16) & 0xff; b[5] = (targetId >>> 24) & 0xff;
-      b[6] = skillId & 0xff;   // skillId 1 byte (Bash=3, Charge=40)
-      // ★ level ส่งต่อท้าย (byte ที่ 7) — แต่ packet มีแค่ 7 bytes (0-6) → ขยายเป็น 8
       const b8 = new Uint8Array(8);
-      b8.set(b); b8[7] = level & 0xff;
+      b8[0] = 0x1d; b8[1] = 0x01;
+      b8[2] = targetId & 0xff; b8[3] = (targetId >> 8) & 0xff;
+      b8[4] = (targetId >> 16) & 0xff; b8[5] = (targetId >>> 24) & 0xff;
+      b8[6] = skillId & 0xff;
+      b8[7] = level & 0xff;
       activeWS.send(b8);
+    } else if (groundX != null && groundY != null) {
+      // ★ ground-targeted: [1d][04][x:2 LE][y:2 LE][skillId:1][level:1]
+      const b = new Uint8Array(8);
+      b[0] = 0x1d; b[1] = 0x04;
+      b[2] = groundX & 0xff; b[3] = (groundX >> 8) & 0xff;
+      b[4] = groundY & 0xff; b[5] = (groundY >> 8) & 0xff;
+      b[6] = skillId & 0xff;
+      b[7] = level & 0xff;
+      activeWS.send(b);
     } else {
       // ★ AoE/self-cast: [1d][05][skillId:2 LE][level:1]
       const b = new Uint8Array(5);
@@ -2285,9 +2296,9 @@
         // ★ mob count gate (AoE skill)
         const mobMin = skill.mobCountMin ?? 0;
         if (mobCount < mobMin) continue;
-        // ★ targeted skill: ต้องมี target + ในระยะ + ไม่เกิน maxUses
+        // ★ targeted/ground skill: ต้องมี target + ในระยะ + ไม่เกิน maxUses
         //   selfCast=true ข้ามเงื่อนไขนี้ทั้งหมด
-        if (skill.targeted && !skill.selfCast) {
+        if ((skill.targeted || skill.ground) && !skill.selfCast) {
           const m = entities.get(target.id);
           if (!m || m.x == null || player.x == null) continue;
           const dist = Math.hypot(m.x - player.x, m.y - player.y);
@@ -2301,8 +2312,14 @@
           if (used >= maxUses) continue;
         }
         // ★ ผ่านเงื่อนไข → ใช้สกิล!
-        const skillTarget = (skill.targeted && !skill.selfCast) ? target.id : null;
-        if (sendSkill(skill.skillId, skill.level || 1, skillTarget)) {
+        const skillTarget = (skill.targeted && !skill.selfCast && !skill.ground) ? target.id : null;
+        // ★ ground-targeted (Arrow Shower): ส่งพิกัดของมอนเป้าหมาย
+        let groundX = null, groundY = null;
+        if (skill.ground && target) {
+          const tm = entities.get(target.id);
+          if (tm && tm.x != null) { groundX = Math.round(tm.x); groundY = Math.round(tm.y); }
+        }
+        if (sendSkill(skill.skillId, skill.level || 1, skillTarget, groundX, groundY)) {
           lastSkillUse.set(skill.skillId, now);
           saveSkillTimesDebounced();
           if (skill.targeted && !skill.selfCast) {
@@ -3063,8 +3080,13 @@
       if (!CFG.skills.length) { log('⚠️ ยังไม่ได้ตั้ง skills'); return; }
       const now = nowMs();
       for (const s of CFG.skills) {
-        const tid = (s.targeted && !s.selfCast && target) ? target.id : null;
-        sendSkill(s.skillId, s.level || 1, tid);
+        const tid = (s.targeted && !s.selfCast && !s.ground && target) ? target.id : null;
+        let gx = null, gy = null;
+        if (s.ground && target) {
+          const tm = entities.get(target.id);
+          if (tm && tm.x != null) { gx = Math.round(tm.x); gy = Math.round(tm.y); }
+        }
+        sendSkill(s.skillId, s.level || 1, tid, gx, gy);
         lastSkillUse.set(s.skillId, now);
       }
       saveSkillTimesDebounced();
@@ -3367,45 +3389,14 @@
   //    แต่ละสกิลมีค่า default ที่ทดสอบแล้ว — ผู้ใช้ปรับแต่งเพิ่มเติมได้หลังเพิ่ม
   //    skillId จาก packet capture: targeted=1 byte, AoE/self=2 bytes LE
   // ============================================================
+  // ★ SKILL_PRESETS — เฉพาะสกิลที่ทดลองแล้ว (verify จาก packet capture)
+  //    ถ้ายังไม่ได้ทดลอง = ไม่ใส่ (กันค่าผิด)
   const SKILL_PRESETS = [
-    // ---- Swordsman/Knight ----
-    { name: 'Bash', skillId: 3, level: 10, targeted: true, maxUsesPerTarget: 2, maxDistance: 2, spMin: 15, cooldownMs: 2000, job: 'Swordsman/Knight', desc: 'ตีแรง + สตัน' },
-    { name: 'Magnum Break', skillId: 6, level: 10, targeted: false, mobCountMin: 3, spMin: 30, cooldownMs: 5000, job: 'Knight', desc: 'AoE รอบตัว' },
-    { name: 'Provoke', skillId: 7, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, spMin: 5, cooldownMs: 3000, job: 'Swordsman', desc: 'ลด def มอน' },
-    { name: 'Endure', skillId: 8, level: 10, selfCast: true, intervalMin: 3, spMin: 10, cooldownMs: 1000, job: 'Swordsman', desc: 'บัพ ไม่กระตุก' },
-    { name: 'Twohand Quicken', skillId: 30, level: 10, selfCast: true, intervalMin: 3, spMin: 50, cooldownMs: 1000, job: 'Knight', desc: 'บัพ ASPD ดาบสองมือ' },
-    { name: 'Bowling Bash', skillId: 32, level: 10, targeted: true, mobCountMin: 2, maxUsesPerTarget: 1, maxDistance: 2, spMin: 22, cooldownMs: 3000, job: 'Knight Lord', desc: 'ตีกระแทก' },
-    { name: 'Charge Attack', skillId: 40, level: 1, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, minDistance: 5, spMin: 30, cooldownMs: 2000, job: 'Knight', desc: 'พุ่งเข้าหามอน' },
-    // ---- Archer/Hunter ----
+    // ---- Archer/Hunter (ทดลองครบ) ----
     { name: 'Double Strafe', skillId: 24, level: 10, targeted: true, maxUsesPerTarget: 2, maxDistance: 12, spMin: 14, cooldownMs: 2000, job: 'Archer/Hunter', desc: 'ยิง 2 ลูก' },
     { name: 'Improve Concentration', skillId: 27, level: 10, selfCast: true, intervalMin: 4, spMin: 44, cooldownMs: 1000, job: 'Archer/Hunter', desc: 'บัพ DEX+AGI' },
-    { name: 'Arrow Shower', skillId: 47, level: 10, targeted: false, mobCountMin: 3, spMin: 15, cooldownMs: 3000, job: 'Hunter', desc: 'AoE ธนู' },
-    // ---- Mage/Wizard ----
-    { name: 'Napalm Beat', skillId: 11, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 9, spMin: 9, cooldownMs: 1500, job: 'Mage', desc: 'Ghost damage' },
-    { name: 'Soul Strike', skillId: 13, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 9, spMin: 18, cooldownMs: 2000, job: 'Mage', desc: 'โจมตีไร้ธาตุ' },
-    { name: 'Frost Diver', skillId: 15, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 9, spMin: 25, cooldownMs: 2500, job: 'Mage', desc: 'แช่แข็ง' },
-    { name: 'Fire Bolt', skillId: 17, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 9, spMin: 12, cooldownMs: 3000, job: 'Mage', desc: 'ไฟลูกต่อ Lv' },
-    { name: 'Lightning Bolt', skillId: 20, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 9, spMin: 12, cooldownMs: 3000, job: 'Mage', desc: 'สายฟ้าลูกต่อ Lv' },
-    { name: 'Energy Coat', skillId: 62, level: 1, selfCast: true, intervalMin: 5, spMin: 30, cooldownMs: 1000, job: 'Mage', desc: 'บัพลด damage' },
-    { name: 'Thunderstorm', skillId: 21, level: 10, targeted: false, mobCountMin: 3, spMin: 24, cooldownMs: 4000, job: 'Wizard', desc: 'AoE สายฟ้า' },
-    // ---- Acolyte/Priest ----
-    { name: 'Heal', skillId: 28, level: 10, selfCast: true, intervalMin: 0, spMin: 40, cooldownMs: 1000, job: 'Acolyte/Priest', desc: 'รักษาตัวเอง' },
-    { name: 'Increase AGI', skillId: 29, level: 10, selfCast: true, intervalMin: 5, spMin: 45, cooldownMs: 1000, job: 'Acolyte', desc: 'บัพความเร็ว' },
-    { name: 'Blessing', skillId: 36, level: 10, selfCast: true, intervalMin: 5, spMin: 64, cooldownMs: 1000, job: 'Acolyte', desc: 'บัพ STR+INT+DEX' },
-    { name: 'Pneuma', skillId: 25, level: 1, targeted: false, mobCountMin: 0, spMin: 10, cooldownMs: 5000, job: 'Acolyte', desc: 'กันโจมตีไกล' },
-    // ---- Merchant/Blacksmith ----
-    { name: 'Cart Revolution', skillId: 87, level: 1, targeted: false, mobCountMin: 2, spMin: 12, cooldownMs: 2000, job: 'Merchant', desc: 'AoE รถเข็น' },
-    { name: 'Over Thrust', skillId: 84, level: 5, selfCast: true, intervalMin: 3, spMin: 18, cooldownMs: 1000, job: 'Blacksmith', desc: 'บัพดาเมจ' },
-    { name: 'Weaponry Research', skillId: 114, level: 10, selfCast: true, intervalMin: 5, spMin: 10, cooldownMs: 1000, job: 'Blacksmith', desc: 'บัพ HIT+ATK' },
-    // ---- Thief/Assassin/Rogue ----
-    { name: 'Envenom', skillId: 52, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 2, spMin: 12, cooldownMs: 1500, job: 'Thief', desc: 'ตี+พิษ' },
-    { name: 'Hiding', skillId: 51, level: 1, selfCast: true, intervalMin: 0, spMin: 10, cooldownMs: 1000, job: 'Thief', desc: 'ล่องหา' },
-    { name: 'Sonic Blow', skillId: 135, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 2, spMin: 16, cooldownMs: 3000, job: 'Assassin', desc: '8 ฮิต' },
-    { name: 'Enchant Poison', skillId: 132, level: 10, selfCast: true, intervalMin: 5, spMin: 20, cooldownMs: 1000, job: 'Assassin', desc: 'บัพธาตุพิษ' },
-    { name: 'Grimtooth', skillId: 137, level: 5, targeted: true, maxUsesPerTarget: 1, maxDistance: 5, spMin: 3, cooldownMs: 1500, job: 'Assassin', desc: 'แทงใต้ดิน' },
-    // ---- Ninja/Gunslinger ----
-    { name: 'Throw Shuriken', skillId: 221, level: 10, targeted: true, maxUsesPerTarget: 3, maxDistance: 9, spMin: 3, cooldownMs: 500, job: 'Ninja', desc: 'ขว้างดาว' },
-    { name: 'Flip Tatami', skillId: 227, level: 1, targeted: false, mobCountMin: 2, spMin: 15, cooldownMs: 2000, job: 'Ninja', desc: 'AoE รอบตัว' },
+    { name: 'Charge Arrow', skillId: 25, level: 1, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, spMin: 15, cooldownMs: 2000, job: 'Archer/Hunter', desc: 'ดันมอนออกไกล' },
+    { name: 'Arrow Shower', skillId: 26, level: 5, ground: true, maxUsesPerTarget: 1, maxDistance: 9, mobCountMin: 2, spMin: 15, cooldownMs: 3000, job: 'Hunter', desc: 'AoE ธนู (เลือกพื้นที่)' },
   ];
   function skillPresetGroups() {
     const groups = {};
@@ -3561,7 +3552,7 @@
           </div>`;
         // ★ ฟอร์มแก้ไข (แสดงเมื่อกด ✎)
         if (editingSkillIdx === i) {
-          const modeVal = s.selfCast ? 'self' : (s.targeted ? 'targeted' : 'aoe');
+          const modeVal = s.selfCast ? 'self' : (s.ground ? 'ground' : (s.targeted ? 'targeted' : 'aoe'));
           const fld = (label, inner, title) => `<label style="display:flex;flex-direction:column;gap:1px;font-size:9px;color:#9aa0a6" title="${title}">${label}${inner}</label>`;
           const inp = (key, val, w) => `<input data-edit="${key}" type="number" value="${val}" style="width:${w};background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">`;
           row += `<div style="padding:8px;background:rgba(0,0,0,.2);border-radius:4px;margin-top:4px">
@@ -3573,6 +3564,7 @@
             <div style="margin-bottom:6px">
               ${fld('โหมดการใช้งาน', `<select data-edit="mode" style="width:100%;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">
                 <option value="targeted"${modeVal==='targeted'?' selected':''}>targeted — เลือกเป้า (Bash, Double Strafe)</option>
+                <option value="ground"${modeVal==='ground'?' selected':''}>ground — เลือกพื้นที่ (Arrow Shower)</option>
                 <option value="aoe"${modeVal==='aoe'?' selected':''}>AoE — รอบตัว (Magnum Break)</option>
                 <option value="self"${modeVal==='self'?' selected':''}>self-cast — ใช้กับตัวเอง (Quicken, Blessing)</option>
               </select>`, 'targeted=ต้องมีมอนเป้าหมาย, AoE=ใช้รอบตัว, self=ใช้กับตัวเอง')}
@@ -3624,8 +3616,9 @@
           <input id="__assist_skill_lvl" type="number" placeholder="Lv" value="1" style="width:50px;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit">
         </div>
         <select id="__assist_skill_mode" style="width:100%;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit;margin-bottom:4px">
-          <option value="targeted">targeted (Bash/Charge — ตีมอน)</option>
-          <option value="aoe">AoE (Magnum Break — รุม)</option>
+          <option value="targeted">targeted (Bash/Double Strafe — เลือกเป้า)</option>
+          <option value="ground">ground (Arrow Shower — เลือกพื้นที่)</option>
+          <option value="aoe">AoE (Magnum Break — รอบตัว)</option>
           <option value="self">self-cast (Quicken — บัพตัวเอง)</option>
         </select>
         <div style="display:flex;gap:4px;margin-bottom:4px">
@@ -3688,6 +3681,7 @@
           s.level = parseInt(getVal('level'), 10) || 1;
           const mode = getVal('mode');
           s.targeted = mode === 'targeted';
+          s.ground = mode === 'ground';
           s.selfCast = mode === 'self';
           s.spMin = parseInt(getVal('spMin'), 10) || 0;
           const cdSec = parseFloat(getVal('cooldownSec'));
@@ -3745,6 +3739,7 @@
           ASSIST.addSkill({
             name, skillId, level,
             targeted: mode === 'targeted',
+            ground: mode === 'ground',
             selfCast: mode === 'self',
             intervalMin, mobCountMin, maxUsesPerTarget, maxDistance, minDistance, spMin, cooldownMs,
           });
@@ -3894,14 +3889,14 @@
       <div id="__assist_bar">
         <span class="hptext">HP ?</span>
         <div class="hpbar"><div class="hpfill" style="width:0%"></div></div>
-        <span class="pill off" data-loot>Loot</span>
-        <span class="pill off" data-heal>Heal</span>
-        <span class="pill off" data-rest>Rest</span>
-        <span class="pill off" data-combat>Combat</span>
-        <span class="pill off" data-skill>Skill</span>
-        <span class="pill off" data-buff>Buff</span>
-        <span class="pill off" data-sell>Sell</span>
-        <span class="pill off" data-storage>Kafra</span>
+        <span class="pill off" data-loot>📦 Loot</span>
+        <span class="pill off" data-heal>💉 Heal</span>
+        <span class="pill off" data-rest>🪑 Rest</span>
+        <span class="pill off" data-combat>⚔️ Combat</span>
+        <span class="pill off" data-skill>🔮 Skill</span>
+        <span class="pill off" data-buff>✨ Buff</span>
+        <span class="pill off" data-sell>💰 Sell</span>
+        <span class="pill off" data-storage>🏦 Kafra</span>
         <span class="pill" data-teleport style="background:#4a2c6a;color:#d1b3ff">🌀</span>
         <span class="expand">⚙</span>
       </div>
