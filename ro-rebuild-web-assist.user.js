@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.11.1
+// @version      4.11.2
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.11.1';
+  const VERSION = '4.11.2';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3938,7 +3938,7 @@
           <div class="row"><span class="k">🏦 Storage</span><span class="v" data-storagestate>OFF</span></div>
           <h4>ของที่เก็บได้ (ล่าสุด)</h4>
           <div data-items style="font-size:11px;color:#9aa0a6">(ยังไม่มี)</div>
-          <div class="btns"><button class="danger" id="__assist_resetstats">รีเซ็ตสถิติ</button></div>
+          <div class="btns"><button class="danger" id="__assist_clearinv">ล้างรายการของ</button><button class="danger" id="__assist_resetstats">รีเซ็ตสถิติ</button></div>
         </div>
         <div class="__assist_page" data-page="config">
           <div class="btns">
@@ -4334,6 +4334,10 @@
     tBtn('#__assist_t_warptomon', (v) => ASSIST.toggleWarpToMonster(v), 'warpToMonster');
 
     root.querySelector('#__assist_resetstats').addEventListener('click', () => ASSIST.resetStats());
+    root.querySelector('#__assist_clearinv').addEventListener('click', () => {
+      inventory.clear(); equipmentSlots.clear();
+      log('🎒 ล้างรายการของที่เก็บได้แล้ว');
+    });
     root.querySelector('#__assist_clearlog').addEventListener('click', () => ASSIST.clearLogs());
     const updBtn = root.querySelector('#__assist_updatebtn');
     if (updBtn) updBtn.addEventListener('click', () => { if (confirm('อัปเดตเป็นเวอร์ชั่นล่าสุด?\n(หลังอัปเดตต้อง reconnect เกม ปิด-เปิดหน้า)')) ASSIST.update(); });
