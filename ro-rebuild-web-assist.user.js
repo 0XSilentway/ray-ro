@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.11.0
+// @version      4.11.1
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.11.0';
+  const VERSION = '4.11.1';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3899,6 +3899,7 @@
         <span class="pill off" data-rest>Rest</span>
         <span class="pill off" data-combat>Combat</span>
         <span class="pill off" data-skill>Skill</span>
+        <span class="pill off" data-buff>Buff</span>
         <span class="pill off" data-sell>Sell</span>
         <span class="pill off" data-storage>Kafra</span>
         <span class="pill" data-teleport style="background:#4a2c6a;color:#d1b3ff">🌀</span>
@@ -4166,6 +4167,7 @@
           CFG.combatEnabled ? ASSIST.combatOff() : ASSIST.combatOn();
         }
         if (pill.hasAttribute('data-skill')) CFG.skillEnabled ? ASSIST.skillOff() : ASSIST.skillOn();
+        if (pill.hasAttribute('data-buff')) CFG.buffEnabled ? ASSIST.buffOff() : ASSIST.buffOn();
         if (pill.hasAttribute('data-sell')) CFG.sellEnabled ? ASSIST.sellOff() : ASSIST.sellOn();
         if (pill.hasAttribute('data-storage')) CFG.storageEnabled ? ASSIST.storageOff() : ASSIST.storageOn();
         if (pill.hasAttribute('data-teleport')) {
@@ -4377,6 +4379,7 @@
       else if (p.hasAttribute('data-rest')) { on = CFG.restEnabled; label = isResting ? '🪑' : 'Rest'; }
       else if (p.hasAttribute('data-combat')) { on = CFG.combatEnabled; label = 'Combat'; }
       else if (p.hasAttribute('data-skill')) { on = CFG.skillEnabled; label = 'Skill'; }
+      else if (p.hasAttribute('data-buff')) { on = CFG.buffEnabled; label = 'Buff'; }
       else if (p.hasAttribute('data-sell')) { on = CFG.sellEnabled; label = 'Sell'; }
       else if (p.hasAttribute('data-storage')) { on = CFG.storageEnabled; label = 'Kafra'; }
       else return;
