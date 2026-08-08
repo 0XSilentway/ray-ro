@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.13.0
+// @version      4.14.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.13.0';
+  const VERSION = '4.14.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -489,11 +489,20 @@
     itemsByCount: new Map(), // itemId -> จำนวนที่เก็บได้
     pickupFails: 0,        // ครั้งที่พยายามเก็บแล้วล้มเหลว
     deaths: 0,             // ครั้งที่ตาย
+    // ★ rolling windows (mirror world.js:66-67, bot.js:401-422)
+    dealtWindow: [],       // [{t, damage}] — 10s rolling for DPS
+    attackWindow: [],      // [{t}] — 10s rolling for ASPD (รวม miss)
+    goldWindow: [],        // [{t, gold}] — 5min rolling for zeny/hour
+    sessionDamageDealt: 0, // cumulative total damage (session)
+    sessionAttacks: 0,     // cumulative total attacks (session)
+    sessionGold: 0,        // cumulative total gold value (session)
   };
   function resetStats() {
     stats.startTime = Date.now();
     stats.kills = 0; stats.itemsLooted = 0; stats.expGained = 0;
     stats.itemsByCount = new Map(); stats.pickupFails = 0; stats.deaths = 0;
+    stats.dealtWindow = []; stats.attackWindow = []; stats.goldWindow = [];
+    stats.sessionDamageDealt = 0; stats.sessionAttacks = 0; stats.sessionGold = 0;
   }
 
   // ---------- HP tracking ----------
@@ -851,6 +860,12 @@
         const itemId = (it || wit).itemId;
         stats.itemsLooted++;
         stats.itemsByCount.set(itemId, (stats.itemsByCount.get(itemId) || 0) + 1);
+        // ★ zeny/hour tracking — buyPrice × count (mirror bot.js:401-422)
+        const price = itemPrice(itemId);
+        if (price > 0) {
+          stats.goldWindow.push({ t: nowMs(), gold: price });
+          stats.sessionGold += price;
+        }
         log('✅ เก็บได้', nameOf(itemId), 'drop', dropId);
         // ★ Card detection — เก็บการ์ดได้ → log สำคัญ
         const itemName = itemDisplayName(itemId);
@@ -1316,6 +1331,16 @@
         // ★ reset pending เฉพาะ damage > 0 (mirror bot.js:343) — miss (damage=0) ไม่ reset
         if (damage > 0 && target && target.id === victimId) { target.lastAttackResultAt = now; target.pendingAttacks = 0; target.firstAttackAt = 0; stuckAbandonCount = 0; stuckAbandonHistory = []; }
         markCombat();
+        // ★ DPS/ASPD tracking — นับเฉพาะที่เราเป็น attacker (mirror world.js:843-857)
+        if (isOurAttack) {
+          const t = nowMs();
+          stats.attackWindow.push({ t });           // นับทุก hit (รวม miss)
+          stats.sessionAttacks++;
+          if (damage > 0) {
+            stats.dealtWindow.push({ t, damage });
+            stats.sessionDamageDealt += damage;
+          }
+        }
       }
       // มอนตีเรา → mark mobAttacker
       else if (victimId === playerId || (victimId === 0 && attacker !== playerId)) {
@@ -3373,6 +3398,15 @@
     getStats() {
       const elapsed = Math.max(1, Date.now() - stats.startTime);
       const elapsedMin = elapsed / 60000;
+      const now = Date.now();
+      // ★ rolling window cleanup + calc (mirror world.js:1699-1721, bot.js:4439-4443)
+      const dpsWindow = stats.dealtWindow.filter(d => d.t >= now - 10000);
+      const atkWindow = stats.attackWindow.filter(a => a.t >= now - 10000);
+      const goldWin = stats.goldWindow.filter(g => g.t >= now - 300000);
+      // trim old entries (กัน array โตไม่หยุด)
+      if (stats.dealtWindow.length > 500) stats.dealtWindow = dpsWindow;
+      if (stats.attackWindow.length > 500) stats.attackWindow = atkWindow;
+      if (stats.goldWindow.length > 500) stats.goldWindow = goldWin;
       return {
         ...stats,
         itemsByCount: [...stats.itemsByCount.entries()]
@@ -3381,6 +3415,9 @@
         elapsedMs: elapsed,
         expPerMin: elapsedMin > 0 ? Math.round(stats.expGained / elapsedMin) : 0,
         killsPerMin: elapsedMin > 0 ? +(stats.kills / elapsedMin).toFixed(1) : 0,
+        dps: dpsWindow.length > 0 ? Math.round(dpsWindow.reduce((s, d) => s + d.damage, 0) / 10) : 0,
+        aspd: atkWindow.length > 0 ? +((atkWindow.length / 10)).toFixed(1) : 0,
+        goldRatePerHour: goldWin.length > 0 ? Math.round(goldWin.reduce((s, g) => s + g.gold, 0) / 5 * 60) : 0,
       };
     },
     resetStats() { resetStats(); log('📊 รีเซ็ตสถิติแล้ว'); },
@@ -4022,6 +4059,9 @@
           <div class="row"><span class="k">💰 ยอด zeny (session)</span><span class="v" data-zeny style="color:#f1c40f">0z</span></div>
           <div class="row"><span class="k">EXP รวม</span><span class="v" data-exp>0</span></div>
           <div class="row"><span class="k">EXP/นาที</span><span class="v" data-expmin>0</span></div>
+          <div class="row"><span class="k">⚔️ Damage/วิ (10วิ)</span><span class="v" data-dps style="color:#e67e22">0</span></div>
+          <div class="row"><span class="k">⚡ โจมตี/วิ (ASPD)</span><span class="v" data-aspd style="color:#3498db">0</span></div>
+          <div class="row"><span class="k">💰 Zeny/ชม. (5นาที)</span><span class="v" data-goldrate style="color:#f1c40f">0z</span></div>
           <div class="row"><span class="k">เวลาทำงาน</span><span class="v" data-elapsed>0s</span></div>
           <div class="row"><span class="k">ตาย</span><span class="v" data-deaths>0</span></div>
           <h4>Combat</h4>
@@ -4528,6 +4568,9 @@
     set('[data-looted]', s.itemsLooted);
     set('[data-exp]', s.expGained.toLocaleString());
     set('[data-expmin]', s.expPerMin.toLocaleString());
+    set('[data-dps]', s.dps > 0 ? s.dps.toLocaleString() : '—');
+    set('[data-aspd]', s.aspd > 0 ? s.aspd.toFixed(1) : '—');
+    set('[data-goldrate]', s.goldRatePerHour > 0 ? s.goldRatePerHour.toLocaleString() + 'z' : '—');
     set('[data-elapsed]', fmtMs(s.elapsedMs));
     set('[data-deaths]', s.deaths);
     set('[data-zeny]', sessionZeny().toLocaleString() + 'z');
