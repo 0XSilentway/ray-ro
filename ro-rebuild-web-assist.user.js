@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.14.0
+// @version      4.14.1
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.14.0';
+  const VERSION = '4.14.1';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -1331,8 +1331,10 @@
         // ★ reset pending เฉพาะ damage > 0 (mirror bot.js:343) — miss (damage=0) ไม่ reset
         if (damage > 0 && target && target.id === victimId) { target.lastAttackResultAt = now; target.pendingAttacks = 0; target.firstAttackAt = 0; stuckAbandonCount = 0; stuckAbandonHistory = []; }
         markCombat();
-        // ★ DPS/ASPD tracking — นับเฉพาะที่เราเป็น attacker (mirror world.js:843-857)
-        if (isOurAttack) {
+        // ★ DPS/ASPD tracking — นับทุกครั้งที่เราตี (isOurAttack หรือ target โดน)
+        //   isOurAttack = server ส่ง 0x0b บอกว่าเราตี, isTargetHit = target ของเราโดน damage
+        //   (server บางตัวส่ง 0x17 แทน 0x0b → isOurAttack ไม่เป็น true → ใช้ isTargetHit ด้วย)
+        if (isOurAttack || isTargetHit) {
           const t = nowMs();
           stats.attackWindow.push({ t });           // นับทุก hit (รวม miss)
           stats.sessionAttacks++;
