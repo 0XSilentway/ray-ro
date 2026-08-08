@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.14.2
+// @version      4.15.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.14.2';
+  const VERSION = '4.15.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -1336,12 +1336,19 @@
         //   (server บางตัวส่ง 0x17 แทน 0x0b → isOurAttack ไม่เป็น true → ใช้ isTargetHit ด้วย)
         if (isOurAttack || isTargetHit) {
           const t = nowMs();
-          stats.attackWindow.push({ t });           // นับทุก hit (รวม miss)
+          stats.attackWindow.push({ t });
           stats.sessionAttacks++;
           if (damage > 0) {
             stats.dealtWindow.push({ t, damage });
             stats.sessionDamageDealt += damage;
           }
+          // ★ claim: เราตีมอนตัวนี้ → ยึดสิทธิ์ (mirror world.js:825-836)
+          if (!m._claimedByMe && !m._lastEngagedByOtherAt) {
+            m._claimedByMe = true; m._claimedAt = t;
+          } else if (m._claimedByMe) {
+            // renew claim
+          }
+          m._lastEngagedByMeAt = t;
         }
       }
       // มอนตีเรา → mark mobAttacker
@@ -1365,23 +1372,40 @@
       // victim = player → ข้าม (โดนตี จัดการใน 0x0b แล้ว)
       if (victimId !== playerId && victimId !== 0) {
         const now = nowMs();
-        // ★ stamp _lastDamageAt บน victim (กัน false despawn)
         let m = entities.get(victimId);
         if (!m) { m = { id: victimId, kind: 1, alive: true }; entities.set(victimId, m); }
         m._lastDamageAt = now;
-        // ★ DPS/ASPD tracking — heuristic: victim เป็นมอน = เราตี
-        //   (mirror world.js:883-886 "assume player เป็น attacker")
-        const t = now;
-        stats.attackWindow.push({ t });
-        stats.sessionAttacks++;
-        if (damage > 0) {
-          stats.dealtWindow.push({ t, damage });
-          stats.sessionDamageDealt += damage;
-          // reset pending attacks (เหมือน 0x0b)
-          if (target && target.id === victimId) {
-            target.lastAttackResultAt = now; target.pendingAttacks = 0; target.firstAttackAt = 0;
-            stuckAbandonCount = 0; stuckAbandonHistory = [];
+        // ★★ heuristic: เราเป็นคนตีหรือคนอื่น?
+        //   0x17 ไม่มี attacker field → ใช้ "เราส่ง ATTACK ใส่มอนตัวนี้ภายใน 2 วินาทีไหม?" เป็นตัววัด
+        //   ถ้าใช่ = เราตี (DPS/claim/reset pending)
+        //   ถ้าไม่ใช่ = คนอื่นตี → stamp _lastEngagedByOtherAt (anti-KS)
+        const weAttackedThis = (lastAttackSentTarget === victimId && (now - lastAttackSentAt) < 2000);
+        if (weAttackedThis) {
+          // ★ เราตี — DPS/ASPD tracking + claim
+          stats.attackWindow.push({ t: now });
+          stats.sessionAttacks++;
+          if (damage > 0) {
+            stats.dealtWindow.push({ t: now, damage });
+            stats.sessionDamageDealt += damage;
+            if (target && target.id === victimId) {
+              target.lastAttackResultAt = now; target.pendingAttacks = 0; target.firstAttackAt = 0;
+              stuckAbandonCount = 0; stuckAbandonHistory = [];
+            }
           }
+          // ★ claim: ถ้าเราตีมอนตัวนี้ก่อนคนอื่น → claim (mirror world.js:825-836)
+          if (!m._claimedByMe && !m._lastEngagedByOtherAt) {
+            m._claimedByMe = true; m._claimedAt = now;
+          } else if (m._claimedByMe) {
+            // มี claim อยู่แล้ว → renew
+          } else if (m._lastEngagedByOtherAt && (now - m._lastEngagedByOtherAt > CFG.antiKSCooldownMs)) {
+            // anti-KS cooldown หมดแล้ว → claim ใหม่ได้
+            m._claimedByMe = true; m._claimedAt = now;
+          }
+          m._lastEngagedByMeAt = now;
+        } else {
+          // ★ คนอื่นตีมอนตัวนี้ → stamp anti-KS (mirror world.js:864-872)
+          m._lastEngagedByOtherAt = now;
+          if (!m._claimedByMe) m._claimedByMe = false;   // คนอื่นตีก่อน → เราไม่ claim
         }
         markCombat();
       }
@@ -1873,10 +1897,10 @@
     }
     if (matchList(m, CFG.targetBlacklist)) return false;
     if (CFG.targetWhitelist.length && !matchList(m, CFG.targetWhitelist)) return false;
-    // anti-KS: ข้ามมอนที่คนอื่นตีอยู่
-    if (CFG.antiKS && m._lastEngagedByOtherAt && now - m._lastEngagedByOtherAt < CFG.antiKSCooldownMs) return false;
-    // avoid players: ข้ามมอนที่อยู่ใกล้ผู้เล่นคนอื่น
-    if (CFG.avoidOtherPlayers) {
+    // anti-KS: ข้ามมอนที่คนอื่นตีอยู่ — ★ ยกเว้นถ้าเรา claim แล้ว (mirror world.js:1855 !e._claimedByMe)
+    if (CFG.antiKS && !m._claimedByMe && m._lastEngagedByOtherAt && now - m._lastEngagedByOtherAt < CFG.antiKSCooldownMs) return false;
+    // avoid players: ข้ามมอนที่อยู่ใกล้ผู้เล่นคนอื่น — ★ ยกเว้นถ้าเรา claim (mirror world.js:1851 !e._claimedByMe)
+    if (CFG.avoidOtherPlayers && !m._claimedByMe) {
       for (const e of entities.values()) {
         // ★ ต้องมี name ด้วย (mirror world.js:1777) — กัน ghost entity kind=0 ที่ไม่มีชื่อ
         if (e.kind === 0 && e.alive && e.id !== playerId && e.x != null && e.name && !isStaleId(e.id, now)) {
@@ -1966,6 +1990,8 @@
 
   // ---------- combat encoders ----------
   // ATTACK OUT: [0b][target_id:4]
+  let lastAttackSentAt = 0;        // ★ timestamp ที่เราส่ง ATTACK ล่าสุด
+  let lastAttackSentTarget = null; // ★ targetId ที่เราส่ง ATTACK ใส่
   function sendAttack(targetId) {
     if (!activeWS || activeWS.readyState !== 1) return false;
     const b = new Uint8Array(5);
@@ -1973,6 +1999,8 @@
     b[1] = targetId & 0xff; b[2] = (targetId >> 8) & 0xff;
     b[3] = (targetId >> 16) & 0xff; b[4] = (targetId >>> 24) & 0xff;
     activeWS.send(b);
+    lastAttackSentAt = nowMs();    // ★ track เพื่อ heuristic anti-KS ใน 0x17
+    lastAttackSentTarget = targetId;
     return true;
   }
   // ★ SKILL OUT (mirror protocol.js:223-248):
@@ -2126,6 +2154,9 @@
     if (target) {
       log('🚫 abandon target', target.id, '(' + reason + ')');
       if (cooldownMs > 0) abandonCooldown.set(target.id, nowMs() + cooldownMs);
+      // ★ เคลียร์ claim (mirror bot.js:3914-3916) — กันมอนที่ abandon ดึงกลับมาวนลูป
+      const e = entities.get(target.id);
+      if (e && e._claimedByMe) e._claimedByMe = false;
       if (stuck) {
         stuckAbandonHistory.push(nowMs());
         stuckAbandonHistory = stuckAbandonHistory.filter(t => nowMs() - t < 60000);
