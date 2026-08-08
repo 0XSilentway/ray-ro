@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.16.0
+// @version      4.16.1
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.16.0';
+  const VERSION = '4.16.1';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -4766,8 +4766,6 @@
     if (lm && !isEditing(lm)) lm.value = CFG.filter.mode;
     const ld = root.querySelector('#__assist_lootdelay');
     if (ld && !isEditing(ld)) ld.value = CFG.lootDelayAfterDropMs;
-    syncInput('#__assist_pickradiuskill', CFG.pickRadiusKill);
-    syncToggle('#__assist_t_lootkillpos', CFG.lootUseKillPos);
 
     // combat config sync
     const combatBtn = root.querySelector('#__assist_combatbtn');
@@ -4788,6 +4786,8 @@
     syncInput('#__assist_stuckwarp', CFG.stuckWarpOnAbandon);
     const syncToggle = (sel, on) => { const el = root.querySelector(sel); if (el) el.className = on ? 'on' : 'off'; };
     syncToggle('#__assist_t_antiks', CFG.antiKS);
+    syncInput('#__assist_pickradiuskill', CFG.pickRadiusKill);
+    syncToggle('#__assist_t_lootkillpos', CFG.lootUseKillPos);
     syncToggle('#__assist_t_avoidp', CFG.avoidOtherPlayers);
     syncToggle('#__assist_t_lowhp', CFG.targetLowestHpFirst);
     syncToggle('#__assist_t_wander', CFG.wanderEnabled);
