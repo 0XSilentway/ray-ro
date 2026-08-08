@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.12.0
+// @version      4.12.1
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.12.0';
+  const VERSION = '4.12.1';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3353,6 +3353,51 @@
     checkVersion() { return checkVersion(); },
     update() { return doUpdate(); },
     saveConfig() { saveConfig(); log('💾 บันทึกการตั้งค่าลงเครื่องแล้ว'); },
+
+    // ---------- Full export/import (ย้ายเครื่อง) ----------
+    //  รวม: config + buff times + skill times + nav data
+    exportAll() {
+      const data = { _version: VERSION, _exportedAt: new Date().toISOString() };
+      const cfg = {};
+      for (const k of PERSIST_KEYS) if (k in CFG) cfg[k] = CFG[k];
+      data.config = cfg;
+      const buff = {};
+      for (const [id, ts] of lastBuffUse) buff[id] = ts;
+      data.buffTimes = buff;
+      const skill = {};
+      for (const [id, ts] of lastSkillUse) skill[id] = ts;
+      data.skillTimes = skill;
+      data.nav = navExportAll();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'ro-assist-backup-' + new Date().toISOString().slice(0, 10) + '.json'; a.click();
+      URL.revokeObjectURL(url);
+      log('📤 export ข้อมูลทั้งหมด: config + buff + skill + nav');
+    },
+    importAll(json) {
+      try {
+        const data = typeof json === 'string' ? JSON.parse(json) : json;
+        if (!data || typeof data !== 'object') throw new Error('รูปแบบผิด');
+        let count = 0;
+        if (data.config) {
+          for (const k of PERSIST_KEYS) if (k in data.config) { CFG[k] = data.config[k]; count++; }
+          saveConfig();
+        }
+        if (data.buffTimes) {
+          lastBuffUse.clear();
+          for (const [id, ts] of Object.entries(data.buffTimes)) lastBuffUse.set(Number(id), Number(ts) || 0);
+          saveBuffTimes();
+        }
+        if (data.skillTimes) {
+          lastSkillUse.clear();
+          for (const [id, ts] of Object.entries(data.skillTimes)) lastSkillUse.set(Number(id), Number(ts) || 0);
+          saveSkillTimes();
+        }
+        if (data.nav) { count += navImportAll(data.nav); }
+        log('📥 import ข้อมูลสำเร็จ: ' + count + ' รายการ');
+      } catch (e) { log('⚠️ import ล้มเหลว:', e.message); }
+    },
   };
 
   // ============================================================
@@ -3934,6 +3979,12 @@
           <h4>ของที่เก็บได้ (ล่าสุด)</h4>
           <div data-items style="font-size:11px;color:#9aa0a6">(ยังไม่มี)</div>
           <div class="btns"><button class="danger" id="__assist_clearinv">ล้างรายการของ</button><button class="danger" id="__assist_resetstats">รีเซ็ตสถิติ</button></div>
+          <h4>📤 สำรอง / ย้ายเครื่อง</h4>
+          <div class="btns">
+            <button id="__assist_exportall">📤 export ทั้งหมด</button>
+            <button id="__assist_importall">📥 import</button>
+          </div>
+          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ export รวม config + buff/skill times + nav data<br>★ import = ทับค่าปัจจุบัน</div>
         </div>
         <div class="__assist_page" data-page="config">
           <div class="btns">
@@ -4332,6 +4383,18 @@
     root.querySelector('#__assist_clearinv').addEventListener('click', () => {
       inventory.clear(); equipmentSlots.clear();
       log('🎒 ล้างรายการของที่เก็บได้แล้ว');
+    });
+    root.querySelector('#__assist_exportall').addEventListener('click', () => ASSIST.exportAll());
+    root.querySelector('#__assist_importall').addEventListener('click', () => {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = '.json,application/json';
+      inp.onchange = () => {
+        const file = inp.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => ASSIST.importAll(reader.result);
+        reader.readAsText(file);
+      };
+      inp.click();
     });
     root.querySelector('#__assist_clearlog').addEventListener('click', () => ASSIST.clearLogs());
     const updBtn = root.querySelector('#__assist_updatebtn');
