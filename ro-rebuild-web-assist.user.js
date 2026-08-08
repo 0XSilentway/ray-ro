@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.14.1
+// @version      4.14.2
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.14.1';
+  const VERSION = '4.14.2';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -1353,6 +1353,37 @@
       else if (attacker !== playerId && victimId !== playerId && victimId !== 0) {
         const m = entities.get(victimId);
         if (m && m.kind === 1) m._lastEngagedByOtherAt = now;
+      }
+    }
+    // 0x17 DAMAGE_V2: [17][victimId:4][damage:4][x:2][y:2][flag:1] (14 bytes)
+    //   ★ server ส่ง damage ของมอนที่เราตีผ่าน packet นี้ (ไม่ใช่ 0x0b!)
+    //   ★★ อ่านเฉพาะ damage + victimId เท่านั้น — ไม่อัปเดต x/y (กัน bug ตำแหน่งมอนเสีย)
+    //   heuristic: victim เป็นมอน = เราตี (mirror world.js:889-946)
+    else if (op === 0x17 && u.length >= 9 && playerId != null) {
+      const victimId = u32(u, 1);
+      const damage = u32(u, 5);
+      // victim = player → ข้าม (โดนตี จัดการใน 0x0b แล้ว)
+      if (victimId !== playerId && victimId !== 0) {
+        const now = nowMs();
+        // ★ stamp _lastDamageAt บน victim (กัน false despawn)
+        let m = entities.get(victimId);
+        if (!m) { m = { id: victimId, kind: 1, alive: true }; entities.set(victimId, m); }
+        m._lastDamageAt = now;
+        // ★ DPS/ASPD tracking — heuristic: victim เป็นมอน = เราตี
+        //   (mirror world.js:883-886 "assume player เป็น attacker")
+        const t = now;
+        stats.attackWindow.push({ t });
+        stats.sessionAttacks++;
+        if (damage > 0) {
+          stats.dealtWindow.push({ t, damage });
+          stats.sessionDamageDealt += damage;
+          // reset pending attacks (เหมือน 0x0b)
+          if (target && target.id === victimId) {
+            target.lastAttackResultAt = now; target.pendingAttacks = 0; target.firstAttackAt = 0;
+            stuckAbandonCount = 0; stuckAbandonHistory = [];
+          }
+        }
+        markCombat();
       }
     }
     // 0x18 MONSTER_SKILL: [18][srcId:4][dstId:4][skillId:2]... → aggro tracking
