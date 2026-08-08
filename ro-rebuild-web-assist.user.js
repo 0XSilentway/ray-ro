@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.12.2
+// @version      4.12.3
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.12.2';
+  const VERSION = '4.12.3';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3437,11 +3437,19 @@
   // ★ SKILL_PRESETS — เฉพาะสกิลที่ทดลองแล้ว (verify จาก packet capture)
   //    ถ้ายังไม่ได้ทดลอง = ไม่ใส่ (กันค่าผิด)
   const SKILL_PRESETS = [
+    // ---- Swordsman/Knight (จากบอทหลัก config + packet capture) ----
+    { name: 'Bash', skillId: 3, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 2, spMin: 15, cooldownMs: 72, job: 'Swordsman/Knight', desc: 'ตีแรง + สตัน' },
+    { name: 'Magnum Break', skillId: 6, level: 10, mobCountMin: 2, maxUsesPerTarget: 1, spMin: 30, cooldownMs: 90, job: 'Knight', desc: 'AoE รอบตัว' },
+    { name: 'Provoke', skillId: 7, level: 10, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, spMin: 5, cooldownMs: 3, job: 'Swordsman', desc: 'ลด def มอน' },
+    { name: 'Endure', skillId: 4, level: 10, selfCast: true, intervalMin: 3, spMin: 10, cooldownMs: 1, job: 'Swordsman', desc: 'บัพ ไม่กระตุก' },
+    { name: 'Twohand Quicken', skillId: 30, level: 10, selfCast: true, intervalMin: 3, spMin: 50, cooldownMs: 1, job: 'Knight', desc: 'บัพ ASPD ดาบสองมือ' },
+    { name: 'Bowling Bash', skillId: 32, level: 10, targeted: true, mobCountMin: 2, maxUsesPerTarget: 1, maxDistance: 2, spMin: 22, cooldownMs: 84, job: 'Knight Lord', desc: 'ตีกระแทก' },
+    { name: 'Charge Attack', skillId: 40, level: 1, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, minDistance: 5, spMin: 30, cooldownMs: 114, job: 'Knight', desc: 'พุ่งเข้าหามอน' },
     // ---- Archer/Hunter (ทดลองครบ) ----
-    { name: 'Double Strafe', skillId: 24, level: 10, targeted: true, maxUsesPerTarget: 2, maxDistance: 12, spMin: 14, cooldownMs: 2000, job: 'Archer/Hunter', desc: 'ยิง 2 ลูก' },
-    { name: 'Improve Concentration', skillId: 27, level: 10, selfCast: true, intervalMin: 4, spMin: 44, cooldownMs: 1000, job: 'Archer/Hunter', desc: 'บัพ DEX+AGI' },
-    { name: 'Charge Arrow', skillId: 25, level: 1, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, spMin: 15, cooldownMs: 2000, job: 'Archer/Hunter', desc: 'ดันมอนออกไกล' },
-    { name: 'Arrow Shower', skillId: 26, level: 5, ground: true, maxUsesPerTarget: 1, maxDistance: 9, mobCountMin: 2, spMin: 15, cooldownMs: 3000, job: 'Hunter', desc: 'AoE ธนู (เลือกพื้นที่)' },
+    { name: 'Double Strafe', skillId: 24, level: 10, targeted: true, maxUsesPerTarget: 2, maxDistance: 12, spMin: 14, cooldownMs: 2, job: 'Archer/Hunter', desc: 'ยิง 2 ลูก' },
+    { name: 'Improve Concentration', skillId: 27, level: 10, selfCast: true, intervalMin: 4, spMin: 44, cooldownMs: 1, job: 'Archer/Hunter', desc: 'บัพ DEX+AGI' },
+    { name: 'Charge Arrow', skillId: 25, level: 1, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, spMin: 15, cooldownMs: 2, job: 'Archer/Hunter', desc: 'ดันมอนออกไกล' },
+    { name: 'Arrow Shower', skillId: 26, level: 5, ground: true, maxUsesPerTarget: 1, maxDistance: 9, mobCountMin: 2, spMin: 15, cooldownMs: 3, job: 'Hunter', desc: 'AoE ธนู (เลือกพื้นที่)' },
   ];
   function skillPresetGroups() {
     const groups = {};
