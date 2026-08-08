@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.15.0
+// @version      4.16.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.15.0';
+  const VERSION = '4.16.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -124,7 +124,7 @@
     'healEnabled', 'healAtPercent', 'healItems', 'healMode', 'healDelayMs', 'healAtMax',
     'buffEnabled', 'buffItems', 'buffRebuffDelayMs', 'autoClearConsoleMin',
     'skillEnabled', 'skills', 'disabledSkillIds',
-    'lootEnabled', 'lootDelayAfterDropMs', 'filter',
+    'lootEnabled', 'lootDelayAfterDropMs', 'lootUseKillPos', 'pickRadiusKill', 'filter',
     'warpLootEnabled',
     'combatEnabled', 'targetWhitelist', 'targetBlacklist', 'attackRange', 'rangedAttackRange',
     'maxAcquireDistance', 'searchRadii', 'maxChaseDistance', 'antiKS', 'avoidOtherPlayers', 'targetLowestHpFirst',
@@ -351,6 +351,8 @@
     pickRadius: 2,                // ระยะ (ช่อง) จากตัวเรา ที่จะถือว่าของเป็นของเรา
     combatWindowMs: 2500,         // ของตกต้องมาภายในเวลานี้หลังเราตี/ฆ่า
     lootDelayAfterDropMs: 600,      // ★ รอ N ms หลังของตก แล้วค่อยเริ่มเก็บ (0 = เก็บทันที, กันดูเป็นบอท)
+    lootUseKillPos: true,         // ★ เช็ค item ใกล้พิกัดมอนที่เราฆ่า (นักธนูฆ่าไกล → ของตกไกล)
+    pickRadiusKill: 5,            // ★ ระยะ (ช่อง) จากพิกัดมอนที่ตาย ที่จะถือว่าของเป็นของเรา
     attemptIntervalMs: 1200,      // ห่างระหว่างการลองเก็บชิ้นเดิม (1.2 วิ — รอ server เดินไปเก็บ)
     sendThrottleMs: 500,          // ห่างระหว่างคำสั่งเก็บทุกชิ้น (กันสแปม)
     maxAttempts: 4,               // เก็บไม่ได้ 6 ครั้ง → ปล่อย (นักธนูฆ่าไกล ตัวเดินไปเก็บนานขึ้น)
@@ -690,6 +692,11 @@
   let lastCombatAt = 0, lastExpAt = 0, lastSendAt = 0;
   const recentDrops = new Map();       // dropId -> {dropId,x,y,itemId,t}
   const queue = new Map();             // dropId -> {dropId,itemId,x,y,attempts,lastAttemptAt,addedAt}
+  // ★ recent kill positions — จดพิกัดมอนที่เราฆ่า เพื่อเช็ค item drop ใกล้หรือไม่
+  //   สำคัญสำหรับนักธนู: ยิงมอนตายไกล → ของตกที่พิกัดมอน ไม่ใช่ที่ตัวเรา
+  const recentKillPos = [];            // [{x, y, t}] — ล่าสุด 20 ตำแหน่ง, TTL 15 วินาที
+  const KILL_POS_TTL_MS = 15000;
+  const KILL_POS_MAX = 20;
 
   // ---------- WARP-TO-LOOT state ----------
   let currentMap = null;               // ชื่อแมปปัจจุบัน (จาก opcode 0x12) — จำเป็นสำหรับ warp
@@ -769,9 +776,21 @@
     if (queue.has(d.dropId)) return;
     const now = Date.now();
     if (now - lastCombatAt > CFG.combatWindowMs) return;
+    // ★ เช็คว่า item อยู่ใกล้เราหรือใกล้พิกัดมอนที่เราฆ่า
     const nearPlayer = (player.x != null && dist(player, d) <= CFG.pickRadius);
     const nearExp = (now - lastExpAt) < 2000;
-    if (!(nearPlayer || nearExp)) return;
+    // ★ nearKillPos: เช็คว่า item อยู่ใกล้พิกัดมอนที่เราฆ่าล่าสุดหรือไม่ (นักธนูยิงไกล)
+    let nearKillPos = false;
+    if (CFG.lootUseKillPos) {
+      // cleanup expired entries
+      while (recentKillPos.length > 0 && now - recentKillPos[0].t > KILL_POS_TTL_MS) recentKillPos.shift();
+      const r = CFG.pickRadiusKill || 5;
+      for (const k of recentKillPos) {
+        if (Math.hypot(k.x - d.x, k.y - d.y) <= r) { nearKillPos = true; break; }
+      }
+    }
+    // ★ เก็บถ้า: ใกล้ตัวเรา OR เพิ่งได้ EXP OR ใกล้พิกัดมอนที่เราฆ่า
+    if (!(nearPlayer || nearExp || nearKillPos)) return;
     if (!shouldLoot(d.itemId)) {
       log('⛔ ข้าม', nameOf(d.itemId), '(ตัวกรอง mode=' + CFG.filter.mode + ') drop', d.dropId);
       return;
@@ -840,6 +859,23 @@
         const jobDelta  = u32(u, 13) | 0;  // offset 13 = jobDelta
         const gain = Math.max(0, baseDelta) + Math.max(0, jobDelta);
         if (gain > 0) stats.expGained += gain;
+      }
+      // ★ จดพิกัดมอนที่เราฆ่า — ใช้ target หรือ entity ล่าสุดที่เราตี
+      //   สำคัญสำหรับนักธนู: ยิงมอนตายไกล → ของตกที่พิกัดมอน ไม่ใช่ที่ตัวเรา
+      let killX = null, killY = null;
+      if (target && target.x != null) { killX = target.x; killY = target.y; }
+      else if (target) {
+        // target อาจถูก abandon แล้ว → หาจาก entity ล่าสุดที่เราตี (_lastEngagedByMeAt)
+        let bestT = 0;
+        for (const e of entities.values()) {
+          if (e._lastEngagedByMeAt && e._lastEngagedByMeAt > bestT && e.x != null) {
+            bestT = e._lastEngagedByMeAt; killX = e.x; killY = e.y;
+          }
+        }
+      }
+      if (killX != null && killY != null) {
+        recentKillPos.push({ x: killX, y: killY, t: Date.now() });
+        while (recentKillPos.length > KILL_POS_MAX) recentKillPos.shift();
       }
       for (const d of recentDrops.values()) tryClaim(d);
     }
@@ -4154,7 +4190,8 @@
             <button id="__assist_manageexcept">📋 จัดการ 'ยกเว้น'</button>
           </div>
           <div class="field"><label>ดีเลย์ก่อนเก็บ (ms หลังของตก) — 0 = เก็บทันที</label><input type="number" id="__assist_lootdelay" min="0" step="100"></div>
-          <div class="btns"><button id="__assist_applylootdelay">ตั้งดีเลย์</button></div>
+          <div class="field"><label>เช็คของใกล้พิกัดมอนที่ฆ่า (ช่อง) — นักธนูยิงไกล → ของตกที่มอน</label><input type="number" id="__assist_pickradiuskill" min="1" max="20" placeholder="5"></div>
+          <div class="btns"><button id="__assist_applylootdelay">ตั้งดีเลย์</button><button id="__assist_t_lootkillpos" class="on">เช็คพิกัดมอนที่ฆ่า</button></div>
 		  <h4>🌀 Warp-to-Loot (วาร์ปไปเก็บของที่ติดกำแพง)</h4>
           <div class="btns"><button id="__assist_warpbtn" class="off">วาร์ปไปเก็บของ: ?</button></div>
           <div class="btns">
@@ -4434,6 +4471,12 @@
     root.querySelector('#__assist_applylootdelay').addEventListener('click', () => {
       const ms = parseInt(root.querySelector('#__assist_lootdelay').value, 10);
       if (!isNaN(ms)) ASSIST.setLootDelay(ms);
+      const rk = parseInt(root.querySelector('#__assist_pickradiuskill').value, 10);
+      if (!isNaN(rk)) { CFG.pickRadiusKill = rk; log('📦 ระยะเช็คพิกัดมอน =', rk, 'ช่อง'); }
+    });
+    root.querySelector('#__assist_t_lootkillpos').addEventListener('click', () => {
+      CFG.lootUseKillPos = !CFG.lootUseKillPos;
+      log('📦 เช็คพิกัดมอนที่ฆ่า =', CFG.lootUseKillPos);
     });
 
     // ---- combat wires ----
@@ -4723,6 +4766,8 @@
     if (lm && !isEditing(lm)) lm.value = CFG.filter.mode;
     const ld = root.querySelector('#__assist_lootdelay');
     if (ld && !isEditing(ld)) ld.value = CFG.lootDelayAfterDropMs;
+    syncInput('#__assist_pickradiuskill', CFG.pickRadiusKill);
+    syncToggle('#__assist_t_lootkillpos', CFG.lootUseKillPos);
 
     // combat config sync
     const combatBtn = root.querySelector('#__assist_combatbtn');
