@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.12.3
+// @version      4.13.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.12.3';
+  const VERSION = '4.13.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -447,6 +447,14 @@
     logBuf.push({ t: Date.now(), msg });
     while (logBuf.length > LOG_BUF_MAX) logBuf.shift();
     if (CFG.verbose) console.log('[ASSIST]', ...a);
+  }
+  // ★ important log buffer — card drop + chat ที่พูดถึง bot
+  const IMPORTANT_BUF_MAX = 200;
+  const importantLogBuf = [];
+  function logImportant(type, msg) {
+    importantLogBuf.push({ t: Date.now(), type, msg });
+    while (importantLogBuf.length > IMPORTANT_BUF_MAX) importantLogBuf.shift();
+    log(msg);   // ส่งไป log ปกติด้วย
   }
   const nameOf = (id) => {
     const db = itemDisplayName(id);
@@ -844,6 +852,11 @@
         stats.itemsLooted++;
         stats.itemsByCount.set(itemId, (stats.itemsByCount.get(itemId) || 0) + 1);
         log('✅ เก็บได้', nameOf(itemId), 'drop', dropId);
+        // ★ Card detection — เก็บการ์ดได้ → log สำคัญ
+        const itemName = itemDisplayName(itemId);
+        if (itemName.endsWith(' Card') || (itemId >= 4001 && itemId <= 4520)) {
+          logImportant('card', '🃏 เก็บการ์ดได้! ' + itemName + ' (' + itemId + ')');
+        }
         // ★ ถ้าเก็บหมดแล้ว (queue ว่าง) → trigger cooldown ก่อน combatLoop acquire ใหม่
         if (queue.size === 0 && warpQueue.size === 0) {
           combatCooldownUntil = nowMs() + CFG.postCombatDelayMs;
@@ -1008,6 +1021,36 @@
         if (msg.includes('could not complete sale') || msg.includes('do not match')) {
           // sell failed signal
           if (sellState === 'SELL') { log('⚠️ ขายของล้มเหลว (server ปฏิเสธ)'); }
+        }
+      } catch (e) {}
+    }
+    // 0x2c CHAT: [2c][sender:4][msg_len:2][msg][name_len:2][name][chat_type:1]
+    //   chatType: 0=nearby, 1=shout, 2=whisper (mirror protocol.js:1113-1128)
+    //   ★ ตรวจคำว่า bot/บอท/บอต → log สำคัญ
+    else if (op === 0x2c && u.length >= 7) {
+      try {
+        let p = 1;
+        const sender = u32(u, p); p += 4;
+        const msgLen = u16(u, p); p += 2;
+        if (p + msgLen > u.length) return;
+        const message = new TextDecoder('utf8', { fatal: false }).decode(u.slice(p, p + msgLen));
+        p += msgLen;
+        let name = '';
+        if (p + 2 <= u.length) {
+          const nameLen = u16(u, p); p += 2;
+          if (p + nameLen <= u.length) {
+            name = new TextDecoder('utf8', { fatal: false }).decode(u.slice(p, p + nameLen));
+            p += nameLen;
+          }
+        }
+        let chatType = -1;
+        if (p < u.length) chatType = u[p];
+        const typeNames = { 0: 'ใกล้', 1: 'ตะโกน', 2: 'กระซิบ' };
+        const typeName = typeNames[chatType] || ('type' + chatType);
+        // ★ ตรวจคำต้องห้าม
+        const lower = message.toLowerCase();
+        if (lower.includes('bot') || message.includes('บอท') || message.includes('บอต')) {
+          logImportant('chat', '💬 [' + typeName + '] ' + (name || '?') + ': ' + message);
         }
       } catch (e) {}
     }
@@ -3343,6 +3386,8 @@
     resetStats() { resetStats(); log('📊 รีเซ็ตสถิติแล้ว'); },
     getLogs() { return logBuf.slice(); },
     clearLogs() { logBuf.length = 0; log('🧹 ล้าง log'); },
+    getImportantLogs() { return importantLogBuf.slice(); },
+    clearImportantLogs() { importantLogBuf.length = 0; log('🧹 ล้าง log สำคัญ'); },
     stopAll() {
       clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop); clearInterval(storageLoop); clearInterval(buffLoop); clearInterval(consoleClearLoop);
       if (typeof uiLoop !== 'undefined') clearInterval(uiLoop);
@@ -3957,6 +4002,7 @@
         <div id="__assist_tabs">
           <div class="tab active" data-page="stats">📊 สถิติ</div>
           <div class="tab" data-page="config">⚙️ ตั้งค่า</div>
+          <div class="tab" data-page="alert">🔔 สำคัญ</div>
           <div class="tab" data-page="log">📋 Log</div>
         </div>
         <div class="__assist_page active" data-page="stats">
@@ -4110,6 +4156,10 @@
           </div>
           <div id="__assist_navstats" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่มีข้อมูล)</div>
           <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เปิด 'บันทึก' แล้วเดินเก็บข้อมูลในแมปที่ต้องการ ปิดเมื่อเสร็จ<br>★ wander จะใช้ waypoint graph แทนสุ่ม (ถ้ามีข้อมูลแมปนั้น)</div>
+        </div>
+        <div class="__assist_page" data-page="alert">
+          <div class="logbox" id="__assist_alertbox"></div>
+          <div class="btns"><button class="danger" id="__assist_clearalert">ล้าง log สำคัญ</button></div>
         </div>
         <div class="__assist_page" data-page="log">
           <div class="logbox" id="__assist_logbox"></div>
@@ -4405,6 +4455,7 @@
       inp.click();
     });
     root.querySelector('#__assist_clearlog').addEventListener('click', () => ASSIST.clearLogs());
+    root.querySelector('#__assist_clearalert')?.addEventListener('click', () => ASSIST.clearImportantLogs());
     const updBtn = root.querySelector('#__assist_updatebtn');
     if (updBtn) updBtn.addEventListener('click', () => { if (confirm('อัปเดตเป็นเวอร์ชั่นล่าสุด?\n(หลังอัปเดตต้อง reconnect เกม ปิด-เปิดหน้า)')) ASSIST.update(); });
 
@@ -4650,6 +4701,24 @@
             const ts = d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')+':'+d.getSeconds().toString().padStart(2,'0');
             return `<div class="logline"><span class="ts">${ts}</span> ${l.msg.replace(/</g,'&lt;')}</div>`;
           }).join('');
+          if (wasNearBottom) box.scrollTop = box.scrollHeight;
+        }
+      }
+    }
+    // ★ alert page (log สำคัญ — card + chat bot)
+    const alertPage = root.querySelector('.__assist_page[data-page="alert"]');
+    if (alertPage && alertPage.classList.contains('active')) {
+      const box = root.querySelector('#__assist_alertbox');
+      if (box) {
+        const logs = ASSIST.getImportantLogs();
+        const wasNearBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+        if (box.childElementCount !== logs.length) {
+          box.innerHTML = logs.length ? logs.map(l => {
+            const d = new Date(l.t);
+            const ts = d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')+':'+d.getSeconds().toString().padStart(2,'0');
+            const color = l.type === 'card' ? '#f1c40f' : (l.type === 'chat' ? '#ef5350' : '#e8e8e8');
+            return `<div class="logline" style="color:${color}"><span class="ts">${ts}</span> ${l.msg.replace(/</g,'&lt;')}</div>`;
+          }).join('') : '<div style="color:#5f6368;padding:20px;text-align:center">(ยังไม่มี log สำคัญ)</div>';
           if (wasNearBottom) box.scrollTop = box.scrollHeight;
         }
       }
