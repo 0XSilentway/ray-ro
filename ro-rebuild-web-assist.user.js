@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.16.1
+// @version      4.17.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.16.1';
+  const VERSION = '4.17.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -128,7 +128,7 @@
     'warpLootEnabled',
     'combatEnabled', 'targetWhitelist', 'targetBlacklist', 'attackRange', 'rangedAttackRange',
     'maxAcquireDistance', 'searchRadii', 'maxChaseDistance', 'antiKS', 'avoidOtherPlayers', 'targetLowestHpFirst',
-    'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius', 'maxEngageSecSlow', 'slowMonsterSubIds',
+    'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius', 'fleeMonsters', 'fleeMonsterRadius', 'maxEngageSecSlow', 'slowMonsterSubIds',
     'wanderEnabled', 'warpFindEnabled', 'warpToMonster', 'stuckWarpOnAbandon',
     'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs',
     'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellNpcX', 'sellNpcY', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
@@ -398,6 +398,8 @@
     fleeOnProximityRadius: 8,
     fleeMobWindowMs: 5000,        // ช่วงเวลาที่นับว่ามอน "กำลังตีเรา"
     fleeCooldownMs: 3000,
+    fleeMonsters: [],             // ★ มอนที่ต้องหนี (ชื่อหรือ sub-ID) — เจอในระยะ → วาร์ปหนีทันที
+    fleeMonsterRadius: 20,        // ★ ระยะ (ช่อง) ที่ถ้าเจอมอนใน fleeMonsters → วาร์ปหนี
     // KS avoidance + ป้องกันแย่ง
     antiKS: true,                 // ไม่ตีมอนที่คนอื่นกำลังสู้ (default ON)
     antiKSCooldownMs: 5000,       // มอนที่ถูกตีโดยคนอื่น จะถูกข้ามไป N ms
@@ -2346,6 +2348,33 @@
     // === 0. post-combat cooldown — รอหลังสู้เสร็จ/เก็บของเสร็จ ก่อนทำอย่างอื่น ===
     //   ยกเว้น flee (ต้องทำทันทีเสมอเพื่อความปลอดภัย)
     const inCooldown = now < combatCooldownUntil;
+    // ★ flee from specific monsters — เจอมอนอันตรายในระยะ → วาร์ปหนีทันที (mirror bot.js:3241-3281)
+    if (CFG.fleeMonsters && CFG.fleeMonsters.length > 0 && player.x != null) {
+      const fleeR = CFG.fleeMonsterRadius || 20;
+      for (const e of entities.values()) {
+        if (!e.alive || e.kind !== 1 || e.x == null) continue;
+        if (isStaleId(e.id, now)) continue;
+        const name = (e.name || '').toLowerCase();
+        const subId = e.sub != null ? String(e.sub) : null;
+        const isDanger = CFG.fleeMonsters.some(n => {
+          const ns = String(n).toLowerCase();
+          if (name && name === ns) return true;
+          if (subId && subId === ns) return true;
+          return false;
+        });
+        if (isDanger) {
+          const d = Math.hypot(e.x - player.x, e.y - player.y);
+          if (d <= fleeR) {
+            log('🚨 เจอ', e.name || e.id.toString(16), 'ในระยะ', d.toFixed(1), 'ช่อง → วาร์ปหนี!');
+            if (sendRandomWarp()) {
+              target = null; monsterAggro.clear(); mobAttackers.clear();
+              lastFarmWarpBackAt = now;
+            }
+            return;
+          }
+        }
+      }
+    }
     if (CFG.fleeOnMobCount > 0 && getMobAttackerCount(CFG.fleeOnProximityRadius) >= CFG.fleeOnMobCount) { doFlee('รุม ' + getMobAttackerCount(CFG.fleeOnProximityRadius) + ' ตัว'); return; }
     if (CFG.fleeOnAggroCount > 0 && getThreatCount(CFG.fleeOnProximityRadius) >= CFG.fleeOnAggroCount) { doFlee('aggro ' + getThreatCount(CFG.fleeOnProximityRadius) + ' ตัว'); return; }
     if (CFG.fleeOnProximityCount > 0 && countMonsters(CFG.fleeOnProximityRadius) >= CFG.fleeOnProximityCount) { doFlee('มอนรอบ ' + countMonsters(CFG.fleeOnProximityRadius) + ' ตัว'); return; }
@@ -4240,6 +4269,8 @@
             <button id="__assist_t_warptomon" class="off">วาร์ปไปหามอนที่ตี</button>
           </div>
           <div class="field"><label>stuck abandon N ครั้งใน 60s → วาร์ปสุ่ม (0=ปิด)</label><input type="number" id="__assist_stuckwarp" min="0" max="20"></div>
+          <div class="field"><label>🚨 มอนที่ต้องหนี (ชื่อหรือ sub-ID คั่นจุลภาค) — เจอในระยะ → วาร์ปหนี</label><input type="text" id="__assist_fleemonsters" placeholder="เช่น MVP,Boss,1234"></div>
+          <div class="field"><label>ระยะหนีมอนอันตราย (ช่อง)</label><input type="number" id="__assist_fleemonsterradius" min="1" max="50" placeholder="20"></div>
           <div class="btns"><button id="__assist_applycombat">ใช้ค่า flee + range</button></div>
 
           <h4>🪑 Rest (นั่งพักฟื้น HP)</h4>
@@ -4501,6 +4532,10 @@
       if (!isNaN(fp)) ASSIST.setFleeProximity(fp);
       const sw = parseInt(root.querySelector('#__assist_stuckwarp').value, 10);
       if (!isNaN(sw)) { CFG.stuckWarpOnAbandon = sw; log('⚔️ stuck abandon → วาร์ปสุ่ม =', sw === 0 ? 'ปิด' : sw + ' ครั้ง'); }
+      const fmList = root.querySelector('#__assist_fleemonsters').value.trim();
+      if (fmList !== '') CFG.fleeMonsters = fmList.split(',').map(s => s.trim()).filter(Boolean);
+      const fmr = parseInt(root.querySelector('#__assist_fleemonsterradius').value, 10);
+      if (!isNaN(fmr)) CFG.fleeMonsterRadius = fmr;
     });
     // ---- rest wires ----
     root.querySelector('#__assist_restbtn').addEventListener('click', () => CFG.restEnabled ? ASSIST.restOff() : ASSIST.restOn());
@@ -4784,6 +4819,8 @@
     syncInput('#__assist_restmaxsec', CFG.restMaxSec);
     syncInput('#__assist_fleeprox', CFG.fleeOnProximityCount);
     syncInput('#__assist_stuckwarp', CFG.stuckWarpOnAbandon);
+    syncInput('#__assist_fleemonsters', (CFG.fleeMonsters || []).join(','));
+    syncInput('#__assist_fleemonsterradius', CFG.fleeMonsterRadius);
     const syncToggle = (sel, on) => { const el = root.querySelector(sel); if (el) el.className = on ? 'on' : 'off'; };
     syncToggle('#__assist_t_antiks', CFG.antiKS);
     syncInput('#__assist_pickradiuskill', CFG.pickRadiusKill);
