@@ -10,16 +10,17 @@
 
 | ระบบ | ทำอะไร | Default | Mini-bar |
 |---|---|---|---|
-| **📦 Auto-Loot** | เก็บของที่ตกจากมอนที่ **เราฆ่าเอง** — สลับชิ้น, ลองหลายครั้ง, ระบบกรอง + popup จัดการรายการ (ไอคอน+ชื่อ) | ON | 📦 |
+| **📦 Auto-Loot** | เก็บของที่ตกจากมอนที่ **เราฆ่าเอง** — เช็คพิกัดมอนที่ฆ่า (นักธนูยิงไกล), สลับชิ้น, ลองหลายครั้ง, popup จัดการรายการ (ไอคอน+ชื่อ) | ON | 📦 |
 | **💉 Auto-Heal** | ใช้ขวดยาอัตโนมัติเมื่อ HP% ต่ำ — เลือกยาได้หลายชนิด, โหมดเรียง/สุ่ม, ตรวจจับ "ยาหมด" | OFF | 💉 |
 | **🪑 Auto-Rest** | HP ต่ำ + ไม่โดนรุม → นั่งพักฟื้น → ลุกยืนกลับฟาร์ม | ON | 🪑 |
-| **⚔️ Auto-Combat** | ตีมอนอัตโนมัติ — progressive search, เลือกเป้าใกล้สุด/HP ต่ำสุด, หนีเมื่อถูกรุม, กันแย่ง (KS), มอนตี damage 1 เพิ่มเวลาฆ่า | OFF | ⚔️ |
-| **🔮 Auto-Skill** | ใช้สกิลตามเงื่อนไข — 3 โหมด (targeted/ground/AoE/self-cast) + SP tracking + cooldown + preset dropdown | OFF | 🔮 |
+| **⚔️ Auto-Combat** | ตีมอนอัตโนมัติ — progressive search, เลือกเป้าใกล้สุด/HP ต่ำสุด, หนีมอนอันตราย, claim system, กันแย่ง (KS), มอนตี damage 1 เพิ่มเวลาฆ่า | OFF | ⚔️ |
+| **🔮 Auto-Skill** | ใช้สกิลตามเงื่อนไข — 4 โหมด (targeted/ground/AoE/self-cast) + SP tracking + cooldown + preset dropdown (11 สกิล) | OFF | 🔮 |
 | **✨ Auto-Buff** | ใช้ไอเทมบัพเป็นระยะ (timer) — countdown display, เก็บเวลาข้าม session | OFF | ✨ |
 | **💰 Auto-Sell** | ไปขายของ NPC อัตโนมัติ — เมื่อของเต็ม/ครบเวลา, per-item toggle (เก็บ/ขาย/ฝาก) | OFF | 💰 |
 | **🏦 Auto-Storage** | ฝากของเข้า Kafra — chain หลังขาย, แยก equipment/stackable | OFF | 🏦 |
 | **🗺️ Navigation** | บันทึกเส้นทางเดิน + waypoint graph — patrol mode (เดินตามลำดับ), export/import ข้อมูล | OFF | — |
 | **🌀 Teleport** | วาร์ปสุ่มในแมปปัจจุบันทันที | — | 🌀 |
+| **🔔 Log สำคัญ** | แสดง card drop + chat ที่พูดถึง bot + หนีมอนอันตราย | — | tab |
 | **📤 Backup** | Import/Export ข้อมูลทั้งหมด — ย้ายเครื่องได้ | — | — |
 
 ทุกระบบเปิด/ปิดเป็นอิสระต่อกัน + บันทึกค่าลง localStorage ข้าม session
@@ -71,6 +72,7 @@ ASSIST.combatOn() / combatOff()
 ASSIST.setTargetWhitelist('Poring', 'Lunatic')  // ว่าง = ตีทุกมอน
 ASSIST.setRanged(8)               // นักธนู: ตีไกล 8 ช่อง
 ASSIST.setFleeMob(4)              // รุม 4 ตัว → วาร์ปหนี
+CFG.fleeMonsters = ['MVP', 'Orc Hero']  // เจอมอนเหล่านี้ → วาร์ปหนีทันที
 
 // ---- Auto-Skill ----
 ASSIST.addSkill({ skillId:24, level:10, targeted:true, maxUsesPerTarget:2, maxDistance:12, spMin:14, cooldownMs:2000 })
@@ -106,11 +108,11 @@ ASSIST.importAll(jsonString)      // import จาก string
 
 ## 🪟 Panel UI
 
-คลิกแถบ **ASSIST** มุมขวาบน → เปิด panel มี 3 tab:
+คลิกแถบ **ASSIST** มุมขวาบน → เปิด panel มี 4 tab:
 
 ### 📊 สถิติ (Stats)
 - HP/SP, ตำแหน่ง, แมปปัจจุบัน/แมปฟาร์ม
-- ฆ่าได้, เก็บของได้, EXP/นาที, ยอด zeny (session)
+- ฆ่าได้, เก็บของได้, EXP/นาที, ⚔️ DPS, ⚡ ASPD, 💰 Zeny/ชม.
 - มอนที่ตีอยู่, aggro, จำนวนมอนรอบตัว
 - ของที่เก็บได้ (พร้อม toggle เก็บ/ขาย/ฝาก)
 - **ล้างรายการของ**, **รีเซ็ตสถิติ**
@@ -119,8 +121,14 @@ ASSIST.importAll(jsonString)      // import จาก string
 ### ⚙️ ตั้งค่า (Config)
 - toggle ทุกระบบ + ช่องตั้งค่า
 - **Popup จัดการรายการ item** (เก็บเฉพาะ/ยกเว้น) — แสดงไอคอน + ชื่อ + ค้นหา + เพิ่ม id manual
-- **Popup จัดการ skill** — preset dropdown + ฟอร์มแก้ไข (label + tooltip ทุกช่อง)
+- **Popup จัดการ skill** — preset dropdown (11 สกิล) + ฟอร์มแก้ไข (label + tooltip ทุกช่อง)
 - Skill/Buff countdown display (เหลือเวลาอีกกี่นาที/วินาที)
+- **มอนที่ต้องหนี** (fleeMonsters) + ระยะหนี
+
+### 🔔 สำคัญ (Alert)
+- 🃏 Card drop (สีทอง)
+- 💬 Chat ที่พูดถึง bot/บอท/บอต (สีแดง, บอกประเภท: ใกล้/ตะโกน/กระซิบ)
+- 🚨 หนีมอนอันตราย (สีแดง)
 
 ### 📋 Log
 - log การทำงานแบบ real-time
@@ -131,11 +139,19 @@ ASSIST.importAll(jsonString)      // import จาก string
 
 ### Auto-Combat (โจมตีอัตโนมัติ)
 - **Progressive search** — ค้นมอนจากรัศมีเล็กไปใหญ่ `[5,10,20,30]` (เลือกใกล้ก่อน)
-- **Targeted skill** — ส่ง packet สกิลแทน/ร่วมกับ attack ปกติ
-- **Stuck handling** — ตีไม่ติด/server เงียบ → abandon + เดินหลีก + cooldown
+- **Claim system** — ตีมอนก่อนคนอื่น → ยึดสิทธิ์ (ตีต่อแม้คนอื่นมาแยม)
+- **Anti-KS** — heuristic ตรวจจาก 0x0b + 0x17 + 0x1d (ข้ามมอนที่คนอื่นตี)
+- **Flee monsters** — เจอมอนอันตราย (MVP/Boss) → วาร์ปหนีทันที
+- **Stuck handling** — ตีไม่ติด/server เงียบ → abandon + เดินหลีก
 - **Slow monster** — มอนตี damage 1 (mushroom/plant) → เพิ่มเวลาฆ่าเป็น 180s
-- **Anti-KS** — ข้ามมอนที่คนอื่นกำลังสู้ (ตรวจจาก ATTACK + SKILL packet)
 - **HP guard** — ป้องกัน HP ผิดเพี้ยนในที่คนเยอะ (playerName guard + grace period)
+
+### Auto-Loot (เก็บของอัตโนมัติ)
+- **Kill position tracking** — จดพิกัดมอนที่เราฆ่า → เช็ค item ใกล้พิกัดมอน (≤5 ช่อง)
+  - แก้ปัญหานักธนูยิงมอนตายไกล → ของตกที่พิกัดมอน ไม่ใช่ที่ตัวเรา
+- **Heuristic ownership** — เก็บเฉพาะของที่อยู่ใกล้ player หรือใกล้พิกัดมอนที่เราฆ่า
+  - ไม่เก็บของคนอื่น (ถ้าไม่อยู่ใกล้พิกัดมอนที่เราฆ่า)
+- **Popup จัดการรายการ** — เลือก item แบบ visual (ไอคอน + ชื่อ + ค้นหา)
 
 ### Auto-Skill (ใช้สกิลอัตโนมัติ)
 4 โหมดการส่ง:
@@ -150,6 +166,7 @@ ASSIST.importAll(jsonString)      // import จาก string
 - **Cooldown + persist** — บันทึกเวลาใช้ล่าสุดข้าม session
 - **Per-target uses** — จำกัดจำนวนครั้งต่อมอน + reset ตอนเปลี่ยน target/ตาย
 - **Preset dropdown** — เลือกสกิลสำเร็จรูป (ทดลองแล้ว) จาก list
+- **Popup จัดการ skill** — เพิ่ม/แก้ไข/ลบ + label + tooltip ทุกช่อง
 
 ### Auto-Sell + Auto-Storage
 - **Sell**: วาร์ปไป NPC → คุย → เลือก Sell → ส่งรายการขาย → วาร์ปกลับ
@@ -178,12 +195,14 @@ ASSIST.importAll(jsonString)      // import จาก string
 |---|---|---|
 | STAT | `0x25` | อ่าน HP/Max HP |
 | SP_UPDATE | `0x27` | อ่าน SP/Max SP |
+| DAMAGE_V2 | `0x17` | damage ที่มอนได้รับ (DPS + anti-KS heuristic) |
 | ITEM_DROP | `0x51` | ของตกจากมอน |
 | PICKUP | `0x52` | สั่งเก็บของ + รับผล |
 | USE_ITEM | `0x2f` | สั่งใช้ยา/buff |
 | SKILL | `0x1d` | สั่งใช้สกิล (targeted/ground/AoE/self) |
-| ATTACK | `0x0b` | สั่งโจมตีมอน |
-| MOVE | `0x07` | สั่งเดิน (click-move) |
+| ATTACK | `0x0b` | สั่งโจมตีมอน + DPS/ASPD tracking |
+| CHAT | `0x2c` | อ่านแชท (ตรวจคำว่า bot/บอท/บอต) |
+| MOVE | `0x07` | สั่งเดิน (click-move) + บันทึก trail |
 | TELEPORT | `0x40` | วาร์ป (flee/warp-loot/warp-farm) |
 | SIT_STAND | `0x0e` | นั่ง/ลุก |
 | SPAWN | `0x06` | ตรวจจับมอน + HP + ตำแหน่ง + playerId |
