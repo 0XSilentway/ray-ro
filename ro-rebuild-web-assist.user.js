@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.18.1
+// @version      4.19.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.18.1';
+  const VERSION = '4.19.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3371,6 +3371,7 @@
       log('🌀 วาร์ปไปแมปฟาร์ม:', CFG.farmMap, '@(', CFG.farmMapX, CFG.farmMapY + ')');
     },
     toggleWarpBack(on) { CFG.warpBackToFarm = !!on; log('🗺️ วาร์ปกลับแมปฟาร์มอัตโนมัติ =', CFG.warpBackToFarm); },
+    openMonitor() { openMonitor(); },
     getSellState() { return { state: sellState, full: inventoryFull, returnTo: sellReturnTo }; },
 
     // ---------- Navigation (บันทึกเส้นทางเดิน + waypoint graph) ----------
@@ -4168,6 +4169,7 @@
         <span class="pill off" data-sell>💰 Sell</span>
         <span class="pill off" data-storage>🏦 Kafra</span>
         <span class="pill" data-teleport style="background:#4a2c6a;color:#d1b3ff">🌀</span>
+        <span class="pill" data-monitor style="background:#1a237e;color:#90caf9">🖥️</span>
         <span class="expand">⚙</span>
       </div>
       <div id="__assist_popup">
@@ -4455,6 +4457,7 @@
         if (pill.hasAttribute('data-teleport')) {
           if (sendRandomWarp()) log('🌀 วาร์ปสุ่ม (กดจาก mini-bar)');
         }
+        if (pill.hasAttribute('data-monitor')) { openMonitor(); }
         return;
       }
       popup.classList.toggle('open');
@@ -4650,50 +4653,84 @@
     log('🖥️ แสดง panel แล้ว (คลิกที่แถบมุมขวาบนเพื่อเปิด)');
   }
 
-  // ★ Monitor — ส่งข้อมูลไป monitor.html (ใช้ BroadcastChannel + localStorage fallback)
-  //   BroadcastChannel ไม่ทำงานใน file:// → ใช้ localStorage event สำรอง
+  // ★ MONITOR_HTML — HTML สำหรับ popup window (embed ในสคริปต์ → ไม่ต้องเปิดไฟล์แยก)
+  const MONITOR_HTML = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RO Monitor</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0d1117;color:#e8e8e8;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}.c{max-width:480px;margin:0 auto;padding:12px}.s{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#15171c;border-radius:8px;margin-bottom:10px}.d{width:8px;height:8px;border-radius:50%}.d.on{background:#27ae60;box-shadow:0 0 6px #27ae60}.d.off{background:#e74c3c}.card{background:#15171c;border:1px solid #2a2d35;border-radius:8px;padding:10px;margin-bottom:8px}.card h3{color:#8ab4f8;font-size:11px;text-transform:uppercase;margin-bottom:6px}.g{display:grid;grid-template-columns:1fr 1fr;gap:6px}.st{display:flex;justify-content:space-between;padding:3px 6px;background:#0d1117;border-radius:4px}.st .k{color:#9aa0a6;font-size:11px}.st .v{font-weight:600;font-size:12px}.hb{background:#2a2d35;height:16px;border-radius:8px;overflow:hidden;position:relative;margin-bottom:3px}.hf{height:100%;transition:width .3s;border-radius:8px}.hf.hp{background:linear-gradient(90deg,#e53935,#ef5350)}.hf.sp{background:linear-gradient(90deg,#1976d2,#42a5f5)}.ht{position:absolute;top:0;left:0;right:0;text-align:center;line-height:16px;font-size:10px;color:#fff;font-weight:600;text-shadow:0 0 3px rgba(0,0,0,.8)}.tg{display:flex;flex-wrap:wrap;gap:3px}.tg span{font-size:10px;padding:2px 6px;border-radius:6px;font-weight:600}.on{background:#1b5e20;color:#a5d6a7}.off{background:#4a2020;color:#ef9a9a}.cd{display:flex;justify-content:space-between;padding:2px 6px;font-size:11px;border-radius:3px;background:#0d1117;margin-bottom:2px}.cd.r{color:#27ae60}.cd.w{color:#f39c12}.disc{text-align:center;padding:40px;color:#5f6368}</style></head>
+<body><div class="c">
+<div class="s"><div class="d off" id="dot"></div><span id="st">รอข้อมูล...</span><span style="margin-left:auto;color:#5f6368;font-size:11px" id="ver"></span></div>
+<div id="dash" style="display:none">
+<div class="card"><h3>HP / SP</h3><div class="hb"><div class="hf hp" id="hpf" style="width:0"></div><div class="ht" id="hpt">?</div></div><div class="hb"><div class="hf sp" id="spf" style="width:0"></div><div class="ht" id="spt">?</div></div></div>
+<div class="card"><h3>ตำแหน่ง</h3><div class="g"><div class="st"><span class="k">พิกัด</span><span class="v" id="pos">?</span></div><div class="st"><span class="k">แมป</span><span class="v" id="map">?</span></div><div class="st"><span class="k">ฟาร์ม</span><span class="v" id="fm">-</span></div><div class="st"><span class="k">สถานะ</span><span class="v" id="state">?</span></div></div></div>
+<div class="card"><h3>Combat</h3><div class="g"><div class="st"><span class="k">เป้า</span><span class="v" id="tgt">-</span></div><div class="st"><span class="k">รุม</span><span class="v" id="mob">0</span></div><div class="st"><span class="k">DPS</span><span class="v" id="dps" style="color:#e67e22">0</span></div><div class="st"><span class="k">ASPD</span><span class="v" id="aspd" style="color:#3498db">0</span></div></div></div>
+<div class="card"><h3>สถิติ</h3><div class="g"><div class="st"><span class="k">ฆ่า</span><span class="v" id="kills">0</span></div><div class="st"><span class="k">เก็บ</span><span class="v" id="loot">0</span></div><div class="st"><span class="k">EXP/นาที</span><span class="v" id="expmin">0</span></div><div class="st"><span class="k">Zeny/ชม</span><span class="v" id="gr" style="color:#f1c40f">0</span></div><div class="st"><span class="k">เวลา</span><span class="v" id="el">0s</span></div><div class="st"><span class="k">ตาย</span><span class="v" id="dth">0</span></div></div></div>
+<div class="card"><h3>ระบบ</h3><div class="tg" id="tg"></div></div>
+<div class="card" id="cdcard" style="display:none"><h3>Buff / Skill</h3><div id="cds"></div></div>
+</div>
+<div id="disc" class="disc"><p style="font-size:36px">🔌</p><p style="margin-top:8px">ยังไม่ได้รับข้อมูล</p></div>
+</div>
+<script>
+function fmt(ms){const s=Math.floor(ms/1000);if(s<60)return s+'s';const m=Math.floor(s/60);if(m<60)return m+'m '+(s%60)+'s';const h=Math.floor(m/60);return h+'h '+(m%60)+'m'}
+function N(n){return(n||0).toLocaleString()}
+let last=null;
+function update(d){last=d;document.getElementById('disc').style.display='none';document.getElementById('dash').style.display='';document.getElementById('dot').className='d on';document.getElementById('st').textContent='🟢 '+new Date(d.t).toLocaleTimeString();document.getElementById('ver').textContent='v'+(d.version||'?');
+const hp=d.hpMax>0?(d.hp/d.hpMax*100):0;document.getElementById('hpf').style.width=Math.max(0,Math.min(100,hp))+'%';document.getElementById('hpt').textContent=(d.hp??'?')+' / '+(d.hpMax||'?')+' ('+(hp?hp.toFixed(0):'?')+'%)';
+const sp=d.spMax>0?(d.sp/d.spMax*100):0;document.getElementById('spf').style.width=Math.max(0,Math.min(100,sp))+'%';document.getElementById('spt').textContent=(d.sp??'?')+' / '+(d.spMax||'?');
+document.getElementById('pos').textContent=d.player?.x!=null?'('+d.player.x.toFixed(0)+','+d.player.y.toFixed(0)+')':'?';document.getElementById('map').textContent=d.map||'?';document.getElementById('fm').textContent=d.farmMap||'-';
+let st=d.isDead?'☠️ ตาย':(d.isResting?'🪑 นั่ง':'🟢 ปกติ');if(d.sellState&&d.sellState!=='IDLE')st+=' | 💰'+d.sellState;if(d.storageState&&d.storageState!=='IDLE')st+=' | 🏦'+d.storageState;document.getElementById('state').textContent=st;
+const t=d.target;document.getElementById('tgt').textContent=t?t.name+' ('+(t.dist?t.dist.toFixed(1):'?')+')':'-';document.getElementById('mob').textContent=d.mobAttackers||0;
+document.getElementById('dps').textContent=d.stats?.dps>0?N(d.stats.dps):'—';document.getElementById('aspd').textContent=d.stats?.aspd>0?d.stats.aspd.toFixed(1):'—';
+document.getElementById('kills').textContent=N(d.stats?.kills);document.getElementById('loot').textContent=N(d.stats?.itemsLooted);document.getElementById('expmin').textContent=N(d.stats?.expPerMin);
+document.getElementById('gr').textContent=d.stats?.goldRatePerHour>0?N(d.stats.goldRatePerHour)+'z':'—';document.getElementById('el').textContent=fmt(d.stats?.elapsedMs||0);document.getElementById('dth').textContent=d.stats?.deaths||0;
+const T=d.toggles||{};const tl=[['loot','📦'],['heal','💉'],['rest','🪑'],['combat','⚔️'],['skill','🔮'],['buff','✨'],['sell','💰'],['storage','🏦']];document.getElementById('tg').innerHTML=tl.map(([k,l])=>'<span class="'+(T[k]?'on':'off')+'">'+l+'</span>').join('');
+const cd=[...(d.buffs||[]).map(b=>({n:'✨ '+b.name,r:b.remainingMs})),...(d.skills||[]).map(s=>({n:'🔮 '+s.name,r:s.remainingMs}))];const cc=document.getElementById('cdcard');if(cd.length>0){cc.style.display='';document.getElementById('cds').innerHTML=cd.map(c=>{const rd=c.r<=0;const rs=Math.ceil(c.r/1000);const str=rd?'พร้อม':(rs>=60?Math.floor(rs/60)+'นาที '+(rs%60)+'s':rs+'s');return '<div class="cd '+(rd?'r':'w')+'"><span>'+c.n+'</span><span>'+str+'</span></div>'}).join('')}else cc.style.display='none'}
+window.onData=update;
+setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot').className='d off';document.getElementById('st').textContent='🔴 ขาดการเชื่อมต่อ';document.getElementById('dash').style.opacity='.4'}else{document.getElementById('dash').style.opacity='1'}},2000);
+</script></body></html>`;
+
+  // ★ Monitor — ส่งข้อมูลไป popup window (origin เดียวกับเกม → ไม่มีปัญหา file://)
+  let monitorWin = null;   // popup window reference
   let monitorChannel = null;
   try { monitorChannel = new BroadcastChannel('ro-assist-monitor'); } catch (_) {}
   const MONITOR_STORAGE_KEY = 'roAssistMonitorData';
   let lastMonitorSendAt = 0;
+  function openMonitor() {
+    if (monitorWin && !monitorWin.closed) { monitorWin.focus(); return; }
+    monitorWin = window.open('', 'roMonitor', 'width=500,height=700,scrollbars=yes,resizable=yes');
+    if (!monitorWin) { log('⚠️ popup ถูกบล็อก — อนุญาต popup สำหรับเว็บนี้'); return; }
+    monitorWin.document.write(MONITOR_HTML);
+    monitorWin.document.close();
+    log('🖥️ เปิด Monitor แล้ว');
+  }
   function sendMonitorData() {
     const now = nowMs();
-    if (now - lastMonitorSendAt < 1000) return;   // throttle 1s
+    if (now - lastMonitorSendAt < 1000) return;
     lastMonitorSendAt = now;
     const s = ASSIST.getStats();
     const tgt = ASSIST.getTarget();
     const cds = ASSIST.getBuffCountdowns ? ASSIST.getBuffCountdowns() : [];
     const skCds = ASSIST.getSkillCooldowns ? ASSIST.getSkillCooldowns() : [];
     const payload = {
-      t: now,
-      version: VERSION,
+      t: now, version: VERSION,
       hp: hp.cur, hpMax: hp.max, hpPct: hpPct(),
       sp: sp.cur, spMax: sp.max,
       player: { x: player.x, y: player.y, name: playerName, id: playerId },
       map: currentMap, farmMap: CFG.farmMap,
-      target: tgt ? { name: tgt.name || tgt.id?.toString(16), hp: (entities.get(tgt.id)?.hp), hpMax: (entities.get(tgt.id)?.hpMax), dist: tgt.lastDist } : null,
-      combat: CFG.combatEnabled,
-      stats: {
-        kills: s.kills, itemsLooted: s.itemsLooted, expGained: s.expGained,
-        expPerMin: s.expPerMin, dps: s.dps, aspd: s.aspd, goldRatePerHour: s.goldRatePerHour,
-        deaths: s.deaths, elapsedMs: s.elapsedMs,
-      },
-      toggles: {
-        loot: CFG.lootEnabled, heal: CFG.healEnabled, rest: CFG.restEnabled,
-        combat: CFG.combatEnabled, skill: CFG.skillEnabled, buff: CFG.buffEnabled,
-        sell: CFG.sellEnabled, storage: CFG.storageEnabled,
-      },
+      target: tgt ? { name: tgt.name || tgt.id?.toString(16), dist: tgt.lastDist } : null,
+      stats: { kills: s.kills, itemsLooted: s.itemsLooted, expPerMin: s.expPerMin, dps: s.dps, aspd: s.aspd, goldRatePerHour: s.goldRatePerHour, deaths: s.deaths, elapsedMs: s.elapsedMs },
+      toggles: { loot: CFG.lootEnabled, heal: CFG.healEnabled, rest: CFG.restEnabled, combat: CFG.combatEnabled, skill: CFG.skillEnabled, buff: CFG.buffEnabled, sell: CFG.sellEnabled, storage: CFG.storageEnabled },
       mobAttackers: getMobAttackerCount(),
-      monstersNearby: countMonsters(CFG.fleeOnProximityRadius),
-      aggroCount: getAggroCount(CFG.fleeOnProximityRadius),
-      buffs: cds.map(b => ({ name: b.name, remainingMs: b.remainingMs, intervalMin: b.intervalMin })),
+      buffs: cds.map(b => ({ name: b.name, remainingMs: b.remainingMs })),
       skills: skCds.map(sk => ({ name: sk.name, remainingMs: sk.remainingMs })),
       isDead: isDead, isResting: isResting,
       sellState: sellState, storageState: storageState,
     };
-    // ส่งทั้ง 2 ช่อง — BroadcastChannel (เร็ว) + localStorage (ทำงานใน file://)
+    // ★ ส่งผ่าน BroadcastChannel (ถ้ามี) + localStorage (fallback)
     if (monitorChannel) try { monitorChannel.postMessage(payload); } catch (_) {}
     try { localStorage.setItem(MONITOR_STORAGE_KEY, JSON.stringify(payload)); } catch (_) {}
+    // ★ ส่งตรงเข้า popup window (origin เดียวกัน — ทำงานเสมอ)
+    if (monitorWin && !monitorWin.closed) {
+      try { if (monitorWin.onData) monitorWin.onData(payload); } catch (_) {}
+    }
   }
 
   // ---------- render loop ----------
