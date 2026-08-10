@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.17.2
+// @version      4.17.3
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.17.2';
+  const VERSION = '4.17.3';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -4735,7 +4735,8 @@
         const action = getItemAction(numId);
         const actionLabel = action === 'sell' ? 'ขาย' : (action === 'deposit' ? 'ฝาก' : 'เก็บ');
         const actionColor = action === 'sell' ? '#e67e22' : (action === 'deposit' ? '#27ae60' : '#6b7280');
-        return `<div>${icon}${itemDisplayName(numId)} ×${count}${zeny} <button data-itemaction="${numId}" style="float:right;font-size:10px;color:#fff;background:${actionColor};border:none;border-radius:3px;padding:1px 6px;cursor:pointer;font-family:inherit">${actionLabel}</button></div>`;
+        const bgColor = action === 'sell' ? 'rgba(230,126,34,.12)' : (action === 'deposit' ? 'rgba(39,174,96,.12)' : 'transparent');
+        return `<div style="background:${bgColor};border-radius:3px;padding:2px 4px">${icon}${itemDisplayName(numId)} ×${count}${zeny} <button data-itemaction="${numId}" style="float:right;font-size:10px;color:#fff;background:${actionColor};border:none;border-radius:3px;padding:1px 6px;cursor:pointer;font-family:inherit">${actionLabel}</button></div>`;
       }).join('') : '(ยังไม่มี)';
       // wire toggle buttons (วน keep→sell→deposit→keep)
       itemsEl.querySelectorAll('button[data-itemaction]').forEach(btn => {
