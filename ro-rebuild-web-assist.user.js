@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.29.0
+// @version      4.30.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.29.0';
+  const VERSION = '4.30.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -4268,6 +4268,7 @@
         <span class="pill off" data-storage>🏦 Kafra</span>
         <span class="pill" data-teleport style="background:#4a2c6a;color:#d1b3ff">🌀</span>
         <span class="pill" data-monitor style="background:#1a237e;color:#90caf9">🖥️</span>
+        <span class="pill" data-remote style="background:#1a3a1a;color:#81c784;display:none">🌐</span>
         <span class="expand">⚙</span>
       </div>
       <div id="__assist_popup">
@@ -4570,6 +4571,7 @@
           if (sendRandomWarp()) log('🌀 วาร์ปสุ่ม (กดจาก mini-bar)');
         }
         if (pill.hasAttribute('data-monitor')) { openMonitor(); }
+        if (pill.hasAttribute('data-remote')) { openRemoteMonitor(); }
         return;
       }
       popup.classList.toggle('open');
@@ -4847,6 +4849,20 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
     monitorWin.document.close();
     log('🖥️ เปิด Monitor แล้ว');
   }
+  // ★ เปิด remote monitor ในแท็บใหม่ — ใช้ relay server URL + player_id ปัจจุบัน
+  //   แสดงเฉพาะเมื่อ relay เชื่อมต่อแล้ว (เช็คใน renderUI)
+  function openRemoteMonitor() {
+    if (!playerId) { log('⚠️ ยังไม่รู้ player_id — รอ SPAWN ก่อน'); return; }
+    const url = CFG.monitorServerUrl
+      .replace(/^wss?:\/\//, '')   // ตัด ws/wss prefix → เหลือ host
+      .replace(/\/.*$/, '');        // ตัด path ถ้ามี
+    // protocol ตามหน้าเกม (https → https, http → http)
+    const proto = location.protocol;
+    const pidHex = playerId.toString(16);
+    const fullUrl = proto + '//' + url + '/#pid=' + pidHex;
+    log('🌐 เปิด Remote Monitor:', fullUrl);
+    window.open(fullUrl, '_blank');
+  }
   // ★ Remote relay WebSocket state (ประกาศก่อนใช้ — กัน TDZ)
   let relayWs = null;
   let relayReconnectAt = 0;
@@ -5060,11 +5076,14 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
     }
     set('[data-pid]', playerId ? playerId.toString(16) : '?');
     set('[data-state]', isDead ? '☠️ ตาย' : (isResting ? '🪑 นั่งพัก' : (activeWS && activeWS.readyState === 1 ? '🟢 เชื่อมต่อ' : '🔴 ไม่ได้ต่อ')));
-    // ★ Remote Monitor status (relay server)
+    // ★ Remote Monitor status (relay server) + แสดง/ซ่อนปุ่ม 🌐 ใน mini-bar
     {
       const r = relayStatusInfo();
       const el = root.querySelector('[data-relay]');
       if (el) { el.textContent = r.text; el.style.color = r.color; }
+      // ★ ปุ่ม 🌐 แสดงเฉพาะเมื่อ relay เชื่อมต่อแล้ว + มี player_id
+      const remoteBtn = root.querySelector('[data-remote]');
+      if (remoteBtn) remoteBtn.style.display = (r.status === 'connected' && playerId) ? '' : 'none';
     }
     set('[data-kills]', s.kills);
     set('[data-looted]', s.itemsLooted);
