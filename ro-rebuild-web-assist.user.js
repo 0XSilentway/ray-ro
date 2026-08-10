@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.19.0
+// @version      4.19.1
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.19.0';
+  const VERSION = '4.19.1';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -4808,7 +4808,7 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
     const itemsEl = root.querySelector('[data-items]');
     if (itemsEl) {
       // ★ แสดงจาก inventory จริง (ลดตอนใช้/ขาย) เรียงจากจำนวนมาก → น้อย
-      const invTop = [...inventory.entries()].filter(([id, c]) => c > 0).sort((a, b) => b[1] - a[1]).slice(0, 10);
+      const invTop = [...inventory.entries()].filter(([id, c]) => c > 0).sort((a, b) => b[1] - a[1]);
       itemsEl.innerHTML = invTop.length ? invTop.map(([id, count]) => {
         const numId = Number(id);
         const price = itemPrice(numId);
