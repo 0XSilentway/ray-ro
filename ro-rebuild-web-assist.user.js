@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.18.0
+// @version      4.18.1
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.18.0';
+  const VERSION = '4.18.1';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -4650,12 +4650,13 @@
     log('🖥️ แสดง panel แล้ว (คลิกที่แถบมุมขวาบนเพื่อเปิด)');
   }
 
-  // ★ BroadcastChannel — ส่งข้อมูลไป monitor.html (แท็บอื่นในเบราว์เซอร์เดียวกัน)
+  // ★ Monitor — ส่งข้อมูลไป monitor.html (ใช้ BroadcastChannel + localStorage fallback)
+  //   BroadcastChannel ไม่ทำงานใน file:// → ใช้ localStorage event สำรอง
   let monitorChannel = null;
   try { monitorChannel = new BroadcastChannel('ro-assist-monitor'); } catch (_) {}
+  const MONITOR_STORAGE_KEY = 'roAssistMonitorData';
   let lastMonitorSendAt = 0;
   function sendMonitorData() {
-    if (!monitorChannel) return;
     const now = nowMs();
     if (now - lastMonitorSendAt < 1000) return;   // throttle 1s
     lastMonitorSendAt = now;
@@ -4663,7 +4664,7 @@
     const tgt = ASSIST.getTarget();
     const cds = ASSIST.getBuffCountdowns ? ASSIST.getBuffCountdowns() : [];
     const skCds = ASSIST.getSkillCooldowns ? ASSIST.getSkillCooldowns() : [];
-    monitorChannel.postMessage({
+    const payload = {
       t: now,
       version: VERSION,
       hp: hp.cur, hpMax: hp.max, hpPct: hpPct(),
@@ -4689,7 +4690,10 @@
       skills: skCds.map(sk => ({ name: sk.name, remainingMs: sk.remainingMs })),
       isDead: isDead, isResting: isResting,
       sellState: sellState, storageState: storageState,
-    });
+    };
+    // ส่งทั้ง 2 ช่อง — BroadcastChannel (เร็ว) + localStorage (ทำงานใน file://)
+    if (monitorChannel) try { monitorChannel.postMessage(payload); } catch (_) {}
+    try { localStorage.setItem(MONITOR_STORAGE_KEY, JSON.stringify(payload)); } catch (_) {}
   }
 
   // ---------- render loop ----------

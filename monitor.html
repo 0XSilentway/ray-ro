@@ -198,9 +198,21 @@ function update(data) {
   } else { cdCard.style.display = 'none'; }
 }
 
+// ★ รับข้อมูลจาก BroadcastChannel (https) หรือ localStorage event (file://)
 channel.onmessage = (e) => {
   if (e.data && e.data.version) update(e.data);
 };
+// localStorage fallback — ทำงานใน file:// (BroadcastChannel ไม่ได้)
+window.addEventListener('storage', (e) => {
+  if (e.key === 'roAssistMonitorData' && e.newValue) {
+    try { const data = JSON.parse(e.newValue); if (data && data.version) update(data); } catch (_) {}
+  }
+});
+// อ่านข้อมูลล่าสุดจาก localStorage ตอนโหลดหน้า
+try {
+  const cached = localStorage.getItem('roAssistMonitorData');
+  if (cached) { const data = JSON.parse(cached); if (data && data.version) update(data); }
+} catch (_) {}
 
 // timeout — ถ้าไม่ได้รับข้อมูล 5s → แสดง disconnected
 function checkTimeout() {
