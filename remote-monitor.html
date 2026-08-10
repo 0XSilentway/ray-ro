@@ -21,11 +21,12 @@
   #login #bot-list-wrap { margin-top: 16px; }
   #login #bot-list-wrap h3 { font-size: 11px; color: #888; text-transform: uppercase; margin-bottom: 6px; }
   #login #bot-list { display: flex; flex-direction: column; gap: 4px; }
-  #login .bot-item { background: #1a1a2e; border: 1px solid #2a2a3a; border-radius: 4px; padding: 8px 10px; cursor: pointer; font-size: 11px; display: flex; justify-content: space-between; align-items: center; }
+  #login .bot-item { background: #1a1a2e; border: 1px solid #2a2a3a; border-radius: 4px; padding: 8px 10px; cursor: pointer; font-size: 11px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   #login .bot-item:hover { border-color: #9b59b6; background: #1f1f33; }
   #login .bot-item .pid { color: #9b59b6; font-weight: bold; }
   #login .bot-item .nm { color: #ccc; }
   #login .bot-item .mp { color: #888; font-size: 10px; }
+  #login .bot-item .extra { color: #666; font-size: 9px; display: flex; gap: 6px; }
 
   /* ---------- Dashboard ---------- */
   #dash { display: none; }
@@ -367,7 +368,16 @@ function renderBotList(bots) {
   const list = document.getElementById('bot-list');
   if (!bots || bots.length === 0) { wrap.style.display = ''; list.innerHTML = '<div class="empty">(ยังไม่มีบอทออนไลน์)</div>'; return; }
   wrap.style.display = '';
-  list.innerHTML = bots.map(b => `<div class="bot-item" data-pid="${b.playerId}"><span class="pid">${b.playerId}</span><span class="nm">${b.name || '?'}</span><span class="mp">${b.map || '?'}</span></div>`).join('');
+  list.innerHTML = bots.map(b => {
+    const ver = b.version ? `<span>v${b.version}</span>` : '';
+    const elapsed = b.elapsedMs ? `<span>⏱ ${fmt(b.elapsedMs)}</span>` : '';
+    return `<div class="bot-item" data-pid="${b.playerId}">
+      <span class="pid">${b.playerId}</span>
+      <span class="nm">${b.name || '?'}</span>
+      <span class="mp">${b.map || '?'}</span>
+      <span class="extra">${elapsed}${ver}</span>
+    </div>`;
+  }).join('');
   list.querySelectorAll('.bot-item').forEach(el => {
     el.onclick = () => { document.getElementById('pid-input').value = el.dataset.pid; };
   });

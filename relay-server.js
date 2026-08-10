@@ -132,7 +132,14 @@ wss.on('connection', (ws, req) => {
       const list = [];
       for (const [pid, entry] of bots) {
         if (entry.botWs && entry.botWs.readyState === 1) {
-          list.push({ playerId: pid, name: entry.lastData?.player?.name || '?', map: entry.lastData?.map || '?' });
+          const d = entry.lastData || {};
+          list.push({
+            playerId: pid,
+            name: d.player?.name || '?',
+            map: d.map || '?',
+            version: d.version || '?',
+            elapsedMs: d.stats?.elapsedMs || 0,
+          });
         }
       }
       try { ws.send(JSON.stringify({ type: 'botList', bots: list })); } catch (_) {}
