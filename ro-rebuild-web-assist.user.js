@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.28.0
+// @version      4.29.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.28.0';
+  const VERSION = '4.29.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -725,6 +725,7 @@
 
   // ---------- WARP-TO-LOOT state ----------
   let currentMap = null;               // ชื่อแมปปัจจุบัน (จาก opcode 0x12) — จำเป็นสำหรับ warp
+  let playerZeny = null;              // ★ เงินปัจจุบัน (จาก 0x38 MAP_DATA offset 9 — ส่งตอนเข้าแมป/วาร์ป)
   let lastFarmWarpBackAt = 0;          // ★ throttle retry วาร์ปกลับแมปฟาร์ม (กันติดแมปผิด)
   const warpQueue = new Map();         // dropId -> {dropId,itemId,x,y,offsetIdx,warpAt,pickupSentAt}
   let lastWarpAt = 0;                  // throttle การวาร์ป
@@ -1145,6 +1146,15 @@
           logImportant('chat', '💬 [' + typeName + '] ' + (name || '?') + ': ' + message);
         }
       } catch (e) {}
+    }
+    // 0x38 MAP_DATA: zone-enter data — ★ มี zeny ที่ offset 9 (u32LE)
+    //   format: [38][u32:?][u32:?][u32:ZENY][...rest...] (mirror protocol.js:1415-1421)
+    //   ★ ส่งตอนเข้าแมป/วาร์ป — เป็นแหล่งเดียวที่บอก zeny ปัจจุบัน
+    else if (op === 0x38 && u.length >= 13) {
+      const zeny = u32(u, 9);
+      if (zeny != null && zeny !== playerZeny) {
+        playerZeny = zeny;
+      }
     }
     // 0x4d NPC_DIALOG (mirror world.js:441-449)
     //   sub=1 = บทพูด (text) → กด Next ไปต่อ
@@ -4859,7 +4869,7 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
       hp: hp.cur, hpMax: hp.max, hpPct: hpPct(),
       sp: sp.cur, spMax: sp.max,
       player: { x: player.x, y: player.y, name: playerName, id: playerId },
-      map: currentMap, farmMap: CFG.farmMap,
+      map: currentMap, farmMap: CFG.farmMap, zeny: playerZeny,
       target: (() => {
         if (!tgt) return null;
         // ★ resolve entity จริงเพื่อเอา name/hp/hpMax (tgt จาก ASSIST.getTarget() มีแค่ id hex string)

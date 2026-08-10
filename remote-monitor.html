@@ -164,6 +164,7 @@
         <div class="stat-row"><span>⚡ ASPD</span><span class="stat-val" id="s-aspd" style="color:#3498db">—</span></div>
         <div class="stat-row"><span>💰 Zeny/ชม</span><span class="stat-val" id="s-goldrate" style="color:#f1c40f">—</span></div>
         <div class="stat-row"><span>มอนรุม</span><span class="stat-val" id="s-mob" style="color:#e74c3c">0</span></div>
+        <div class="stat-row"><span>💰 เงิน</span><span class="stat-val" id="s-zeny" style="color:#f1c40f">—</span></div>
       </div>
       <div class="panel">
         <div class="panel-title">🔄 ระบบ</div>
@@ -402,6 +403,7 @@ function render(d) {
   document.getElementById('s-aspd').textContent = s.aspd > 0 ? s.aspd.toFixed(1) : '—';
   document.getElementById('s-goldrate').textContent = s.goldRatePerHour > 0 ? N(s.goldRatePerHour) + 'z' : '—';
   document.getElementById('s-mob').textContent = d.mobAttackers || 0;
+  document.getElementById('s-zeny').textContent = d.zeny != null ? N(d.zeny) + 'z' : '—';
   // ★ Base/Job EXP
   document.getElementById('s-baseexp').textContent = N(s.baseExpGained);
   document.getElementById('s-jobexp').textContent = N(s.jobExpGained);
