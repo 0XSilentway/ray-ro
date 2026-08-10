@@ -16,3 +16,4 @@ yarn-error.log*
 .env
 .env.local
 *.local
+*.7z
