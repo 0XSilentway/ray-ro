@@ -253,7 +253,7 @@ function connect(pid) {
   playerId = pid;
   if (ws) { try { ws.close(); } catch(_) {} }
   document.getElementById('login').style.display = 'none';
-  document.getElementById('dash').style.display = '';
+  document.getElementById('dash').style.display = 'block';
 
   // ★ URL สำหรับเชื่อม relay server: wss:// ถ้าหน้าเว็บเป็น https, ws:// ถ้า http
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -534,7 +534,7 @@ document.getElementById('back-btn').onclick = () => {
   if (ws) { try { ws.close(); } catch(_) {} }
   clearTimeout(reconnectTimer);
   document.getElementById('dash').style.display = 'none';
-  document.getElementById('login').style.display = '';
+  document.getElementById('login').style.display = 'block';
 };
 
 // ★ auto-connect ถ้ามี pid ใน hash (เช่น #pid=2000001)
