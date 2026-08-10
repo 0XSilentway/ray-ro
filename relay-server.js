@@ -14,10 +14,26 @@
  */
 
 const { WebSocketServer } = require('ws');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
 
 const PORT = process.env.PORT || 3002;
 
-const wss = new WebSocketServer({ port: PORT });
+// ★ HTTP server — serve remote-monitor.html + relay.js (เปิดเว็บได้เลยไม่ต้องโหลดไฟล์)
+const MONITOR_HTML = fs.readFileSync(path.join(__dirname, 'remote-monitor.html'), 'utf8');
+const server = http.createServer((req, res) => {
+  if (req.url === '/' || req.url === '/index.html') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(MONITOR_HTML);
+    return;
+  }
+  res.writeHead(404);
+  res.end('Not found');
+});
+
+// WebSocket server บน server เดียวกัน
+const wss = new WebSocketServer({ server });
 
 // store: playerId -> { botWs, lastData, monitors: Set<ws> }
 const bots = new Map();
@@ -135,10 +151,11 @@ const heartbeat = setInterval(() => {
   });
 }, 30000);
 
-wss.on('listening', () => {
+server.listen(PORT, () => {
   log(`✅ RO Monitor Relay running on port ${PORT}`);
-  log(`   Bot connect:    ws://localhost:${PORT}`);
-  log(`   Monitor connect: ws://localhost:${PORT} (send {type:'subscribe', playerId:'...'})`);
+  log(`   🌐 Monitor web:  http://localhost:${PORT}/`);
+  log(`   🤖 Bot connect:   ws://localhost:${PORT}`);
+  log(`   🖥️ Monitor WS:    ws://localhost:${PORT} (send {type:'subscribe', playerId:'...'})`);
 });
 
-process.on('SIGINT', () => { clearInterval(heartbeat); wss.close(); process.exit(0); });
+process.on('SIGINT', () => { clearInterval(heartbeat); wss.close(); server.close(); process.exit(0); });
