@@ -4334,7 +4334,7 @@
           </div>
           <div class="field"><label>URL relay server (wss:// = SSL, ws:// = ไม่มี SSL)</label><input type="text" id="__assist_relayurl" placeholder="wss://rayro.catgg.net"></div>
           <div class="btns"><button id="__assist_applyrelay">ใช้ค่า relay</button></div>
-          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เปิดแล้วสคริปต์จะส่งข้อมูลไป relay server ทุก 1 วินาที<br>★ ดูสถานะการเชื่อมต่อได้ที่แท็บ "📊 สถิติ" บรรทัด "🌐 Remote Monitor"<br>★ ตั้งค่า relay server ที่ <code>relay-server.js</code> ฝั่งเซิร์ฟเวอร์</div>
+          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เปิดแล้วสคริปต์จะส่งข้อมูลไป relay server ทุก 3 วินาที<br>★ ดูสถานะการเชื่อมต่อได้ที่แท็บ "📊 สถิติ" บรรทัด "🌐 Remote Monitor"<br>★ ตั้งค่า relay server ที่ <code>relay-server.js</code> ฝั่งเซิร์ฟเวอร์</div>
 
           <h4>🗺️ Navigation (บันทึกเส้นทางเดิน + waypoint graph)</h4>
           <div class="btns">
