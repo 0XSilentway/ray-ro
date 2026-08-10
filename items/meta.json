@@ -365,6 +365,12 @@
     "desc": "A rather suave looking earthworm gifted with womanizing debonairness. Picky finds him to be quite delicious.",
     "buyPrice": 4000
   },
+  "624": {
+    "type": "Taming Item",
+    "class": "n/a",
+    "desc": "A rotting, dirty fish that attracts flies. Chonchon finds it to be very tasty.",
+    "buyPrice": 2500
+  },
   "625": {
     "type": "Taming Item",
     "class": "n/a",
@@ -382,6 +388,12 @@
     "class": "n/a",
     "desc": "A dewy, green moss that grows in cool places. Spore finds it quite delectable.",
     "buyPrice": 10
+  },
+  "632": {
+    "type": "Taming Item",
+    "class": "n/a",
+    "desc": "An earthworm that stopped caring about its figure years ago. Peco Peco loves the way that it tastes.",
+    "buyPrice": 5000
   },
   "633": {
     "type": "Taming Item",
@@ -707,6 +719,12 @@
     "class": "n/a",
     "desc": "A symbol of eternal love, this enchanted rose will never wither. However, it is rare and expensive.",
     "buyPrice": 55000
+  },
+  "749": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "Sculpted out of ice by masters in the Arctic, this unique and beautiful rose makes a great gift.",
+    "buyPrice": 35000
   },
   "750": {
     "type": "Miscellaneous",
@@ -1385,6 +1403,12 @@
     "class": "n/a",
     "desc": "A tough, woody shelled nut from an oak tree.",
     "buyPrice": 98
+  },
+  "1027": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "Sharp, hollow quills used to cover and protect some porcupine. Soft, furry, nice.",
+    "buyPrice": 158
   },
   "1028": {
     "type": "Miscellaneous",
@@ -2201,6 +2225,21 @@
     "reqLevel": "18",
     "weaponLevel": "2",
     "slot": "2",
+    "jobs": [
+      "Swordman",
+      "Knight",
+      "Crusader"
+    ],
+    "buyPrice": 22500
+  },
+  "1155": {
+    "type": "Weapon",
+    "class": "Two-handed Sword",
+    "desc": "A straight bladed sword that can be brutally swung just like a baseball bat.",
+    "atk": "115",
+    "reqLevel": "18",
+    "weaponLevel": "2",
+    "slot": "3",
     "jobs": [
       "Swordman",
       "Knight",
@@ -4632,6 +4671,19 @@
     ],
     "buyPrice": 2
   },
+  "1914": {
+    "type": "Weapon",
+    "class": "Musical Instrument",
+    "desc": "A magically dazzling guitar that bewitches its user to play passionate songs once it's held in his hands.",
+    "atk": "110",
+    "reqLevel": "27",
+    "weaponLevel": "3",
+    "slot": "0",
+    "jobs": [
+      "Bard / Dancer"
+    ],
+    "buyPrice": 20
+  },
   "1915": {
     "type": "Weapon",
     "class": "Musical Instrument",
@@ -4888,6 +4940,18 @@
       "Creator"
     ],
     "buyPrice": 20
+  },
+  "2201": {
+    "type": "Armor",
+    "class": "Middle Headgear",
+    "desc": "Glasses with special, darkened lenses that block ultraviolet light.Increases resistance to Blind status by 5%.",
+    "def": "0",
+    "reqLevel": "None",
+    "slot": "0",
+    "jobs": [
+      "Every Job"
+    ],
+    "buyPrice": 5000
   },
   "2203": {
     "type": "Armor",
@@ -7776,6 +7840,12 @@
     "desc": "Add a 2% chance of auto casting Level 1 Bash on an enemy when attacking.The Bash skill shoves the enemy 5 cells back.Receive 100% more damage from Munaks.[Munak & Hyegun Card Combo]More Information on Combo:Munak Card, Bongun Card & Yao Jun Card",
     "buyPrice": 20
   },
+  "4216": {
+    "type": "Card",
+    "class": "Armor Card",
+    "desc": "Has a 6% chance of Freezing an enemy when the user receives Physical Damage.",
+    "buyPrice": 20
+  },
   "4220": {
     "type": "Card",
     "class": "Armor Card",
@@ -8022,6 +8092,12 @@
     "desc": "Flee Rate + 10[Base STR >= 80]ATK + 20[Base VIT >= 80]Maximum HP + 3%[Base LUK >= 80]Critical Rate + 3",
     "buyPrice": 20
   },
+  "4307": {
+    "type": "Card",
+    "class": "Weapon Card",
+    "desc": "Gain 5 SP each time a Fish monster is killed by a Physical Melee Damage.Drain 5 SP as the weapon is unequipped.",
+    "buyPrice": 20
+  },
   "4308": {
     "type": "Card",
     "class": "Weapon Card",
@@ -8068,6 +8144,12 @@
     "type": "Card",
     "class": "Weapon Card",
     "desc": "Gain 5 SP each time a DemiHuman monster is killed by a Physical Melee Damage.Drain 5 SP as the weapon is unequipped.",
+    "buyPrice": 20
+  },
+  "4331": {
+    "type": "Card",
+    "class": "Accessory Card",
+    "desc": "Critical Rate + 3[Swordman Class]Perfect Dodge + 3[Solider, Assaulter, Permeter & Freezer Card Combo]More Information on Combo:Solider Card, Assaulter Card, Permeter Card, Freezer Card & Heater CardPermeter Card, Freezer Card, Heater Card & Archdam Card",
     "buyPrice": 20
   },
   "4369": {
@@ -8915,6 +8997,12 @@
     "type": "Miscellaneous",
     "class": "n/a",
     "desc": "A gemstone which is also called 'Olivine'.Symbolizes peace of mind and wisdom.",
+    "buyPrice": 3000
+  },
+  "7291": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "A very hard stone which is used to make jewelry.Symbolizes protection and stability.",
     "buyPrice": 3000
   },
   "7293": {
