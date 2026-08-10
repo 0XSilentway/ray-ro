@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.22.0
+// @version      4.23.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.22.0';
+  const VERSION = '4.23.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -470,6 +470,9 @@
     while (importantLogBuf.length > IMPORTANT_BUF_MAX) importantLogBuf.shift();
     log(msg);   // ส่งไป log ปกติด้วย
   }
+  // ★ chat history buffer — เก็บแชทล่าสุดสำหรับ monitor
+  const CHAT_BUF_MAX = 50;
+  const chatBuf = [];
   const nameOf = (id) => {
     const db = itemDisplayName(id);
     return db !== 'item_' + id ? `${db}(${id})` : (CFG.itemNames[id] ? `${CFG.itemNames[id]}(${id})` : `item_${id}`);
@@ -500,6 +503,8 @@
     kills: 0,              // จำนวนที่ฆ่าได้ (นับจาก EXP gain)
     itemsLooted: 0,        // จำนวนชิ้นที่เก็บได้
     expGained: 0,          // EXP รวมที่ได้ (base+job delta)
+    baseExpGained: 0,      // ★ Base EXP delta (session) — แยกจาก job
+    jobExpGained: 0,       // ★ Job EXP delta (session)
     itemsByCount: new Map(), // itemId -> จำนวนที่เก็บได้
     pickupFails: 0,        // ครั้งที่พยายามเก็บแล้วล้มเหลว
     deaths: 0,             // ครั้งที่ตาย
@@ -513,7 +518,7 @@
   };
   function resetStats() {
     stats.startTime = Date.now();
-    stats.kills = 0; stats.itemsLooted = 0; stats.expGained = 0;
+    stats.kills = 0; stats.itemsLooted = 0; stats.expGained = 0; stats.baseExpGained = 0; stats.jobExpGained = 0;
     stats.itemsByCount = new Map(); stats.pickupFails = 0; stats.deaths = 0;
     stats.dealtWindow = []; stats.attackWindow = []; stats.goldWindow = [];
     stats.sessionDamageDealt = 0; stats.sessionAttacks = 0; stats.sessionGold = 0;
@@ -871,6 +876,9 @@
         const jobDelta  = u32(u, 13) | 0;  // offset 13 = jobDelta
         const gain = Math.max(0, baseDelta) + Math.max(0, jobDelta);
         if (gain > 0) stats.expGained += gain;
+        // ★ แยก Base/Job EXP (สำหรับ monitor)
+        if (baseDelta > 0) stats.baseExpGained += baseDelta;
+        if (jobDelta > 0) stats.jobExpGained += jobDelta;
       }
       // ★ จดพิกัดมอนที่เราฆ่า — ใช้ target หรือ entity ล่าสุดที่เราตี
       //   สำคัญสำหรับนักธนู: ยิงมอนตายไกล → ของตกที่พิกัดมอน ไม่ใช่ที่ตัวเรา
@@ -1110,6 +1118,9 @@
         if (p < u.length) chatType = u[p];
         const typeNames = { 0: 'ใกล้', 1: 'ตะโกน', 2: 'กระซิบ' };
         const typeName = typeNames[chatType] || ('type' + chatType);
+        // ★ เก็บลง chat history buffer (สำหรับ monitor)
+        chatBuf.push({ t: Date.now(), type: typeName, chatType, sender: name || '?', message });
+        while (chatBuf.length > CHAT_BUF_MAX) chatBuf.shift();
         // ★ ตรวจคำต้องห้าม
         const lower = message.toLowerCase();
         if (lower.includes('bot') || message.includes('บอท') || message.includes('บอต')) {
@@ -4779,7 +4790,7 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
         const m = entities.get(tid);
         return { name: (m && m.name) || tgt.id, dist: target ? target.lastDist : null, hp: m ? m.hp : null, hpMax: m ? m.hpMax : null, id: tid };
       })(),
-      stats: { kills: s.kills, itemsLooted: s.itemsLooted, expPerMin: s.expPerMin, expGained: s.expGained, dps: s.dps, aspd: s.aspd, goldRatePerHour: s.goldRatePerHour, deaths: s.deaths, elapsedMs: s.elapsedMs },
+      stats: { kills: s.kills, itemsLooted: s.itemsLooted, expPerMin: s.expPerMin, expGained: s.expGained, baseExpGained: s.baseExpGained, jobExpGained: s.jobExpGained, dps: s.dps, aspd: s.aspd, goldRatePerHour: s.goldRatePerHour, deaths: s.deaths, elapsedMs: s.elapsedMs },
       toggles: { loot: CFG.lootEnabled, heal: CFG.healEnabled, rest: CFG.restEnabled, combat: CFG.combatEnabled, skill: CFG.skillEnabled, buff: CFG.buffEnabled, sell: CFG.sellEnabled, storage: CFG.storageEnabled },
       mobAttackers: getMobAttackerCount(),
       // ★ mobAttackerList — สำหรับแสดงรูปมอน + HP bar ใน monitor (mirror dashboard mobAttackerList)
@@ -4807,6 +4818,10 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
       sellState: sellState, storageState: storageState,
       // ★ relay server status (ส่งไปแสดงใน remote monitor ด้วย)
       relay: { ...relayStatusInfo(), url: CFG.monitorServerUrl, enabled: CFG.monitorServerEnabled },
+      // ★ chat history — ส่งแชทล่าสุด 30 ข้อความ
+      chatHistory: chatBuf.slice(-30),
+      // ★ important log — ส่ง log สำคัญล่าสุด 30 รายการ
+      alerts: importantLogBuf.slice(-30),
     };
     // ★ ส่งผ่าน BroadcastChannel (ถ้ามี) + localStorage (fallback)
     if (monitorChannel) try { monitorChannel.postMessage(payload); } catch (_) {}
