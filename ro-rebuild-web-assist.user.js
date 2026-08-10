@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.27.0
+// @version      4.28.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.27.0';
+  const VERSION = '4.28.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -873,18 +873,19 @@
     else if (op === 0x0b && u.length >= 9) {
       if (playerId != null && u32(u, 1) === playerId) markCombat();
     }
-    // 0x22 EXP: เราฆ่ามอนได้ → นับ stats
+    // 0x22 EXP: ได้รับ EXP (solo/party/event ใช้ opcode เดียวกัน)
     //   format: [22][baseTotal:4][baseDelta:4][jobTotal:4][jobDelta:4] (17 bytes)
+    //   ★ delta=0 = zone-in sync → ไม่นับ session EXP (mirror world.js:985)
+    //   ★★ ไม่นับ kills ที่นี่ — 0x22 มาทุกครั้งที่ได้ EXP (รวม party/event)
+    //      kills นับใน 0x0f ENTITY_ACTION action=3 (มอนตายจริง) เท่านั้น
     else if (op === 0x22) {
       lastExpAt = Date.now(); markCombat();
-      stats.kills++;
-      // parse EXP delta อย่างปลอดภัย (signed — delta อาจเป็นลบได้ในบางเซิร์ฟ)
       if (u.length >= 17) {
-        const baseDelta = u32(u, 5) | 0;   // offset 5 = baseDelta, |0 = แปลงเป็น signed
-        const jobDelta  = u32(u, 13) | 0;  // offset 13 = jobDelta
-        const gain = Math.max(0, baseDelta) + Math.max(0, jobDelta);
+        const baseDelta = u32(u, 5);    // offset 5 = baseDelta (unsigned — mirror protocol.js:726)
+        const jobDelta  = u32(u, 13);   // offset 13 = jobDelta
+        const gain = (baseDelta > 0 ? baseDelta : 0) + (jobDelta > 0 ? jobDelta : 0);
         if (gain > 0) stats.expGained += gain;
-        // ★ แยก Base/Job EXP (สำหรับ monitor)
+        // ★ แยก Base/Job EXP (สำหรับ monitor) — mirror world.js:990-991
         if (baseDelta > 0) stats.baseExpGained += baseDelta;
         if (jobDelta > 0) stats.jobExpGained += jobDelta;
       }
@@ -1510,12 +1511,17 @@
         if (m && m.kind === 1) m._lastEngagedByOtherAt = nowMs();
       }
     }
-    // 0x0f ENTITY_ACTION: action=3 = ตาย (authoritative)
+    // 0x0f ENTITY_ACTION: action=3 = มอนตายจริง (authoritative)
+    //   ★ นับ kills ที่นี่ ไม่ใช่ใน 0x22 EXP (mirror world.js:964 — sessionKills++ ที่นี่)
     else if (op === 0x0f && u.length >= 6 && u[5] === 3) {
       const id = u32(u, 1);
       const e = entities.get(id);
       if (e) { e.alive = false; }
       entities.delete(id);
+      // ★ นับ kill — ถ้าเป็นมอน (kind=1) และเรามี target หรือ mobAttacker ตัวนี้
+      if (e && e.kind === 1) {
+        stats.kills++;
+      }
       if (target && target.id === id) {
         abandonTarget('ฆ่าได้', false); target = null;
         // ★ trigger post-combat cooldown (รอก่อน acquire ใหม่ — ถ้ามีของ loot-blocking จะเก็บก่อน)
