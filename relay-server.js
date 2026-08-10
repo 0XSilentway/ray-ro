@@ -19,6 +19,9 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 3002;
+// ★ admin token — สำหรับดูรายชื่อบอททั้งหมด (ผ่าน ?token= หรือ {type:'list', token:})
+//   ตั้งค่าผ่าน env var ADMIN_TOKEN หรือ default 'ro-admin-2026'
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'ro-admin-2026';
 
 // ★ HTTP server — serve remote-monitor.html + relay.js (เปิดเว็บได้เลยไม่ต้องโหลดไฟล์)
 const MONITOR_HTML = fs.readFileSync(path.join(__dirname, 'remote-monitor.html'), 'utf8');
@@ -94,6 +97,12 @@ wss.on('connection', (ws, req) => {
     // ---- Monitor client subscribe ----
     if (msg.type === 'subscribe' && msg.playerId) {
       ws.role = 'monitor';
+      // ★★ unsubscribe อันเก่าก่อน (กันข้อมูลสลับเมื่อเปลี่ยน player_id)
+      //   ปัญหา: monitor subscribe ใหม่แต่ไม่ลบออกจาก entry เก่า → รับข้อมูล 2 bot พร้อมกัน
+      if (ws.playerId && ws.playerId !== String(msg.playerId)) {
+        const oldEntry = bots.get(ws.playerId);
+        if (oldEntry) oldEntry.monitors.delete(ws);
+      }
       ws.playerId = String(msg.playerId);
       let entry = bots.get(ws.playerId);
       if (!entry) {
@@ -111,9 +120,15 @@ wss.on('connection', (ws, req) => {
       return;
     }
 
-    // ---- Monitor client list bots ----
+    // ---- Monitor client list bots (admin only) ----
     if (msg.type === 'list') {
       ws.role = 'monitor';
+      // ★ ต้องส่ง token ที่ตรงกับ ADMIN_TOKEN ถึงจะเห็นรายชื่อบอททั้งหมด
+      if (msg.token !== ADMIN_TOKEN) {
+        try { ws.send(JSON.stringify({ type: 'botList', bots: [], error: 'unauthorized' })); } catch (_) {}
+        return;
+      }
+      ws.isAdmin = true;
       const list = [];
       for (const [pid, entry] of bots) {
         if (entry.botWs && entry.botWs.readyState === 1) {

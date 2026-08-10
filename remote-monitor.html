@@ -116,7 +116,7 @@
   <input type="text" id="pid-input" placeholder="เช่น 2000001" autocomplete="off">
   <button id="connect-btn">เชื่อมต่อ</button>
   <div id="bot-list-wrap" style="display:none">
-    <h3>🤖 บอทที่ออนไลน์</h3>
+    <h3>🤖 บอทที่ออนไลน์ (admin)</h3>
     <div id="bot-list"></div>
   </div>
   <div class="hint">
@@ -314,8 +314,8 @@ function doConnect(url) {
     dot.className = 'dot on';
     txt.textContent = '🟢 เชื่อมต่อแล้ว';
     ws.send(JSON.stringify({ type: 'subscribe', playerId: playerId }));
-    // ขอรายชื่อบอทด้วย (อาจใช้ในอนาคต)
-    ws.send(JSON.stringify({ type: 'list' }));
+    // ★ ขอรายชื่อบอทเฉพาะ admin (มี token)
+    if (adminToken) ws.send(JSON.stringify({ type: 'list', token: adminToken }));
     showDebug(`✅ เชื่อมต่อ relay แล้ว — ส่ง subscribe player_id=<code>${playerId}</code><br>⏳ รอข้อมูลจากบอท... (ถ้าไม่มีข้อมูลใน 5 วินาที = บอทยังไม่ได้ส่ง หรือ player_id ไม่ตรง)`, true);
     // ★ ถ้า 5 วินาทีแล้วยังไม่มีข้อมูล → เตือน
     setTimeout(() => {
@@ -641,22 +641,27 @@ document.getElementById('connect-btn').onclick = () => {
   connect(pid);
 };
 
-// ★ โหลดรายชื่อบอทที่ออนไลน์ทันทีที่เปิดหน้า login (เพื่อยืนยันว่า relay ทำงาน)
+// ★ โหลดรายชื่อบอทที่ออนไลน์ — เฉพาะ admin (เช็คจาก hash #admin=TOKEN)
+//   ผู้ใช้ทั่วไปไม่เห็นรายการบอท
+const adminToken = (() => {
+  const m = location.hash.match(/admin=([\w-]+)/);
+  return m ? m[1] : null;
+})();
 (function loadBotListOnLogin() {
+  if (!adminToken) return;   // ★ ไม่ใช่ admin → ไม่ขอรายชื่อบอท
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const url = proto + '//' + location.host;
   let probeWs;
   try {
     probeWs = new WebSocket(url);
-  } catch (e) { return; }   // ถ้าเชื่อมไม่ได้ → ข้าม (user จะเห็น error ตอนกด connect อยู่แล้ว)
+  } catch (e) { return; }
   probeWs.onopen = () => {
-    probeWs.send(JSON.stringify({ type: 'list' }));
-    // ปิดหลัง 2 วินาที (พอเก็บข้อมูลแล้ว)
+    probeWs.send(JSON.stringify({ type: 'list', token: adminToken }));
     setTimeout(() => { try { probeWs.close(); } catch(_) {} }, 2000);
   };
   probeWs.onmessage = (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch(_) { return; }
-    if (m.type === 'botList') renderBotList(m.bots);
+    if (m.type === 'botList' && !m.error) renderBotList(m.bots);
   };
   probeWs.onerror = () => {};
 })();
