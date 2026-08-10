@@ -144,9 +144,8 @@
       <div class="panel">
         <div class="panel-title">⏱️ Session / EXP</div>
         <div class="stat-row"><span>เวลาทำงาน</span><span class="stat-val" id="s-elapsed" style="color:#aaa">—</span></div>
-        <div class="stat-row"><span>🟢 Base EXP</span><span class="stat-val" id="s-baseexp" style="color:#4f4">—</span></div>
-        <div class="stat-row"><span>🔵 Job EXP</span><span class="stat-val" id="s-jobexp" style="color:#3498db">—</span></div>
-        <div class="stat-row"><span>EXP รวม</span><span class="stat-val" id="s-exp" style="color:#4f4">—</span></div>
+        <div class="stat-row"><span>🟢 Session Base EXP</span><span class="stat-val" id="s-baseexp" style="color:#4f4">—</span></div>
+        <div class="stat-row"><span>🔵 Session Job EXP</span><span class="stat-val" id="s-jobexp" style="color:#3498db">—</span></div>
         <div class="stat-row"><span>EXP/นาที</span><span class="stat-val" id="s-expmin" style="color:#4f4">—</span></div>
         <div class="stat-row"><span>ฆ่ามอน</span><span class="stat-val" id="s-kills" style="color:#e67e22">—</span></div>
         <div class="stat-row"><span>เก็บของ</span><span class="stat-val" id="s-looted" style="color:#e67e22">—</span></div>
@@ -395,7 +394,6 @@ function render(d) {
   // ---- Session / stats ----
   const s = d.stats || {};
   document.getElementById('s-elapsed').textContent = fmt(s.elapsedMs);
-  document.getElementById('s-exp').textContent = N(s.expGained);
   document.getElementById('s-expmin').textContent = N(s.expPerMin);
   document.getElementById('s-kills').textContent = N(s.kills);
   document.getElementById('s-looted').textContent = N(s.itemsLooted);
