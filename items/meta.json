@@ -173,6 +173,12 @@
     "desc": "Bottled banana juice that's easy to digest.Recovers a suitable amount of HP.",
     "buyPrice": 20
   },
+  "533": {
+    "type": "Healing Item",
+    "class": "n/a",
+    "desc": "Bottled grape juice that's easy to digest.Recovers a suitable amount of SP.",
+    "buyPrice": 250
+  },
   "534": {
     "type": "Healing Item",
     "class": "n/a",
@@ -353,11 +359,23 @@
     "desc": "A fragrant carrot colored with all the hues of the rainbow. Lunatic finds it to be very tasty.",
     "buyPrice": 2500
   },
+  "623": {
+    "type": "Taming Item",
+    "class": "n/a",
+    "desc": "A rather suave looking earthworm gifted with womanizing debonairness. Picky finds him to be quite delicious.",
+    "buyPrice": 4000
+  },
   "625": {
     "type": "Taming Item",
     "class": "n/a",
     "desc": "A rusty piece of iron that would only interest scavengers and vermin. Steel Chonchon finds it to be very tasty.",
     "buyPrice": 100
+  },
+  "629": {
+    "type": "Taming Item",
+    "class": "n/a",
+    "desc": "A flower that has been miraculously blessed with the gift of song. Rocker is inexplicably drawn to its sweet melodies.",
+    "buyPrice": 300
   },
   "630": {
     "type": "Taming Item",
@@ -382,6 +400,12 @@
     "class": "n/a",
     "desc": "A silver knife that is a symbol of a virgin's chastity. Sohee loves collecting these.",
     "buyPrice": 12000
+  },
+  "639": {
+    "type": "Taming Item",
+    "class": "n/a",
+    "desc": "A fancy, intricately decorated bracelet. Isis is lured by its regal beauty.",
+    "buyPrice": 18000
   },
   "640": {
     "type": "Taming Item",
@@ -503,6 +527,12 @@
     "class": "n/a",
     "desc": "An extremely rare clover with four leaves. Legends say that merely holding a Four Leaf Clover is a sign of great fortune to come.",
     "buyPrice": 80000
+  },
+  "707": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "A mysterious plant that sings melancholic songs under a full moon. Legend says it's a woman grieving over the loss of her lover that has been reborn.",
+    "buyPrice": 500
   },
   "708": {
     "type": "Miscellaneous",
@@ -1056,6 +1086,12 @@
     "desc": "A nasty scale with a horribly offensive odor.",
     "buyPrice": 168
   },
+  "960": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "A crustacean's claw.",
+    "buyPrice": 114
+  },
   "961": {
     "type": "Miscellaneous",
     "class": "n/a",
@@ -1085,6 +1121,12 @@
     "class": "n/a",
     "desc": "A hard shell taken from a dead clam.",
     "buyPrice": 56
+  },
+  "966": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "Muscular and fatty clam tissue that can be cooked in all sorts of ways.",
+    "buyPrice": 158
   },
   "967": {
     "type": "Miscellaneous",
@@ -1494,6 +1536,12 @@
     "desc": "Bottled powder from the wings of a moth.",
     "buyPrice": 138
   },
+  "1058": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "A set of wings cut from a moth.",
+    "buyPrice": 200
+  },
   "1059": {
     "type": "Miscellaneous",
     "class": "n/a",
@@ -1546,6 +1594,12 @@
     "type": "Miscellaneous",
     "class": "n/a",
     "desc": "A tree trunk of wood that is nice and solid.",
+    "buyPrice": 2
+  },
+  "1068": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "A tree trunk of wood that is pretty low quality.",
     "buyPrice": 2
   },
   "1094": {
@@ -1606,6 +1660,28 @@
     ],
     "buyPrice": 100
   },
+  "1104": {
+    "type": "Weapon",
+    "class": "One-handed Sword",
+    "desc": "An one-handed sword with a rounded blade.",
+    "atk": "39",
+    "reqLevel": "2",
+    "weaponLevel": "1",
+    "slot": "3",
+    "jobs": [
+      "Novice (& Supernovice)",
+      "Swordman",
+      "Merchant",
+      "Thief",
+      "Knight",
+      "Blacksmith",
+      "Assassin",
+      "Crusader",
+      "Rogue",
+      "Alchemist"
+    ],
+    "buyPrice": 1500
+  },
   "1105": {
     "type": "Weapon",
     "class": "One-handed Sword",
@@ -1627,6 +1703,28 @@
       "Alchemist"
     ],
     "buyPrice": 1500
+  },
+  "1107": {
+    "type": "Weapon",
+    "class": "One-handed Sword",
+    "desc": "An one-handed sword with a thick, flat blade.",
+    "atk": "53",
+    "reqLevel": "2",
+    "weaponLevel": "1",
+    "slot": "3",
+    "jobs": [
+      "Novice (& Supernovice)",
+      "Swordman",
+      "Merchant",
+      "Thief",
+      "Knight",
+      "Blacksmith",
+      "Assassin",
+      "Crusader",
+      "Rogue",
+      "Alchemist"
+    ],
+    "buyPrice": 2900
   },
   "1108": {
     "type": "Weapon",
@@ -1672,6 +1770,28 @@
     ],
     "buyPrice": 10000
   },
+  "1114": {
+    "type": "Weapon",
+    "class": "One-handed Sword",
+    "desc": "A strong, swift one-handed sword with a curved blade.",
+    "atk": "85",
+    "reqLevel": "14",
+    "weaponLevel": "2",
+    "slot": "3",
+    "jobs": [
+      "Novice (& Supernovice)",
+      "Swordman",
+      "Merchant",
+      "Thief",
+      "Knight",
+      "Blacksmith",
+      "Assassin",
+      "Crusader",
+      "Rogue",
+      "Alchemist"
+    ],
+    "buyPrice": 17000
+  },
   "1116": {
     "type": "Weapon",
     "class": "Two-handed Sword",
@@ -1702,6 +1822,27 @@
       "Crusader"
     ]
   },
+  "1119": {
+    "type": "Weapon",
+    "class": "One-handed Sword",
+    "desc": "One of the most powerful one-handed swords, the Tsurugi was favored by the Japanese samurai.",
+    "atk": "130",
+    "reqLevel": "27",
+    "weaponLevel": "3",
+    "slot": "1",
+    "jobs": [
+      "Swordman",
+      "Merchant",
+      "Thief",
+      "Knight",
+      "Blacksmith",
+      "Assassin",
+      "Crusader",
+      "Rogue",
+      "Alchemist"
+    ],
+    "buyPrice": 51000
+  },
   "1120": {
     "type": "Weapon",
     "class": "One-handed Sword",
@@ -1722,6 +1863,27 @@
       "Rogue",
       "Alchemist"
     ]
+  },
+  "1122": {
+    "type": "Weapon",
+    "class": "One-handed Sword",
+    "desc": "An one-handed sword with an elaborately designed hilt.",
+    "atk": "100",
+    "reqLevel": "14",
+    "weaponLevel": "2",
+    "slot": "2",
+    "jobs": [
+      "Swordman",
+      "Merchant",
+      "Thief",
+      "Knight",
+      "Blacksmith",
+      "Assassin",
+      "Crusader",
+      "Rogue",
+      "Alchemist"
+    ],
+    "buyPrice": 24000
   },
   "1124": {
     "type": "Weapon",
@@ -1906,6 +2068,27 @@
       "Alchemist"
     ]
   },
+  "1137": {
+    "type": "Weapon",
+    "class": "One-handed Sword",
+    "desc": "The one-handed sword of Arthurian legend, it supposedly selects its owner by its own will to wield its holy powers.INT + 5LUK + 10DEX - 1",
+    "atk": "150",
+    "reqLevel": "40",
+    "weaponLevel": "4",
+    "slot": "0",
+    "jobs": [
+      "Swordman",
+      "Merchant",
+      "Thief",
+      "Knight",
+      "Blacksmith",
+      "Assassin",
+      "Crusader",
+      "Rogue",
+      "Alchemist"
+    ],
+    "buyPrice": 20
+  },
   "1139": {
     "type": "Weapon",
     "class": "One-handed Sword",
@@ -1926,6 +2109,27 @@
       "Rogue",
       "Alchemist"
     ]
+  },
+  "1140": {
+    "type": "Weapon",
+    "class": "One-handed Sword",
+    "desc": "A giant one-handed sword used by ancient Korean war generals.Increase damage inflicted on Boss monster by 5%.Increase damage received from normal monster by 10%.All Stats + 2",
+    "atk": "150",
+    "reqLevel": "40",
+    "weaponLevel": "4",
+    "slot": "0",
+    "jobs": [
+      "Swordman",
+      "Merchant",
+      "Thief",
+      "Knight",
+      "Blacksmith",
+      "Assassin",
+      "Crusader",
+      "Rogue",
+      "Alchemist"
+    ],
+    "buyPrice": 20
   },
   "1141": {
     "type": "Weapon",
@@ -1961,6 +2165,19 @@
     ],
     "buyPrice": 42000
   },
+  "1148": {
+    "type": "Weapon",
+    "class": "One-handed Sword",
+    "desc": "A special sword whose blade is made from a fallen meteorite.During the night, the blade part is said to shine brightly like a star.Causes Stun effect to enemies by 5% chance.Indestructible (except in upgrade attempts).",
+    "atk": "140",
+    "reqLevel": "45",
+    "weaponLevel": "4",
+    "slot": "1",
+    "jobs": [
+      "Novice (& Supernovice)"
+    ],
+    "buyPrice": 20
+  },
   "1152": {
     "type": "Weapon",
     "class": "Two-handed Sword",
@@ -1975,6 +2192,36 @@
       "Crusader"
     ],
     "buyPrice": 15000
+  },
+  "1154": {
+    "type": "Weapon",
+    "class": "Two-handed Sword",
+    "desc": "A straight bladed sword that can be brutally swung just like a baseball bat.",
+    "atk": "115",
+    "reqLevel": "18",
+    "weaponLevel": "2",
+    "slot": "2",
+    "jobs": [
+      "Swordman",
+      "Knight",
+      "Crusader"
+    ],
+    "buyPrice": 22500
+  },
+  "1157": {
+    "type": "Weapon",
+    "class": "Two-handed Sword",
+    "desc": "A mighty, yet awfully basic, two-handed sword.",
+    "atk": "160",
+    "reqLevel": "33",
+    "weaponLevel": "3",
+    "slot": "1",
+    "jobs": [
+      "Swordman",
+      "Knight",
+      "Crusader"
+    ],
+    "buyPrice": 60000
   },
   "1158": {
     "type": "Weapon",
@@ -2141,6 +2388,37 @@
       "Kagerou / Oboro"
     ],
     "buyPrice": 50
+  },
+  "1205": {
+    "type": "Weapon",
+    "class": "Dagger",
+    "desc": "A knife used for cutting enemies.",
+    "atk": "30",
+    "reqLevel": "None",
+    "weaponLevel": "1",
+    "slot": "4",
+    "jobs": [
+      "Novice (& Supernovice)",
+      "Swordman",
+      "Mage",
+      "Archer",
+      "Merchant",
+      "Thief",
+      "Knight",
+      "Wizard",
+      "Blacksmith",
+      "Hunter",
+      "Assassin",
+      "Crusader",
+      "Sage",
+      "Rogue",
+      "Alchemist",
+      "Bard / Dancer",
+      "Soul Linker",
+      "Ninja",
+      "Kagerou / Oboro"
+    ],
+    "buyPrice": 1250
   },
   "1207": {
     "type": "Weapon",
@@ -2531,6 +2809,35 @@
       "Ninja"
     ]
   },
+  "1231": {
+    "type": "Weapon",
+    "class": "Dagger",
+    "desc": "A formal dress dagger, engraved with luxurious emblems, that's usually worn on special occasions.INT + 5MATK + 10%",
+    "atk": "70",
+    "reqLevel": "36",
+    "weaponLevel": "4",
+    "slot": "0",
+    "jobs": [
+      "Swordman",
+      "Mage",
+      "Archer",
+      "Merchant",
+      "Thief",
+      "Knight",
+      "Wizard",
+      "Blacksmith",
+      "Hunter",
+      "Assassin",
+      "Crusader",
+      "Sage",
+      "Rogue",
+      "Alchemist",
+      "Bard / Dancer",
+      "Soul Linker",
+      "Ninja"
+    ],
+    "buyPrice": 20
+  },
   "1232": {
     "type": "Weapon",
     "class": "Dagger",
@@ -2659,6 +2966,35 @@
       "Soul Linker",
       "Ninja"
     ]
+  },
+  "1239": {
+    "type": "Weapon",
+    "class": "Dagger",
+    "desc": "A dreadful dagger whose blade has been soaked in toxin.Enable a high chance of inflicting the Poison status with each attack.",
+    "atk": "64",
+    "reqLevel": "65",
+    "weaponLevel": "3",
+    "slot": "0",
+    "jobs": [
+      "Swordman",
+      "Mage",
+      "Archer",
+      "Merchant",
+      "Thief",
+      "Knight",
+      "Wizard",
+      "Blacksmith",
+      "Hunter",
+      "Assassin",
+      "Crusader",
+      "Sage",
+      "Rogue",
+      "Alchemist",
+      "Bard / Dancer",
+      "Soul Linker",
+      "Ninja"
+    ],
+    "buyPrice": 20
   },
   "1251": {
     "type": "Weapon",
@@ -2875,6 +3211,24 @@
     ],
     "buyPrice": 5400
   },
+  "1355": {
+    "type": "Weapon",
+    "class": "Two-handed Axe",
+    "desc": "A really big hammer.",
+    "atk": "120",
+    "reqLevel": "16",
+    "weaponLevel": "2",
+    "slot": "3",
+    "jobs": [
+      "Swordman",
+      "Merchant",
+      "Knight",
+      "Blacksmith",
+      "Crusader",
+      "Alchemist"
+    ],
+    "buyPrice": 15500
+  },
   "1358": {
     "type": "Weapon",
     "class": "Two-handed Axe",
@@ -3072,6 +3426,21 @@
       "Knight",
       "Crusader"
     ]
+  },
+  "1413": {
+    "type": "Weapon",
+    "class": "One-handed Spear",
+    "desc": "A legendary spear that is known for its ability to never miss its target.Has a 25% chance of performing a guided attack that a target can't evade.HIT + 30",
+    "atk": "120",
+    "reqLevel": "4",
+    "weaponLevel": "4",
+    "slot": "0",
+    "jobs": [
+      "Swordman",
+      "Knight",
+      "Crusader"
+    ],
+    "buyPrice": 20
   },
   "1417": {
     "type": "Weapon",
@@ -3379,6 +3748,27 @@
     ],
     "buyPrice": 16000
   },
+  "1511": {
+    "type": "Weapon",
+    "class": "Mace",
+    "desc": "With a spiked metal ball that freely swings from a chain, a flail is a very intimidating weapon.",
+    "atk": "69",
+    "reqLevel": "14",
+    "weaponLevel": "2",
+    "slot": "3",
+    "jobs": [
+      "Swordman",
+      "Acolyte",
+      "Merchant",
+      "Knight",
+      "Priest",
+      "Blacksmith",
+      "Crusader",
+      "Monk",
+      "Alchemist"
+    ],
+    "buyPrice": 16000
+  },
   "1516": {
     "type": "Weapon",
     "class": "Mace",
@@ -3561,6 +3951,21 @@
       "Star Gladiator"
     ]
   },
+  "1556": {
+    "type": "Weapon",
+    "class": "Book",
+    "desc": "A hefty book with a hard cover that has been enchanted with the Wind Property.",
+    "atk": "90",
+    "reqLevel": "27",
+    "weaponLevel": "3",
+    "slot": "0",
+    "jobs": [
+      "Priest",
+      "Sage",
+      "Star Gladiator"
+    ],
+    "buyPrice": 35000
+  },
   "1558": {
     "type": "Weapon",
     "class": "Book",
@@ -3575,6 +3980,21 @@
       "Star Gladiator"
     ],
     "buyPrice": 1500
+  },
+  "1559": {
+    "type": "Weapon",
+    "class": "Book",
+    "desc": "A book in which the origin and history of dragons is written. It's a treasure that is said to be passed among the dragon race.INT + 3Pierces Defense of Dragon monster.Recover 10 SP every time you kill a Dragon monster.",
+    "atk": "130",
+    "reqLevel": "70",
+    "weaponLevel": "4",
+    "slot": "0",
+    "jobs": [
+      "Priest",
+      "Sage",
+      "Star Gladiator"
+    ],
+    "buyPrice": 20
   },
   "1602": {
     "type": "Weapon",
@@ -3757,6 +4177,25 @@
       "Acolyte",
       "Priest",
       "Monk"
+    ]
+  },
+  "1639": {
+    "type": "Weapon",
+    "class": "One-handed Staff",
+    "desc": "A simple magic wand.MATK + 16%Impossible to refine this item.",
+    "atk": "15",
+    "reqLevel": "None",
+    "weaponLevel": "1",
+    "slot": "3",
+    "jobs": [
+      "Novice (& Supernovice)",
+      "Mage",
+      "Acolyte",
+      "Priest",
+      "Wizard",
+      "Monk",
+      "Sage",
+      "Soul Linker"
     ]
   },
   "1701": {
@@ -4297,6 +4736,23 @@
       "High Wizard"
     ]
   },
+  "2048": {
+    "type": "",
+    "class": "",
+    "desc": ""
+  },
+  "2101": {
+    "type": "Armor",
+    "class": "Shield",
+    "desc": "A square shield that is small, yet effective in combat.",
+    "def": "3",
+    "reqLevel": "None",
+    "slot": "0",
+    "jobs": [
+      "Every Job"
+    ],
+    "buyPrice": 500
+  },
   "2102": {
     "type": "Armor",
     "class": "Shield",
@@ -4386,6 +4842,21 @@
       "Star Gladiator"
     ]
   },
+  "2109": {
+    "type": "Armor",
+    "class": "Shield",
+    "desc": "A magic book filled with long, impractical spells that is so large, it can actually be used just like a shield.INT + 1, MDEF + 2[Pocket Watch & Eye Patch & Memory Book Equip Set]More Information on Combo:Memory Book, Monocle & Pocket Watch",
+    "def": "3",
+    "reqLevel": "None",
+    "slot": "0",
+    "jobs": [
+      "Mage",
+      "Wizard",
+      "Sage",
+      "Soul Linker"
+    ],
+    "buyPrice": 20
+  },
   "2116": {
     "type": "Armor",
     "class": "Shield",
@@ -4466,6 +4937,30 @@
     ],
     "buyPrice": 800
   },
+  "2210": {
+    "type": "Armor",
+    "class": "Upper Headgear",
+    "desc": "A simple hair band that holds hair in place quite neatly. It's a very cute look for girls, but dudes, on the other hand.Impossible to refine this item.",
+    "def": "1",
+    "reqLevel": "None",
+    "slot": "0",
+    "jobs": [
+      "Every Job"
+    ],
+    "buyPrice": 500
+  },
+  "2211": {
+    "type": "Armor",
+    "class": "Upper Headgear",
+    "desc": "A common, ivory colored bandana.",
+    "def": "1",
+    "reqLevel": "None",
+    "slot": "0",
+    "jobs": [
+      "Every Job"
+    ],
+    "buyPrice": 400
+  },
   "2212": {
     "type": "Armor",
     "class": "Middle Headgear",
@@ -4502,6 +4997,18 @@
       "Every Job"
     ]
   },
+  "2215": {
+    "type": "Armor",
+    "class": "Upper Headgear",
+    "desc": "A fragrant hair band crafted from only the daintiest of flowers.",
+    "def": "2",
+    "reqLevel": "None",
+    "slot": "0",
+    "jobs": [
+      "Every Job"
+    ],
+    "buyPrice": 20
+  },
   "2217": {
     "type": "Armor",
     "class": "Upper Headgear",
@@ -4515,6 +5022,18 @@
       "Priest",
       "Monk"
     ]
+  },
+  "2218": {
+    "type": "Armor",
+    "class": "Lower Headgear",
+    "desc": "A mask that is worn by people with the flu to prevent spreading sickness to others.Add a 10% resistance to the Silence status.",
+    "def": "0",
+    "reqLevel": "None",
+    "slot": "0",
+    "jobs": [
+      "Every Job"
+    ],
+    "buyPrice": 300
   },
   "2220": {
     "type": "Armor",
@@ -4794,6 +5313,30 @@
       "Every Job except Novice"
     ]
   },
+  "2247": {
+    "type": "Armor",
+    "class": "Upper Headgear",
+    "desc": "An ivory hat worn by classy men during classy occasions.",
+    "def": "3",
+    "reqLevel": "None",
+    "slot": "0",
+    "jobs": [
+      "Every Job except Novice"
+    ],
+    "buyPrice": 15000
+  },
+  "2248": {
+    "type": "Armor",
+    "class": "Upper Headgear",
+    "desc": "A broad brimmed casual hat, usually worn by cowboys and ranchers, that is rustically stylish.",
+    "def": "3",
+    "reqLevel": "None",
+    "slot": "0",
+    "jobs": [
+      "Every Job except Novice"
+    ],
+    "buyPrice": 15000
+  },
   "2249": {
     "type": "Armor",
     "class": "Upper Headgear",
@@ -4960,6 +5503,18 @@
     "slot": "0",
     "jobs": [
       "Every Job"
+    ],
+    "buyPrice": 20
+  },
+  "2263": {
+    "type": "Armor",
+    "class": "Middle Headgear",
+    "desc": "A mask patterned after the one worn by a fencer of legendary repute who always kept his identity as a wealthy don secret.",
+    "def": "0",
+    "reqLevel": "None",
+    "slot": "0",
+    "jobs": [
+      "Every Job except Novice"
     ],
     "buyPrice": 20
   },
@@ -5475,6 +6030,20 @@
       "Alchemist"
     ]
   },
+  "2316": {
+    "type": "Armor",
+    "class": "Armor",
+    "desc": "Heavy, solid armor made of durable plates of impenetrable metal.",
+    "def": "10",
+    "reqLevel": "40",
+    "slot": "0",
+    "jobs": [
+      "Swordman",
+      "Knight",
+      "Crusader"
+    ],
+    "buyPrice": 80000
+  },
   "2317": {
     "type": "Armor",
     "class": "Armor",
@@ -5538,6 +6107,20 @@
       "Alchemist",
       "Soul Linker"
     ]
+  },
+  "2324": {
+    "type": "Armor",
+    "class": "Armor",
+    "desc": "A blessed outer garment worn by clerics for religious ceremonies.",
+    "def": "4",
+    "reqLevel": "None",
+    "slot": "1",
+    "jobs": [
+      "Acolyte",
+      "Priest",
+      "Monk"
+    ],
+    "buyPrice": 6500
   },
   "2326": {
     "type": "Armor",
@@ -5699,6 +6282,17 @@
       "Novice (& Supernovice)"
     ],
     "buyPrice": 10000
+  },
+  "2357": {
+    "type": "Armor",
+    "class": "Armor",
+    "desc": "A set of shining white armor worn by Valkyries, the battle maidens that serve the god Odin.All Stats + 1Indestructible (except in upgrade attempts).[Mage, Archer, Acolyte Class]Increase resistance to Silence status by 50%.[Swordman, Merchant, Thief Class]Increase resistance to Stun status by 50%.[Valkyrie Helm & Valkyrja's Armor & Valkyrja's Manteau & Valkyrja's Shoes Equip Set]More Information on Combo:Valkyrian Armor[1] , Valkyrian Shoes[1] , Valkyrian Manteau[1] & Valkyrie Helm[1]",
+    "def": "6",
+    "reqLevel": "None",
+    "slot": "1",
+    "jobs": [
+      "Every Rebirth Job except High Novice"
+    ]
   },
   "2402": {
     "type": "Armor",
@@ -5903,6 +6497,18 @@
       "Taekwon",
       "Star Gladiator"
     ]
+  },
+  "2507": {
+    "type": "Armor",
+    "class": "Garment",
+    "desc": "A fancy cape said to have once been worn by marquises long ago.AGI + 1",
+    "def": "2",
+    "reqLevel": "40",
+    "slot": "0",
+    "jobs": [
+      "Every Job except Novice"
+    ],
+    "buyPrice": 82000
   },
   "2508": {
     "type": "Armor",
@@ -6343,6 +6949,12 @@
     "desc": "Flee Rate + 10",
     "buyPrice": 20
   },
+  "4016": {
+    "type": "Card",
+    "class": "Armor Card",
+    "desc": "AGI + 1",
+    "buyPrice": 20
+  },
   "4017": {
     "type": "Card",
     "class": "Weapon Card",
@@ -6499,6 +7111,12 @@
     "desc": "Reduce damage from Long Range attacks by 35%.",
     "buyPrice": 20
   },
+  "4046": {
+    "type": "Card",
+    "class": "Headgear Card",
+    "desc": "Increase resistance to Blind status by 20%.DEF + 1",
+    "buyPrice": 20
+  },
   "4048": {
     "type": "Card",
     "class": "Accessory Card",
@@ -6545,6 +7163,12 @@
     "type": "Card",
     "class": "Weapon Card",
     "desc": "Freeze an enemy when you attack (Success Chance 5%).ATK + 5",
+    "buyPrice": 20
+  },
+  "4056": {
+    "type": "Card",
+    "class": "Garment Card",
+    "desc": "Increase resistance to the Wind Property by 30%.Flee Rate + 5",
     "buyPrice": 20
   },
   "4057": {
@@ -6595,6 +7219,12 @@
     "desc": "DEX + 3",
     "buyPrice": 20
   },
+  "4065": {
+    "type": "Card",
+    "class": "Weapon Card",
+    "desc": "Increase damage on Earth Property enemies by 20%.",
+    "buyPrice": 20
+  },
   "4066": {
     "type": "Card",
     "class": "Shield Card",
@@ -6623,6 +7253,12 @@
     "type": "Card",
     "class": "Garment Card",
     "desc": "Increase resistance to Undead Property attacks by 30%.Flee Rate + 5",
+    "buyPrice": 20
+  },
+  "4072": {
+    "type": "Card",
+    "class": "Weapon Card",
+    "desc": "Make a weapon indestructible (except in upgrade attempts).ATK + 5",
     "buyPrice": 20
   },
   "4073": {
@@ -6853,6 +7489,12 @@
     "desc": "Enable a 3% chance of gaining 15% of the damage inflicted on an enemy as HP with each attack.",
     "buyPrice": 20
   },
+  "4116": {
+    "type": "Card",
+    "class": "Garment Card",
+    "desc": "Increase resistance to the Shadow Property by 30%.Flee Rate + 5",
+    "buyPrice": 20
+  },
   "4117": {
     "type": "Card",
     "class": "Weapon Card",
@@ -6961,6 +7603,12 @@
     "desc": "Inflict 30% more damage on Asters.ATK + 5[+ Shell Fish & Aster]Inflict 30% more damage on Water Property enemies.30% chance of gaining 'Raw Fish' item each time a Fish monster is killed.More Information on Combo:Crab Card, Aster Card & Shell Fish Card",
     "buyPrice": 20
   },
+  "4156": {
+    "type": "Card",
+    "class": "Weapon Card",
+    "desc": "Inflict 10% more damage with Critical attacks.Critical Rate + 7 on Formless monster.",
+    "buyPrice": 20
+  },
   "4157": {
     "type": "Card",
     "class": "Weapon Card",
@@ -6997,6 +7645,12 @@
     "desc": "Inflict 20% more damage with Critical attacks.Drain 1 SP from its owner on each attack.[+ Wanderer, Wild Rose, Shinobi & Dancing Dragon Card]AGI + 5STR + 5Intimidate Auto-Spell will not function.Increases Attack Speed by 5%.Movement Speed + 5%Gain 1 SP every time when attacking.[Thief Class]Allows its user to use certain skills without spending Gemstones.More Information on Combo:The Paper Card, Wanderer Card, Shinobi Card, Wild Rose Card & Zhu Po Long Card",
     "buyPrice": 20
   },
+  "4173": {
+    "type": "Card",
+    "class": "Armor Card",
+    "desc": "Add a 6% chance of auto casting 'Sleep' on an enemy when the user receives Physical Damage.",
+    "buyPrice": 20
+  },
   "4174": {
     "type": "Card",
     "class": "Garment Card",
@@ -7009,11 +7663,22 @@
     "desc": "AGI + 1Flee Rate + 10Inflict 5% more damage with Double Strafing and Arrow Shower.[Cruiser, Anolian, Alligator & Merman Card Combo]More Information on Combo:Dragon Tail Card, Merman Card, Anolian Card, Alligator Card & Cruiser CardDragon Tail Card, Anolian Card, Alligator Card, Cruiser Card & Green Ferus Card",
     "buyPrice": 20
   },
+  "4180": {
+    "type": "Card",
+    "class": "Weapon Card",
+    "desc": "Gain 5 SP each time a Dragon monster is killed by a Physical Melee Damage.Drain 5 SP as the weapon is unequipped.",
+    "buyPrice": 20
+  },
   "4185": {
     "type": "Card",
     "class": "Headgear Card",
     "desc": "INT + 1[Acolyte Class]INT + 1MDEF + 1[Geographer, Enchanted Peach Tree, Cookie & Seal Card Combo]More Information on Combo:Rideword Card, Enchanted Peach Tree Card, Geographer Card, Cookie Card & Fur Seal CardRideword Card, Cookie Card, Fur Seal Card & Waste Stove Card",
     "buyPrice": 20
+  },
+  "4186": {
+    "type": "",
+    "class": "",
+    "desc": ""
   },
   "4187": {
     "type": "Card",
@@ -7219,6 +7884,12 @@
     "desc": "DEF + 1Receive 25% less damage from Large size monster.",
     "buyPrice": 20
   },
+  "4251": {
+    "type": "Card",
+    "class": "Weapon Card",
+    "desc": "Inflict 40% more damage on Guardians during War of Emperium hours.",
+    "buyPrice": 20
+  },
   "4252": {
     "type": "Card",
     "class": "Accessory Card",
@@ -7327,6 +7998,12 @@
     "desc": "Inflict 10% more damage with Critical attacks.Critical Rate + 7 on Plant monster.",
     "buyPrice": 20
   },
+  "4293": {
+    "type": "Card",
+    "class": "Accessory Card",
+    "desc": "LUK + 2Inflict 10% more damage with Holy Light.[Geographer, Rideword, Enchanted Peach Tree & Seal Card Combo]More Information on Combo:Rideword Card, Enchanted Peach Tree Card, Geographer Card, Cookie Card & Fur Seal CardRideword Card, Cookie Card, Fur Seal Card & Waste Stove Card",
+    "buyPrice": 20
+  },
   "4296": {
     "type": "Card",
     "class": "Headgear Card",
@@ -7337,6 +8014,12 @@
     "type": "Card",
     "class": "Armor Card",
     "desc": "Add a 3% chance of auto casting Level 3 Auto Guard on the user when the user receives Physical Damage.If the user has mastered the skill at Level 10, it will cast Level 10 Auto Guard.[Clock Tower Manager, Alarm & Punk Card Combo]More Information on Combo:Tower Keeper Card, Alarm Card, Clock Card & Punk Card",
+    "buyPrice": 20
+  },
+  "4303": {
+    "type": "Card",
+    "class": "Garment Card",
+    "desc": "Flee Rate + 10[Base STR >= 80]ATK + 20[Base VIT >= 80]Maximum HP + 3%[Base LUK >= 80]Critical Rate + 3",
     "buyPrice": 20
   },
   "4308": {
@@ -7367,6 +8050,12 @@
     "type": "Card",
     "class": "Weapon Card",
     "desc": "Inflict 15% more damage with Critical attacks.[Thief Class]Critical Rate + 4",
+    "buyPrice": 20
+  },
+  "4319": {
+    "type": "Card",
+    "class": "Footgear Card",
+    "desc": "Maximum HP + 300[When compounded into an item with refine rate of +9 or higher]Inflict 10% more damage with Bash.\r\n[Solider, Assaulter, Permeter & Heater Card Combo]More Information on Combo:Solider Card, Assaulter Card, Permeter Card, Freezer Card & Heater CardPermeter Card, Freezer Card, Heater Card & Archdam Card",
     "buyPrice": 20
   },
   "4322": {
@@ -7611,6 +8300,18 @@
     ],
     "buyPrice": 250000
   },
+  "5062": {
+    "type": "Armor",
+    "class": "Upper Headgear",
+    "desc": "A hat knitted together with straw.AGI + 1",
+    "def": "3",
+    "reqLevel": "50",
+    "slot": "0",
+    "jobs": [
+      "Every Job"
+    ],
+    "buyPrice": 20
+  },
   "5063": {
     "type": "Armor",
     "class": "Upper Headgear",
@@ -7629,6 +8330,18 @@
     "desc": "A leaf which rumored to be worn by the Smokie monster for transformations.",
     "def": "1",
     "reqLevel": "None",
+    "slot": "0",
+    "jobs": [
+      "Every Job"
+    ],
+    "buyPrice": 20
+  },
+  "5065": {
+    "type": "Armor",
+    "class": "Upper Headgear",
+    "desc": "A headgear which looks just like a scrumptious fish. It even has the same smell!Increase 10% damage against Fish monster.",
+    "def": "2",
+    "reqLevel": "50",
     "slot": "0",
     "jobs": [
       "Every Job"
@@ -7682,6 +8395,17 @@
       "Novice (& Supernovice)"
     ],
     "buyPrice": 10000
+  },
+  "5214": {
+    "type": "Armor",
+    "class": "Upper & Middle Headgear",
+    "desc": "A hat created with the monster Moonlight Flower in mind.It is said that it uses 30% of Moonlight Flower's fur, and 70% of Nine Tails fur.Note that you should only use hand washing to clean it.Wear this with your Nine Tails scarf for the perfect winter fashion!DEX +2Has a chance of auto-casting Level 1 Increase Agility when attacking.",
+    "def": "3",
+    "reqLevel": "None",
+    "slot": "0",
+    "jobs": [
+      "Every Job"
+    ]
   },
   "5250": {
     "type": "Armor",
@@ -7811,6 +8535,12 @@
     "desc": "A glove worn when performing executions that has absorbed all sorts of memories that are related to death and obligation.",
     "buyPrice": 4500
   },
+  "7018": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "A fresh, young twig that evokes feelings of purity and innocence.",
+    "buyPrice": 50
+  },
   "7019": {
     "type": "Miscellaneous",
     "class": "n/a",
@@ -7895,6 +8625,11 @@
     "desc": "A Griffon's sharp talon.",
     "buyPrice": 5418
   },
+  "7049": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "Just a simple stone that you can pick up around anywhere."
+  },
   "7053": {
     "type": "Miscellaneous",
     "class": "n/a",
@@ -7918,6 +8653,12 @@
     "class": "n/a",
     "desc": "A dragonfly wing.",
     "buyPrice": 520
+  },
+  "7065": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "Sea-Otter fur that is soft and downy enough to be used in cloth making.",
+    "buyPrice": 820
   },
   "7066": {
     "type": "Miscellaneous",
@@ -7967,6 +8708,12 @@
     "desc": "An old, worn-out magic scroll that is extremely valuable to the Mage Academy.",
     "buyPrice": 773
   },
+  "7101": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "A rare feather from the wing of a Peco Peco.",
+    "buyPrice": 454
+  },
   "7106": {
     "type": "Miscellaneous",
     "class": "n/a",
@@ -8008,6 +8755,18 @@
     "class": "n/a",
     "desc": "A golden mask that is rumored to be worn by an ancient Egyptian king.",
     "buyPrice": 10
+  },
+  "7115": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "A feather from a Harpy. The Harpy's wings are effective in paralyzing its enemies.",
+    "buyPrice": 1142
+  },
+  "7116": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "A Talon from a Harpy.",
+    "buyPrice": 1210
   },
   "7118": {
     "type": "Miscellaneous",
@@ -8111,6 +8870,11 @@
     "desc": "A nose part of the mask that the Tengu monster wears.The nose attached on this reddish mask is quite long and ugly.",
     "buyPrice": 400
   },
+  "7175": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "Shiny, beautiful paper used to decorate a gift box."
+  },
   "7182": {
     "type": "Miscellaneous",
     "class": "n/a",
@@ -8122,6 +8886,12 @@
     "class": "n/a",
     "desc": "An insect husk that seems very hard and stout.",
     "buyPrice": 140
+  },
+  "7202": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "A pincher from a beetle.",
+    "buyPrice": 290
   },
   "7211": {
     "type": "Miscellaneous",
@@ -8135,6 +8905,12 @@
     "desc": "A soft cloth which is worn around the neck of an infant to protect the chest from spilled milk and baby drool.",
     "buyPrice": 960
   },
+  "7270": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "Milk that is bottled for infants.",
+    "buyPrice": 1100
+  },
   "7289": {
     "type": "Miscellaneous",
     "class": "n/a",
@@ -8145,6 +8921,12 @@
     "type": "Miscellaneous",
     "class": "n/a",
     "desc": "A pinkish quartz which is used as a gemstone or as an ornamental stone.Symbolizes self-esteem.",
+    "buyPrice": 3000
+  },
+  "7296": {
+    "type": "Miscellaneous",
+    "class": "n/a",
+    "desc": "A group of crystalline silicate mineral common in igneous and metamorphic rocks.Symbolizes cure and restoration.",
     "buyPrice": 3000
   },
   "7300": {
@@ -8234,11 +9016,40 @@
     ],
     "buyPrice": 2
   },
+  "12008": {
+    "type": "Usable Item",
+    "class": "n/a",
+    "desc": "A quiver which contains 500 Fire Arrows.",
+    "jobs": [
+      "Every Job"
+    ],
+    "buyPrice": 2
+  },
+  "12114": {
+    "type": "Delayed-Consumable",
+    "class": "n/a",
+    "desc": "Temporarily enchants the user's weapon with the Fire Property.",
+    "buyPrice": 2
+  },
+  "12115": {
+    "type": "Delayed-Consumable",
+    "class": "n/a",
+    "desc": "Temporarily enchants the user's weapon with the Water Property.",
+    "buyPrice": 2
+  },
   "12116": {
     "type": "Delayed-Consumable",
     "class": "n/a",
     "desc": "Temporarily enchants the user's weapon with the Earth Property.",
     "buyPrice": 2
+  },
+  "12288": {
+    "type": "Usable Item",
+    "class": "n/a",
+    "desc": "An item which when you breathe in this powder, your font becomes a bit evil. To make the best use of it, its best used when you have something you want to complain about, or when you want to do something awful. When double clicked, your font changes, and when used again, your font goes back to normalWorks only for chats said above your head and for vend names.",
+    "jobs": [
+      "Every Job"
+    ]
   },
   "13008": {
     "type": "Weapon",
@@ -8273,6 +9084,19 @@
     "atk": "95",
     "reqLevel": "24",
     "weaponLevel": "2",
+    "slot": "1",
+    "jobs": [
+      "Ninja"
+    ],
+    "buyPrice": 20
+  },
+  "13015": {
+    "type": "Weapon",
+    "class": "Dagger",
+    "desc": "A dagger that has a shining white blade crafted of bone, and is designed for stabbing, rather than slashing.Add a 1% chance of auto casting Level 1 Heal on the user when attacking.",
+    "atk": "120",
+    "reqLevel": "42",
+    "weaponLevel": "3",
     "slot": "1",
     "jobs": [
       "Ninja"
@@ -8342,6 +9166,27 @@
     "slot": "2",
     "jobs": [
       "Ninja"
+    ],
+    "buyPrice": 20
+  },
+  "16000": {
+    "type": "Weapon",
+    "class": "Mace",
+    "desc": "Crafted in the shape of the Serpent of Knowledge.MaxSP + 50Increases damage of Acid Terror and Demontration skills by 20%.Increases healing effectivness by 10% (when you are healed).",
+    "atk": "130",
+    "reqLevel": "50",
+    "weaponLevel": "3",
+    "slot": "2",
+    "jobs": [
+      "High Swordman",
+      "High Acolyte",
+      "High Merchant",
+      "Lord Knight",
+      "High Priest",
+      "Whitesmith",
+      "Paladin",
+      "Champion",
+      "Creator"
     ],
     "buyPrice": 20
   }
