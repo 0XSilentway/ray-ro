@@ -3,212 +3,461 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RO Remote Monitor</title>
+<title>📊 RO Remote Monitor</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #0d1117; color: #e8e8e8; font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
-  .container { max-width: 550px; margin: 0 auto; padding: 16px; }
-  .login { text-align: center; padding: 60px 20px; }
-  .login h1 { font-size: 24px; margin-bottom: 20px; color: #8ab4f8; }
-  .login input { width: 200px; padding: 10px 14px; background: #15171c; border: 1px solid #3a3f4b; border-radius: 8px; color: #e8e8e8; font-size: 14px; font-family: inherit; }
-  .login button { padding: 10px 24px; background: #1a73e8; border: none; border-radius: 8px; color: #fff; cursor: pointer; font-size: 14px; font-family: inherit; margin-left: 8px; }
-  .login button:hover { background: #1557b0; }
-  .login p { color: #5f6368; font-size: 12px; margin-top: 16px; }
-  .status-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #15171c; border-radius: 8px; margin-bottom: 12px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; }
-  .dot.on { background: #27ae60; box-shadow: 0 0 6px #27ae60; }
-  .dot.off { background: #e74c3c; }
-  .card { background: #15171c; border: 1px solid #2a2d35; border-radius: 10px; padding: 12px; margin-bottom: 10px; }
-  .card h3 { color: #8ab4f8; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .stat { display: flex; justify-content: space-between; padding: 4px 8px; background: #0d1117; border-radius: 5px; }
-  .stat .k { color: #9aa0a6; font-size: 12px; }
-  .stat .v { font-weight: 600; font-size: 13px; }
-  .hpbar-bg { background: #2a2d35; height: 18px; border-radius: 9px; overflow: hidden; position: relative; margin-bottom: 4px; }
-  .hpbar-fill { height: 100%; transition: width .3s; border-radius: 9px; }
-  .hpbar-fill.hp { background: linear-gradient(90deg, #e53935, #ef5350); }
-  .hpbar-fill.sp { background: linear-gradient(90deg, #1976d2, #42a5f5); }
-  .hpbar-text { position: absolute; top: 0; left: 0; right: 0; text-align: center; line-height: 18px; font-size: 11px; color: #fff; font-weight: 600; text-shadow: 0 0 3px rgba(0,0,0,.8); }
+  body { font-family: 'Cascadia Code', Consolas, monospace; background: #0a0a14; color: #e0e0e0; min-height: 100vh; }
+
+  /* ---------- Login ---------- */
+  #login { max-width: 420px; margin: 80px auto; background: #12121e; border: 1px solid #2a2a3a; border-radius: 10px; padding: 24px; }
+  #login h1 { font-size: 18px; color: #9b59b6; margin-bottom: 4px; }
+  #login .sub { color: #888; font-size: 12px; margin-bottom: 16px; }
+  #login label { display: block; font-size: 11px; color: #9aa0a6; margin-bottom: 4px; text-transform: uppercase; }
+  #login input { width: 100%; background: #1a1a2e; border: 1px solid #3a3f4b; border-radius: 6px; color: #e8e8e8; padding: 10px 12px; font-size: 13px; font-family: inherit; margin-bottom: 12px; }
+  #login input:focus { outline: none; border-color: #9b59b6; }
+  #login button { width: 100%; background: #9b59b6; color: #fff; border: none; border-radius: 6px; padding: 10px; font-size: 13px; cursor: pointer; font-family: inherit; }
+  #login button:hover { background: #8e44ad; }
+  #login .hint { font-size: 10px; color: #666; margin-top: 12px; line-height: 1.5; }
+  #login #bot-list-wrap { margin-top: 16px; }
+  #login #bot-list-wrap h3 { font-size: 11px; color: #888; text-transform: uppercase; margin-bottom: 6px; }
+  #login #bot-list { display: flex; flex-direction: column; gap: 4px; }
+  #login .bot-item { background: #1a1a2e; border: 1px solid #2a2a3a; border-radius: 4px; padding: 8px 10px; cursor: pointer; font-size: 11px; display: flex; justify-content: space-between; align-items: center; }
+  #login .bot-item:hover { border-color: #9b59b6; background: #1f1f33; }
+  #login .bot-item .pid { color: #9b59b6; font-weight: bold; }
+  #login .bot-item .nm { color: #ccc; }
+  #login .bot-item .mp { color: #888; font-size: 10px; }
+
+  /* ---------- Dashboard ---------- */
+  #dash { display: none; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 6px 14px; background: #111; border-bottom: 1px solid #333; position: sticky; top: 0; z-index: 10; }
+  .topbar h1 { font-size: 14px; color: #9b59b6; }
+  .topbar .info { display: flex; gap: 12px; align-items: center; font-size: 11px; }
+  .topbar .dot { width: 8px; height: 8px; border-radius: 50%; background: #e74c3c; display: inline-block; }
+  .topbar .dot.on { background: #2ecc71; }
+  .topbar button { background: #333; color: #aaa; border: 1px solid #555; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-family: inherit; }
+  .topbar button:hover { background: #444; }
+
+  .grid3 { display: grid; grid-template-columns: 320px 1fr 340px; gap: 6px; padding: 6px; }
+  @media (max-width: 1100px) { .grid3 { grid-template-columns: 1fr; } }
+  .col { display: flex; flex-direction: column; gap: 6px; }
+  .panel { background: #12121e; border: 1px solid #2a2a3a; border-radius: 6px; padding: 8px; }
+  .panel-title { font-size: 10px; color: #888; text-transform: uppercase; margin-bottom: 6px; }
+  .stat-row { display: flex; justify-content: space-between; padding: 2px 0; font-size: 11px; }
+  .stat-val { font-weight: bold; }
+  .bar-track { background: #333; border-radius: 4px; height: 14px; overflow: hidden; margin-bottom: 3px; }
+  .bar-fill { height: 100%; transition: width 0.3s; border-radius: 4px; }
+
+  /* toggle pills */
   .toggles { display: flex; flex-wrap: wrap; gap: 4px; }
-  .toggle { font-size: 10px; padding: 2px 8px; border-radius: 8px; font-weight: 600; }
-  .toggle.on { background: #1b5e20; color: #a5d6a7; }
-  .toggle.off { background: #4a2020; color: #ef9a9a; }
-  .cooldown { display: flex; justify-content: space-between; padding: 3px 8px; font-size: 11px; border-radius: 4px; background: #0d1117; margin-bottom: 2px; }
-  .cooldown.ready { color: #27ae60; }
-  .cooldown.waiting { color: #f39c12; }
-  .btn-back { background: none; border: none; color: #8ab4f8; cursor: pointer; font-size: 12px; font-family: inherit; }
-  @media (max-width: 500px) { .grid { grid-template-columns: 1fr; } .login input { width: 100%; margin-bottom: 8px; } .login button { margin-left: 0; width: 100%; } }
+  .toggle { padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; }
+  .toggle.on { background: #2e7d32; color: #fff; }
+  .toggle.off { background: #424242; color: #888; }
+
+  /* cooldown list */
+  .cd-item { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px solid #1a1a2a; font-size: 11px; gap: 6px; }
+  .cd-item img { width: 18px; height: 18px; border-radius: 2px; flex-shrink: 0; }
+  .cd-item .nm { flex: 1; color: #ccc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cd-ready { color: #4caf50; font-size: 10px; }
+  .cd-wait { color: #fa0; font-size: 10px; }
+
+  /* inventory */
+  .inv-item { display: flex; align-items: center; gap: 6px; padding: 3px 0; border-bottom: 1px solid #1a1a2a; font-size: 11px; }
+  .inv-item img { width: 18px; height: 18px; border-radius: 2px; flex-shrink: 0; }
+  .inv-item .nm { flex: 1; color: #ccc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .inv-item .ct { color: #4f4; font-weight: bold; }
+
+  /* aggro cards (monster images) */
+  .aggro-wrap { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .aggro-card { background: #1a1a2e; border: 1px solid #e74c3c; border-radius: 6px; padding: 6px; text-align: center; font-size: 10px; min-width: 72px; max-width: 100px; flex: 1; }
+  .aggro-card.target { border-color: #e67e22; box-shadow: 0 0 6px #e67e2255; }
+  .aggro-card img { width: 40px; height: 40px; border-radius: 4px; }
+  .aggro-card .anm { color: #ef9a9a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+  .aggro-card.target .anm { color: #e67e22; }
+  .hp-bar-mini { background: #333; border-radius: 2px; height: 5px; overflow: hidden; margin-top: 3px; }
+  .hp-bar-mini > div { height: 100%; }
+
+  /* cooldown / buff / skill grid */
+  .cd-grid { display: flex; flex-direction: column; gap: 2px; }
+  .empty { color: #666; font-size: 10px; padding: 4px 0; }
 </style>
 </head>
 <body>
-<div class="container">
 
-  <!-- Login -->
-  <div id="login" class="login">
-    <h1>🖥️ RO Remote Monitor</h1>
-    <div style="margin-bottom:12px">
-      <input type="text" id="server-url" placeholder="wss://rayro.catgg.net" value="wss://rayro.catgg.net" style="width:260px;text-align:center">
-    </div>
-    <div>
-      <input type="text" id="player-id-input" placeholder="player_id (เช่น 33ef5d)" style="text-align:center">
-      <button id="connect-btn">เชื่อมต่อ</button>
-    </div>
-    <p>กรอก player_id ของบอทที่ต้องการดู (หาได้จาก panel > player_id)</p>
+<!-- ============ LOGIN ============ -->
+<div id="login">
+  <h1>🖥️ RO Remote Monitor</h1>
+  <div class="sub">กรอก player_id เพื่อดูข้อมูลบอทแบบ real-time</div>
+  <label>Player ID (hex)</label>
+  <input type="text" id="pid-input" placeholder="เช่น 2000001" autocomplete="off">
+  <button id="connect-btn">เชื่อมต่อ</button>
+  <div id="bot-list-wrap" style="display:none">
+    <h3>🤖 บอทที่ออนไลน์</h3>
+    <div id="bot-list"></div>
   </div>
+  <div class="hint">
+    ★ player_id หาได้จากแท็บ "📊 สถิติ" ในสคริปต์ (เลขฐาน16)<br>
+    ★ ต้องเปิด "🌐 Remote Monitor" ในแท็บตั้งค่าของสคริปต์<br>
+    ★ relay server ต้องรันอยู่ที่เดียวกับหน้าเว็บนี้
+  </div>
+</div>
 
-  <!-- Dashboard -->
-  <div id="dashboard" style="display:none">
-    <div class="status-bar">
-      <div class="dot off" id="dot"></div>
-      <span id="status-text">กำลังเชื่อมต่อ...</span>
-      <button class="btn-back" id="back-btn" style="margin-left:auto">← กลับ</button>
+<!-- ============ DASHBOARD ============ -->
+<div id="dash">
+  <div class="topbar">
+    <h1>📊 RO Remote Monitor</h1>
+    <div class="info">
+      <span><span class="dot" id="conn-dot"></span> <span id="conn-text">—</span></span>
+      <span id="last-update">—</span>
+      <span id="relay-status" style="color:#9aa0a6">relay: —</span>
+      <button id="back-btn">← เปลี่ยน player_id</button>
     </div>
-    <div id="dash-content" style="opacity:.4">
-      <div class="card"><h3>❤️ HP / 💧 SP</h3>
-        <div class="hpbar-bg"><div class="hpbar-fill hp" id="hp-fill" style="width:0%"></div><div class="hpbar-text" id="hp-text">?</div></div>
-        <div class="hpbar-bg"><div class="hpbar-fill sp" id="sp-fill" style="width:0%"></div><div class="hpbar-text" id="sp-text">?</div></div>
+  </div>
+  <div class="grid3">
+    <!-- LEFT COLUMN -->
+    <div class="col">
+      <div class="panel">
+        <div class="panel-title">⏱️ Session</div>
+        <div class="stat-row"><span>เวลาทำงาน</span><span class="stat-val" id="s-elapsed" style="color:#aaa">—</span></div>
+        <div class="stat-row"><span>EXP รวม</span><span class="stat-val" id="s-exp" style="color:#4f4">—</span></div>
+        <div class="stat-row"><span>EXP/นาที</span><span class="stat-val" id="s-expmin" style="color:#4f4">—</span></div>
+        <div class="stat-row"><span>ฆ่ามอน</span><span class="stat-val" id="s-kills" style="color:#e67e22">—</span></div>
+        <div class="stat-row"><span>เก็บของ</span><span class="stat-val" id="s-looted" style="color:#e67e22">—</span></div>
+        <div class="stat-row"><span>ตาย</span><span class="stat-val" id="s-deaths" style="color:#e74c3c">—</span></div>
       </div>
-      <div class="card"><h3>📍 ตำแหน่ง</h3><div class="grid">
-        <div class="stat"><span class="k">พิกัด</span><span class="v" id="pos">?</span></div>
-        <div class="stat"><span class="k">แมป</span><span class="v" id="map">?</span></div>
-        <div class="stat"><span class="k">ฟาร์ม</span><span class="v" id="farmmap">-</span></div>
-        <div class="stat"><span class="k">สถานะ</span><span class="v" id="state">?</span></div>
-        <div class="stat"><span class="k">🌐 Relay</span><span class="v" id="relay" style="color:#9aa0a6">—</span></div>
-      </div></div>
-      <div class="card"><h3>⚔️ Combat</h3><div class="grid">
-        <div class="stat"><span class="k">เป้าหมาย</span><span class="v" id="target">-</span></div>
-        <div class="stat"><span class="k">มอนรุม</span><span class="v" id="mob">0</span></div>
-        <div class="stat"><span class="k">Damage/วิ</span><span class="v" id="dps" style="color:#e67e22">0</span></div>
-        <div class="stat"><span class="k">ASPD</span><span class="v" id="aspd" style="color:#3498db">0</span></div>
-      </div></div>
-      <div class="card"><h3>📊 สถิติ</h3><div class="grid">
-        <div class="stat"><span class="k">ฆ่าได้</span><span class="v" id="kills">0</span></div>
-        <div class="stat"><span class="k">เก็บของ</span><span class="v" id="looted">0</span></div>
-        <div class="stat"><span class="k">EXP/นาที</span><span class="v" id="expmin">0</span></div>
-        <div class="stat"><span class="k">💰 Zeny/ชม.</span><span class="v" id="goldrate" style="color:#f1c40f">0z</span></div>
-        <div class="stat"><span class="k">เวลาฟาร์ม</span><span class="v" id="elapsed">0s</span></div>
-        <div class="stat"><span class="k">ตาย</span><span class="v" id="deaths">0</span></div>
-      </div></div>
-      <div class="card"><h3>🔄 ระบบ</h3><div class="toggles" id="toggles"></div></div>
-      <div class="card" id="cd-card" style="display:none"><h3>✨ Buff / 🔮 Skill</h3><div id="cds"></div></div>
+      <div class="panel">
+        <div class="panel-title">❤️ HP / SP</div>
+        <div class="bar-track"><div class="bar-fill" id="hp-fill" style="background:#2ecc71;width:0%"></div></div>
+        <div style="font-size:11px;margin-bottom:6px" id="hp-text">HP —</div>
+        <div class="bar-track"><div class="bar-fill" id="sp-fill" style="background:#3498db;width:0%"></div></div>
+        <div style="font-size:11px" id="sp-text">SP —</div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">⚔️ Combat</div>
+        <div class="stat-row"><span>⚔️ DPS (10วิ)</span><span class="stat-val" id="s-dps" style="color:#e67e22">—</span></div>
+        <div class="stat-row"><span>⚡ ASPD</span><span class="stat-val" id="s-aspd" style="color:#3498db">—</span></div>
+        <div class="stat-row"><span>💰 Zeny/ชม</span><span class="stat-val" id="s-goldrate" style="color:#f1c40f">—</span></div>
+        <div class="stat-row"><span>มอนรุม</span><span class="stat-val" id="s-mob" style="color:#e74c3c">0</span></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">🔄 ระบบ</div>
+        <div class="toggles" id="toggles"></div>
+      </div>
+      <div class="panel" id="cd-panel">
+        <div class="panel-title">✨ Buff / 🔮 Skill</div>
+        <div class="cd-grid" id="cd-list"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">🎒 Inventory</div>
+        <div id="inv-list"></div>
+      </div>
+    </div>
+    <!-- CENTER COLUMN -->
+    <div class="col">
+      <div class="panel">
+        <div class="panel-title">📍 ตำแหน่ง / สถานะ</div>
+        <div class="stat-row"><span>พิกัด</span><span class="stat-val" id="s-pos">—</span></div>
+        <div class="stat-row"><span>แมป</span><span class="stat-val" id="s-map" style="color:#9b59b6">—</span></div>
+        <div class="stat-row"><span>ฟาร์ม</span><span class="stat-val" id="s-farmmap">—</span></div>
+        <div class="stat-row"><span>สถานะ</span><span class="stat-val" id="s-state">—</span></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">🎯 เป้าหมาย + มอนที่รุม</div>
+        <div class="stat-row" style="margin-bottom:4px"><span>เป้าหมายปัจจุบัน</span><span class="stat-val" id="s-target">—</span></div>
+        <div class="aggro-wrap" id="aggro-list"></div>
+      </div>
+    </div>
+    <!-- RIGHT COLUMN -->
+    <div class="col">
+      <div class="panel">
+        <div class="panel-title">👤 ตัวละคร</div>
+        <div class="stat-row"><span>ชื่อ</span><span class="stat-val" id="s-name">—</span></div>
+        <div class="stat-row"><span>player_id</span><span class="stat-val" id="s-pid" style="color:#9b59b6">—</span></div>
+        <div class="stat-row"><span>เวอร์ชัน</span><span class="stat-val" id="s-ver">—</span></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">💰 Sell / 🏦 Storage</div>
+        <div class="stat-row"><span>Sell state</span><span class="stat-val" id="s-sell">IDLE</span></div>
+        <div class="stat-row"><span>Storage state</span><span class="stat-val" id="s-storage">IDLE</span></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">🌐 Relay</div>
+        <div class="stat-row"><span>สถานะ (ฝั่งบอท)</span><span class="stat-val" id="s-relay-bot">—</span></div>
+        <div class="stat-row"><span>URL</span><span class="stat-val" id="s-relay-url" style="font-size:9px;color:#666">—</span></div>
+      </div>
     </div>
   </div>
-
 </div>
 
 <script>
+// ============================================================
+//  Image URL helpers — ลอง relative path ก่อน (เซิร์ฟเวอร์ relay)
+//  ถ้าโหลดไม่ได้ → fallback ไป GitHub raw (สคริปต์ repo)
+// ============================================================
+const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main';
+const ITEM_ICON_BASE = GITHUB_RAW + '/items/small/';   // {id}.gif หรือ card.gif
+const MOB_ICON_BASE = GITHUB_RAW + '/mobs/';            // {Name}.gif
+
+function itemIconUrl(id, name) {
+  // ★ Card: item IDs 4001-4520 หรือชื่อลงท้ายด้วย "Card" → ใช้ card.gif
+  if ((id >= 4001 && id <= 4520) || (name && / Card$/i.test(name))) return ITEM_ICON_BASE + 'card.gif';
+  return ITEM_ICON_BASE + id + '.gif';
+}
+function mobIconUrl(name) {
+  if (!name) return '';
+  // ★ mobs ใน repo ตั้งชื่อไฟล์: whitespace → underscore (เก็บ trailing dot)
+  return MOB_ICON_BASE + encodeURIComponent(name.replace(/\s+/g, '_')) + '.gif';
+}
+
+// ============================================================
+//  Connection
+// ============================================================
 let ws = null;
-let lastData = null;
 let playerId = null;
+let reconnectTimer = null;
+let lastData = null;
 
-function fmtMs(ms) { const s=Math.floor(ms/1000); if(s<60)return s+'s'; const m=Math.floor(s/60); if(m<60)return m+'m '+(s%60)+'s'; const h=Math.floor(m/60); return h+'h '+(m%60)+'m'; }
-function N(n) { return (n||0).toLocaleString(); }
+function N(n) { return (n || 0).toLocaleString(); }
+function fmt(ms) {
+  if (!ms || ms < 0) return '—';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ' + (s % 60) + 's';
+  const h = Math.floor(m / 60);
+  return h + 'h ' + (m % 60) + 'm';
+}
 
-function update(d) {
-  lastData = d;
-  document.getElementById('dash-content').style.opacity = '1';
-  document.getElementById('dot').className = 'dot on';
-  document.getElementById('status-text').textContent = '🟢 ' + new Date(d.t).toLocaleTimeString() + (d.player?.name ? ' — ' + d.player.name : '');
+function connect(pid) {
+  playerId = pid;
+  if (ws) { try { ws.close(); } catch(_) {} }
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('dash').style.display = '';
 
+  // ★ URL สำหรับเชื่อม relay server: wss:// ถ้าหน้าเว็บเป็น https, ws:// ถ้า http
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = proto + '//' + location.host;
+  log('monitor', 'เชื่อมต่อ relay: ' + url);
+  doConnect(url);
+}
+
+function doConnect(url) {
+  ws = new WebSocket(url);
+  const dot = document.getElementById('conn-dot');
+  const txt = document.getElementById('conn-text');
+
+  ws.onopen = () => {
+    dot.className = 'dot on';
+    txt.textContent = '🟢 เชื่อมต่อแล้ว';
+    ws.send(JSON.stringify({ type: 'subscribe', playerId: playerId }));
+    // ขอรายชื่อบอทด้วย (อาจใช้ในอนาคต)
+    ws.send(JSON.stringify({ type: 'list' }));
+  };
+  ws.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch(_) { return; }
+    if (m.type === 'data') { lastData = m; render(m); }
+    else if (m.type === 'waiting') { txt.textContent = '⏳ ' + (m.message || 'รอบอท...'); }
+    else if (m.type === 'botList') { renderBotList(m.bots); }
+  };
+  ws.onclose = () => {
+    dot.className = 'dot';
+    txt.textContent = '🔴 หลุด — เชื่อมใหม่ใน 3s';
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => doConnect(url), 3000);
+  };
+  ws.onerror = () => { try { ws.close(); } catch(_) {} };
+}
+
+function renderBotList(bots) {
+  const wrap = document.getElementById('bot-list-wrap');
+  const list = document.getElementById('bot-list');
+  if (!bots || bots.length === 0) { wrap.style.display = ''; list.innerHTML = '<div class="empty">(ยังไม่มีบอทออนไลน์)</div>'; return; }
+  wrap.style.display = '';
+  list.innerHTML = bots.map(b => `<div class="bot-item" data-pid="${b.playerId}"><span class="pid">${b.playerId}</span><span class="nm">${b.name || '?'}</span><span class="mp">${b.map || '?'}</span></div>`).join('');
+  list.querySelectorAll('.bot-item').forEach(el => {
+    el.onclick = () => { document.getElementById('pid-input').value = el.dataset.pid; };
+  });
+}
+
+// ============================================================
+//  Render
+// ============================================================
+function render(d) {
+  // ---- last update ----
+  document.getElementById('last-update').textContent = '⏱ ' + new Date(d.t).toLocaleTimeString();
+  document.getElementById('s-ver').textContent = 'v' + (d.version || '?');
+
+  // ---- HP/SP ----
   const hpPct = d.hpMax > 0 ? (d.hp / d.hpMax * 100) : 0;
-  document.getElementById('hp-fill').style.width = Math.max(0, Math.min(100, hpPct)) + '%';
+  const hpEl = document.getElementById('hp-fill');
+  hpEl.style.width = Math.max(0, Math.min(100, hpPct)) + '%';
+  hpEl.style.background = hpPct < 25 ? '#e74c3c' : hpPct < 50 ? '#f39c12' : '#2ecc71';
   document.getElementById('hp-text').textContent = (d.hp != null ? d.hp : '?') + ' / ' + (d.hpMax || '?') + ' (' + (hpPct ? hpPct.toFixed(0) : '?') + '%)';
+
   const spPct = d.spMax > 0 ? (d.sp / d.spMax * 100) : 0;
   document.getElementById('sp-fill').style.width = Math.max(0, Math.min(100, spPct)) + '%';
   document.getElementById('sp-text').textContent = (d.sp != null ? d.sp : '?') + ' / ' + (d.spMax || '?');
 
-  document.getElementById('pos').textContent = d.player?.x != null ? `(${d.player.x.toFixed(0)}, ${d.player.y.toFixed(0)})` : '?';
-  document.getElementById('map').textContent = d.map || '?';
-  document.getElementById('farmmap').textContent = d.farmMap || '-';
+  // ---- Session / stats ----
+  const s = d.stats || {};
+  document.getElementById('s-elapsed').textContent = fmt(s.elapsedMs);
+  document.getElementById('s-exp').textContent = N(s.expGained);
+  document.getElementById('s-expmin').textContent = N(s.expPerMin);
+  document.getElementById('s-kills').textContent = N(s.kills);
+  document.getElementById('s-looted').textContent = N(s.itemsLooted);
+  document.getElementById('s-deaths').textContent = N(s.deaths);
+  document.getElementById('s-dps').textContent = s.dps > 0 ? N(s.dps) : '—';
+  document.getElementById('s-aspd').textContent = s.aspd > 0 ? s.aspd.toFixed(1) : '—';
+  document.getElementById('s-goldrate').textContent = s.goldRatePerHour > 0 ? N(s.goldRatePerHour) + 'z' : '—';
+  document.getElementById('s-mob').textContent = d.mobAttackers || 0;
+
+  // ---- Position / map / state ----
+  document.getElementById('s-pos').textContent = d.player?.x != null ? `(${d.player.x.toFixed(0)}, ${d.player.y.toFixed(0)})` : '—';
+  document.getElementById('s-map').textContent = d.map || '—';
+  document.getElementById('s-farmmap').textContent = d.farmMap || '—';
   let st = d.isDead ? '☠️ ตาย' : (d.isResting ? '🪑 นั่งพัก' : '🟢 ปกติ');
   if (d.sellState && d.sellState !== 'IDLE') st += ' | 💰 ' + d.sellState;
   if (d.storageState && d.storageState !== 'IDLE') st += ' | 🏦 ' + d.storageState;
-  document.getElementById('state').textContent = st;
+  document.getElementById('s-state').textContent = st;
 
-  // ★ relay status (ส่งมาจากสคริปต์ — บอกว่าสคริปต์เชื่อม relay server ได้ไหม)
-  const rEl = document.getElementById('relay');
-  if (rEl) {
-    const r = d.relay;
-    if (r && r.enabled) { rEl.textContent = r.text || r.status || '?'; rEl.style.color = r.color || '#9aa0a6'; }
-    else if (r && r.enabled === false) { rEl.textContent = '⚪ ปิด'; rEl.style.color = '#9aa0a6'; }
-    else { rEl.textContent = '—'; rEl.style.color = '#9aa0a6'; }
+  // ---- Character ----
+  document.getElementById('s-name').textContent = d.player?.name || '—';
+  document.getElementById('s-pid').textContent = d.player?.id != null ? d.player.id.toString(16) : '—';
+
+  // ---- Sell / Storage ----
+  document.getElementById('s-sell').textContent = d.sellState || 'IDLE';
+  document.getElementById('s-storage').textContent = d.storageState || 'IDLE';
+
+  // ---- Relay status ----
+  const r = d.relay;
+  if (r && r.enabled) {
+    document.getElementById('s-relay-bot').innerHTML = `<span style="color:${r.color || '#9aa0a6'}">${r.text || r.status || '?'}</span>`;
+  } else {
+    document.getElementById('s-relay-bot').innerHTML = '<span style="color:#9aa0a6">⚪ ปิด</span>';
   }
-  const tgt = d.target;
-  document.getElementById('target').textContent = tgt ? `${tgt.name} (${tgt.dist ? tgt.dist.toFixed(1) : '?'}ช่อง)` : '-';
-  document.getElementById('mob').textContent = d.mobAttackers || 0;
-  document.getElementById('dps').textContent = d.stats?.dps > 0 ? N(d.stats.dps) : '—';
-  document.getElementById('aspd').textContent = d.stats?.aspd > 0 ? d.stats.aspd.toFixed(1) : '—';
+  document.getElementById('s-relay-url').textContent = r?.url || '—';
 
-  document.getElementById('kills').textContent = N(d.stats?.kills);
-  document.getElementById('looted').textContent = N(d.stats?.itemsLooted);
-  document.getElementById('expmin').textContent = N(d.stats?.expPerMin);
-  document.getElementById('goldrate').textContent = d.stats?.goldRatePerHour > 0 ? N(d.stats.goldRatePerHour) + 'z' : '—';
-  document.getElementById('elapsed').textContent = fmtMs(d.stats?.elapsedMs || 0);
-  document.getElementById('deaths').textContent = d.stats?.deaths || 0;
-
-  const t = d.toggles || {};
+  // ---- Toggles ----
+  const T = d.toggles || {};
   const tl = [['loot','📦'],['heal','💉'],['rest','🪑'],['combat','⚔️'],['skill','🔮'],['buff','✨'],['sell','💰'],['storage','🏦']];
-  document.getElementById('toggles').innerHTML = tl.map(([k,l])=>`<span class="toggle ${t[k]?'on':'off'}">${l}</span>`).join('');
+  document.getElementById('toggles').innerHTML = tl.map(([k,l]) => `<span class="toggle ${T[k]?'on':'off'}">${l} ${k}</span>`).join('');
 
-  const cds = [...(d.buffs||[]).map(b=>({n:'✨ '+b.name,r:b.remainingMs})),...(d.skills||[]).map(s=>({n:'🔮 '+s.name,r:s.remainingMs}))];
-  const cc = document.getElementById('cd-card');
-  if (cds.length > 0) { cc.style.display=''; document.getElementById('cds').innerHTML = cds.map(c=>{const rd=c.r<=0;const rs=Math.ceil(c.r/1000);const str=rd?'พร้อม':(rs>=60?Math.floor(rs/60)+'นาที '+(rs%60)+'s':rs+'s');return `<div class="cooldown ${rd?'ready':'waiting'}"><span>${c.n}</span><span>${str}</span></div>`}).join('') }
-  else cc.style.display = 'none';
+  // ---- Target ----
+  const tgt = d.target;
+  document.getElementById('s-target').textContent = tgt ? `${tgt.name} (${tgt.dist != null ? tgt.dist.toFixed(1) : '?'}ช่อง)` : '—';
+
+  // ---- Aggro / mob list (with monster images) ----
+  renderAggro(d);
+
+  // ---- Cooldowns (buff + skill) ----
+  renderCooldowns(d);
+
+  // ---- Inventory (with item images) ----
+  renderInventory(d);
 }
 
-function connect(serverUrl, pid) {
-  playerId = pid;
-  if (ws) try { ws.close(); } catch(_) {}
-  document.getElementById('login').style.display = 'none';
-  document.getElementById('dashboard').style.display = '';
-  document.getElementById('dot').className = 'dot off';
-  document.getElementById('status-text').textContent = 'กำลังเชื่อมต่อ...';
-
-  try { ws = new WebSocket(serverUrl); } catch (e) { document.getElementById('status-text').textContent = '❌ URL ผิด: ' + e.message; return; }
-
-  ws.onopen = () => {
-    ws.send(JSON.stringify({ type: 'subscribe', playerId: pid }));
-    document.getElementById('status-text').textContent = '🟢 เชื่อมต่อแล้ว — รอข้อมูล...';
-  };
-  ws.onmessage = (e) => {
-    let msg; try { msg = JSON.parse(e.data); } catch(_) { return; }
-    if (msg.type === 'data' && msg.version) update(msg);
-    else if (msg.type === 'waiting') document.getElementById('status-text').textContent = '⏳ ' + (msg.message || 'รอบอทเชื่อมต่อ...');
-  };
-  ws.onclose = () => {
-    document.getElementById('dot').className = 'dot off';
-    document.getElementById('status-text').textContent = '🔴 ขาดการเชื่อมต่อ — กลับไปกรอกใหม่';
-    document.getElementById('dash-content').style.opacity = '.3';
-    setTimeout(() => { if (playerId) connect(serverUrl, playerId); }, 3000);  // auto-reconnect
-  };
-  ws.onerror = () => {};
+function renderAggro(d) {
+  const el = document.getElementById('aggro-list');
+  const mobs = [];
+  const seen = new Set();
+  // target ก่อน
+  if (d.target) {
+    mobs.push({ name: d.target.name, hp: d.target.hp, hpMax: d.target.hpMax, isTarget: true });
+    if (d.target.id != null) seen.add(d.target.id);
+  }
+  for (const m of (d.mobAttackerList || [])) {
+    if (seen.has(m.id)) continue;
+    seen.add(m.id);
+    mobs.push({ name: m.name, hp: m.hp, hpMax: m.hpMax, isTarget: m.isTarget });
+  }
+  if (mobs.length === 0) { el.innerHTML = '<div class="empty">(ไม่มีมอน)</div>'; return; }
+  el.innerHTML = mobs.slice(0, 8).map(m => {
+    const name = m.name || '?';
+    let hpHtml = '';
+    if (m.hp != null && m.hpMax > 0) {
+      const pct = Math.max(0, Math.min(100, Math.round(m.hp / m.hpMax * 100)));
+      const bc = pct < 25 ? '#e74c3c' : pct < 50 ? '#f39c12' : '#2ecc71';
+      hpHtml = `<div class="hp-bar-mini"><div style="width:${pct}%;background:${bc};"></div></div>`;
+    }
+    return `<div class="aggro-card${m.isTarget ? ' target' : ''}">
+      <img src="${mobIconUrl(name)}" onerror="this.style.opacity='0.25'">
+      <div class="anm">${m.isTarget ? '🎯 ' : ''}${escapeHtml(name)}</div>
+      ${hpHtml}
+    </div>`;
+  }).join('');
 }
 
-let serverUrl = 'wss://rayro.catgg.net';
-document.getElementById('connect-btn').addEventListener('click', () => {
-  const pid = document.getElementById('player-id-input').value.trim();
-  serverUrl = document.getElementById('server-url').value.trim() || 'wss://rayro.catgg.net';
-  if (!pid) return;
-  connect(serverUrl, pid);
-});
-document.getElementById('player-id-input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') document.getElementById('connect-btn').click();
-});
-document.getElementById('back-btn').addEventListener('click', () => {
-  playerId = null;
-  if (ws) try { ws.close(); } catch(_) {}
-  document.getElementById('dashboard').style.display = 'none';
-  document.getElementById('login').style.display = '';
-});
+function renderCooldowns(d) {
+  const el = document.getElementById('cd-list');
+  const items = [];
+  for (const b of (d.buffs || [])) {
+    items.push({ name: b.name, remainingMs: b.remainingMs, itemId: b.itemId, type: 'buff' });
+  }
+  for (const s of (d.skills || [])) {
+    items.push({ name: s.name, remainingMs: s.remainingMs, itemId: null, type: 'skill' });
+  }
+  if (items.length === 0) { el.innerHTML = '<div class="empty">(ยังไม่ตั้ง buff/skill)</div>'; return; }
+  el.innerHTML = items.map(c => {
+    const ready = c.remainingMs <= 0;
+    const rs = Math.ceil(c.remainingMs / 1000);
+    const str = ready ? 'พร้อม' : (rs >= 60 ? Math.floor(rs/60) + 'นาที ' + (rs%60) + 's' : rs + 's');
+    const icon = c.itemId ? `<img src="${itemIconUrl(c.itemId)}" onerror="this.style.display='none'">` : (c.type === 'skill' ? '<span style="width:18px;text-align:center">🔮</span>' : '<span style="width:18px;text-align:center">✨</span>');
+    const color = c.type === 'buff' ? '#81c784' : '#b388ff';
+    return `<div class="cd-item">${icon}<span class="nm" style="color:${color}">${escapeHtml(c.name)}</span><span class="${ready?'cd-ready':'cd-wait'}">${str}</span></div>`;
+  }).join('');
+}
 
-// timeout check
+function renderInventory(d) {
+  const el = document.getElementById('inv-list');
+  const inv = d.inventory || [];
+  if (inv.length === 0) { el.innerHTML = '<div class="empty">(ว่าง)</div>'; return; }
+  el.innerHTML = inv.map(it => {
+    return `<div class="inv-item">
+      <img src="${itemIconUrl(it.itemId, it.name)}" onerror="this.style.display='none'">
+      <span class="nm">${escapeHtml(it.name || ('id=' + it.itemId))}</span>
+      <span class="ct">×${it.count}</span>
+    </div>`;
+  }).join('');
+}
+
+function escapeHtml(s) { return String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+
+function log(tag, msg) { console.log(`[monitor:${tag}]`, msg); }
+
+// ============================================================
+//  "ขาดการเชื่อมต่อ" indicator
+// ============================================================
 setInterval(() => {
-  if (lastData && Date.now() - lastData.t > 5000) {
-    document.getElementById('dot').className = 'dot off';
-    document.getElementById('status-text').textContent = '🔴 ไม่ได้รับข้อมูล 5 วิ';
-    document.getElementById('dash-content').style.opacity = '.4';
+  if (!lastData) return;
+  const age = Date.now() - lastData.t;
+  const txt = document.getElementById('conn-text');
+  const dot = document.getElementById('conn-dot');
+  if (age > 5000) {
+    dot.className = 'dot';
+    txt.textContent = '🔴 ไม่ได้รับข้อมูล ' + Math.round(age/1000) + 's';
   }
 }, 2000);
+
+// ============================================================
+//  Event wiring
+// ============================================================
+document.getElementById('connect-btn').onclick = () => {
+  const pid = document.getElementById('pid-input').value.trim();
+  if (!pid) { alert('กรุณากรอก player_id'); return; }
+  connect(pid);
+};
+document.getElementById('pid-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('connect-btn').click();
+});
+document.getElementById('back-btn').onclick = () => {
+  if (ws) { try { ws.close(); } catch(_) {} }
+  clearTimeout(reconnectTimer);
+  document.getElementById('dash').style.display = 'none';
+  document.getElementById('login').style.display = '';
+};
+
+// ★ auto-connect ถ้ามี pid ใน hash (เช่น #pid=2000001)
+const m = location.hash.match(/pid=([0-9a-fA-F]+)/);
+if (m) { document.getElementById('pid-input').value = m[1]; connect(m[1]); }
 </script>
 </body>
 </html>

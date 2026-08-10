@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.21.0
+// @version      4.22.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -4770,12 +4770,37 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
       sp: sp.cur, spMax: sp.max,
       player: { x: player.x, y: player.y, name: playerName, id: playerId },
       map: currentMap, farmMap: CFG.farmMap,
-      target: tgt ? { name: tgt.name || tgt.id?.toString(16), dist: tgt.lastDist } : null,
-      stats: { kills: s.kills, itemsLooted: s.itemsLooted, expPerMin: s.expPerMin, dps: s.dps, aspd: s.aspd, goldRatePerHour: s.goldRatePerHour, deaths: s.deaths, elapsedMs: s.elapsedMs },
+      target: (() => {
+        if (!tgt) return null;
+        // ★ resolve entity จริงเพื่อเอา name/hp/hpMax (tgt จาก ASSIST.getTarget() มีแค่ id hex string)
+        const tid = parseInt(tgt.id, 16);
+        const m = entities.get(tid);
+        return { name: (m && m.name) || tgt.id, dist: target ? target.lastDist : null, hp: m ? m.hp : null, hpMax: m ? m.hpMax : null, id: tid };
+      })(),
+      stats: { kills: s.kills, itemsLooted: s.itemsLooted, expPerMin: s.expPerMin, expGained: s.expGained, dps: s.dps, aspd: s.aspd, goldRatePerHour: s.goldRatePerHour, deaths: s.deaths, elapsedMs: s.elapsedMs },
       toggles: { loot: CFG.lootEnabled, heal: CFG.healEnabled, rest: CFG.restEnabled, combat: CFG.combatEnabled, skill: CFG.skillEnabled, buff: CFG.buffEnabled, sell: CFG.sellEnabled, storage: CFG.storageEnabled },
       mobAttackers: getMobAttackerCount(),
-      buffs: cds.map(b => ({ name: b.name, remainingMs: b.remainingMs })),
+      // ★ mobAttackerList — สำหรับแสดงรูปมอน + HP bar ใน monitor (mirror dashboard mobAttackerList)
+      mobAttackerList: (() => {
+        const nowA = nowMs();
+        const out = [];
+        const seen = new Set();
+        // เป้าหมายปัจจุบันก่อน
+        if (tgt) { out.push({ id: tgt.id, name: tgt.name || tgt.id?.toString(16), hp: tgt.hp, hpMax: tgt.hpMax, isTarget: true }); seen.add(tgt.id); }
+        for (const [id, t] of mobAttackers) {
+          if (seen.has(id)) continue;
+          if (nowA - t >= CFG.fleeMobWindowMs) continue;
+          const m = entities.get(id);
+          if (!m || !m.alive || m.x == null) continue;
+          out.push({ id, name: m.name || id.toString(16), hp: m.hp, hpMax: m.hpMax, isTarget: false });
+          if (out.length >= 6) break;
+        }
+        return out;
+      })(),
+      buffs: cds.map(b => ({ name: b.name, remainingMs: b.remainingMs, itemId: b.itemId })),
       skills: skCds.map(sk => ({ name: sk.name, remainingMs: sk.remainingMs })),
+      // ★ inventory — สำหรับแสดงรูป item + ชื่อ + จำนวนใน monitor
+      inventory: [...inventory.entries()].filter(([id, c]) => c > 0).sort((a, b) => b[1] - a[1]).slice(0, 30).map(([id, count]) => ({ itemId: Number(id), name: itemDisplayName(Number(id)), count })),
       isDead: isDead, isResting: isResting,
       sellState: sellState, storageState: storageState,
       // ★ relay server status (ส่งไปแสดงใน remote monitor ด้วย)
