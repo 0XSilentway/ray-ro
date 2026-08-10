@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.17.3
+// @version      4.17.4
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.17.3';
+  const VERSION = '4.17.4';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -4959,21 +4959,32 @@
     finally { updateChecking = false; }
   }
   async function doUpdate() {
-    log('⬆ กำลังดาวน์โหลดเวอร์ชั่นใหม่...');
+    log('⬆ กำลังอัปเดต...');
+    saveConfig();
+    // ★ ตรวจว่ารันใน Tampermonkey หรือ console
+    const isTampermonkey = (typeof GM_info !== 'undefined') || (typeof GM !== 'undefined') || (typeof unsafeWindow !== 'undefined');
+    if (isTampermonkey) {
+      // Tampermonkey: eval ไม่ทำงาน (sandbox) → ใช้ @updateURL ของ Tampermonkey เอง
+      //    บอกผู้ใช้ไปกดใน Tampermonkey dashboard
+      log('📋 Tampermonkey: กดที่ไอคอน Tampermonkey → คลิกที่สคริปต์นี้ → กดปุ่ม Update');
+      log('   หรือเปิด Tampermonkey Dashboard → คลิกรูปเฟือง → Check for updates');
+      // ล้าง latestVersion เพื่อหยุดกระพริบ
+      latestVersion = null;
+      window.open(GITHUB_RAW + '?ts=' + Date.now(), '_blank');
+      return;
+    }
+    // Console: eval โหลดเวอร์ชั่นใหม่แทนที่เลย
     try {
       const res = await fetch(GITHUB_RAW, { cache: 'no-store' });
       if (!res.ok) { log('❌ ดาวน์โหลดล้มเหลว'); return; }
       let src = await res.text();
-      // ถ้าโหลดผ่าน console → eval แทนที่เลย (บันทึก config ก่อน)
-      saveConfig();
-      // ลบ re-entry guard ออก (window.__ASSIST) เพื่อให้ eval ใหม่ได้
-      // เก็บ activeWS ไว้ — สคริปต์ใหม่จะ patch ไม่ได้ socket เดิม (ต้อง reconnect)
       try {
         window.__ASSIST = false;
         (0, eval)(src);
-        log('✅ อัปเดตสำเร็จ — รบกวน reconnect เกม (ปิด-เปิดหน้า) เพื่อให้ดัก WebSocket ใหม่');
+        log('✅ อัปเดตสำเร็จ — รบกวน reconnect เกม (ปิด-เปิดหน้า)');
       } catch (e) {
-        log('⚠️ eval ล้มเหลว (อาจเป็น Tampermonkey) → เปิดลิงก์ raw URL เพื่อ copy เอง');
+        log('⚠️ eval ล้มเหลว → เปิดลิงก์ raw URL เพื่อ copy เอง');
+        latestVersion = null;   // หยุดกระพริบ
         window.open(GITHUB_RAW, '_blank');
       }
     } catch (e) { log('❌ อัปเดตล้มเหลว:', e.message); }
