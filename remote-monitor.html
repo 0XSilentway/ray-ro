@@ -371,9 +371,10 @@ function renderBotList(bots) {
   list.innerHTML = bots.map(b => {
     const ver = b.version ? `<span>v${b.version}</span>` : '';
     const elapsed = b.elapsedMs ? `<span>⏱ ${fmt(b.elapsedMs)}</span>` : '';
+    const viewers = b.viewers > 0 ? `<span style="color:#3498db">👁 ${b.viewers}</span>` : '';
     return `<div class="bot-item" data-pid="${b.playerId}">
       <span class="pid">${b.playerId}</span>
-      <span class="nm">${b.name || '?'}</span>
+      <span class="nm">${b.name || '?'} ${viewers}</span>
       <span class="mp">${b.map || '?'}</span>
       <span class="extra">${elapsed}${ver}</span>
     </div>`;

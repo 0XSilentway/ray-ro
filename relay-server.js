@@ -139,6 +139,7 @@ wss.on('connection', (ws, req) => {
             map: d.map || '?',
             version: d.version || '?',
             elapsedMs: d.stats?.elapsedMs || 0,
+            viewers: entry.monitors ? entry.monitors.size : 0,
           });
         }
       }
