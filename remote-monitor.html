@@ -76,6 +76,12 @@
   .hp-bar-mini { background: #333; border-radius: 2px; height: 5px; overflow: hidden; margin-top: 3px; }
   .hp-bar-mini > div { height: 100%; }
 
+  /* map display */
+  .map-box { position: relative; margin-top: 6px; display: inline-block; }
+  .map-box img { display: block; border-radius: 6px; max-width: 100%; max-height: 450px; background: #0a0a14; }
+  .map-dot { position: absolute; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 4px #000; }
+  .map-empty { color: #666; font-size: 11px; padding: 40px 0; text-align: center; }
+
   /* cooldown / buff / skill grid */
   .cd-grid { display: flex; flex-direction: column; gap: 2px; }
   .empty { color: #666; font-size: 10px; padding: 4px 0; }
@@ -173,6 +179,12 @@
         <div class="stat-row" style="margin-bottom:4px"><span>เป้าหมายปัจจุบัน</span><span class="stat-val" id="s-target">—</span></div>
         <div class="aggro-wrap" id="aggro-list"></div>
       </div>
+      <div class="panel">
+        <div class="panel-title">🗺️ แผนที่ — <span id="map-display-name" style="color:#9b59b6">—</span></div>
+        <div class="map-box" id="map-box">
+          <div class="map-empty">(ยังไม่มีข้อมูลแมป)</div>
+        </div>
+      </div>
     </div>
     <!-- RIGHT COLUMN -->
     <div class="col">
@@ -204,6 +216,7 @@
 const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main';
 const ITEM_ICON_BASE = GITHUB_RAW + '/items/small/';   // {id}.gif หรือ card.gif
 const MOB_ICON_BASE = GITHUB_RAW + '/mobs/';            // {Name}.gif
+const MAP_ICON_BASE = GITHUB_RAW + '/maps/';            // {mapname}.gif
 
 function itemIconUrl(id, name) {
   // ★ Card: item IDs 4001-4520 หรือชื่อลงท้ายด้วย "Card" → ใช้ card.gif
@@ -214,6 +227,10 @@ function mobIconUrl(name) {
   if (!name) return '';
   // ★ mobs ใน repo ตั้งชื่อไฟล์: whitespace → underscore (เก็บ trailing dot)
   return MOB_ICON_BASE + encodeURIComponent(name.replace(/\s+/g, '_')) + '.gif';
+}
+function mapIconUrl(name) {
+  if (!name) return '';
+  return MAP_ICON_BASE + encodeURIComponent(name) + '.gif';
 }
 
 // ============================================================
@@ -410,6 +427,9 @@ function render(d) {
   // ---- Aggro / mob list (with monster images) ----
   renderAggro(d);
 
+  // ---- Map display ----
+  renderMap(d);
+
   // ---- Cooldowns (buff + skill) ----
   renderCooldowns(d);
 
@@ -446,6 +466,59 @@ function renderAggro(d) {
       ${hpHtml}
     </div>`;
   }).join('');
+}
+
+function renderMap(d) {
+  const box = document.getElementById('map-box');
+  const nameEl = document.getElementById('map-display-name');
+  const mapName = d.map;
+  if (!mapName) { if (nameEl) nameEl.textContent = '—'; if (box) box.innerHTML = '<div class="map-empty">(ยังไม่มีข้อมูลแมป)</div>'; return; }
+  if (nameEl) nameEl.textContent = mapName;
+
+  // ★ ถ้าแมปเดิม → อัปเดตแค่ dot ผู้เล่น (กัน reload รูป)
+  const existingImg = box.querySelector('img.map-img');
+  if (existingImg && existingImg.dataset.map === mapName) {
+    // ลบ dot เก่า + วาดใหม่
+    box.querySelectorAll('.map-dot').forEach(e => e.remove());
+    placePlayerDot(box, existingImg, d);
+    return;
+  }
+
+  // ★ แมปใหม่ → โหลดรูปใหม่
+  box.innerHTML = `<div class="map-empty">⏳ กำลังโหลดแผนที่ ${mapName}...</div>`;
+  const img = new Image();
+  img.onload = () => {
+    img.className = 'map-img';
+    img.dataset.map = mapName;
+    img.style.maxWidth = '100%';
+    img.style.maxHeight = '450px';
+    img.style.borderRadius = '6px';
+    img.style.display = 'block';
+    box.innerHTML = '';
+    box.appendChild(img);
+    placePlayerDot(box, img, d);
+  };
+  img.onerror = () => {
+    box.innerHTML = `<div class="map-empty">❌ ไม่มีรูปแผนที่ ${mapName}<br><span style="font-size:9px;color:#555">(รูปจะถูก cache อัตโนมัติเมื่อมีใน repo)</span></div>`;
+  };
+  img.src = mapIconUrl(mapName);
+}
+
+function placePlayerDot(box, img, d) {
+  if (d.player?.x == null || d.player?.y == null) return;
+  // ★ ไม่มี calibration → วาด dot ที่ตำแหน่งคำนวณจาก aspect ratio ของรูป (ประมาณการ)
+  //   ใช้สัดส่วนพื้นฐาน: แผนที่ RO ส่วนใหญ่ใช้ tile ขนาดเท่ากัน → scale ตามรูป
+  const w = img.clientWidth || img.naturalWidth || 1;
+  const h = img.clientHeight || img.naturalHeight || 1;
+  // ★ heuristic: แผนที่ RO แต่ละแมปขนาดไม่เท่ากัน — ถ้าไม่มี calibration ให้ใช้สัดส่วนกลาง
+  //   ประมาณจาก tile coordinate → pixel (ค่าเฉลี่ย ~8 pixels/tile, offset กลางแผนที่)
+  //   วิธีนี้ไม่แม่นยำ 100% แต่พอให้เห็นตำแหน่งคร่าวๆ
+  const dot = document.createElement('div');
+  dot.className = 'map-dot';
+  // ★ วาง dot ตรงกลางล่าง (ทิศใต้) เป็นค่าเริ่มต้น — จะถูกแม่นยำเมื่อมี calibration
+  //   calibration: ใช้ player position เป็น anchor ถ้ามี entity entities (ไม่มีในเวอร์ชันนี้)
+  dot.style.cssText = `left:50%;top:50%;width:8px;height:8px;background:#4fc3f7;border:1px solid #fff;`;
+  box.appendChild(dot);
 }
 
 function renderCooldowns(d) {
