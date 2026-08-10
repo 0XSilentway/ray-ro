@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.24.0
+// @version      4.25.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.24.0';
+  const VERSION = '4.25.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -130,7 +130,7 @@
     'maxAcquireDistance', 'searchRadii', 'maxChaseDistance', 'antiKS', 'avoidOtherPlayers', 'targetLowestHpFirst',
     'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius', 'fleeMonsters', 'fleeMonsterRadius', 'maxEngageSecSlow', 'slowMonsterSubIds',
     'wanderEnabled', 'warpFindEnabled', 'warpToMonster', 'stuckWarpOnAbandon',
-    'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs',
+    'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs', 'autoRespawnEnabled', 'autoRespawnDelayMs',
     'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellNpcX', 'sellNpcY', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
     'storageEnabled', 'kafraName', 'kafraMap', 'kafraMapX', 'kafraMapY', 'kafraChoice', 'depositOnFull', 'depositAfterSell', 'depositItemIds',
     'farmMap', 'farmMapX', 'farmMapY', 'warpBackToFarm',
@@ -321,6 +321,12 @@
     restHpPercent: 40,            // HP ต่ำกว่า 30% → นั่งพัก
     restUntilPercent: 90,         // ฟื้นถึง 90% → ลุก
     restMaxSec: 40,               // นั่งนานสุด 60 วิ (กันค้าง — HP ไม่ขยับ = มีปัญหา)
+
+    // ---------- AUTO-RESPAWN ----------
+    //  ตาย (0x24 DEATH) → ส่ง respawn packet (0x29) → กลับจุด save
+    //  หลัง respawn → บังคับนั่งพักจนเลือดเต็ม → กลับฟาร์ม
+    autoRespawnEnabled: true,
+    autoRespawnDelayMs: 3000,     // รอ N ms หลังตายก่อนส่ง respawn (กันสแปม — ถ้า server lag)
 
     // ---------- AUTO-SELL (★ default OFF) ----------
     //  trigger: ของเต็ม (0x20 'too full') OR ครบเวลา sellIntervalMin
@@ -566,6 +572,8 @@
   //     ถ้า HP ไม่ขยับ = หมด → mark exhaustedUntil + ข้าม delay → ใช้ตัวถัดไปทันที
   //   - ตอนตาย (isDead) → หยุด heal ทั้งหมด (กันนึกว่ายาหมดทั้งหมด)
   let isDead = false;
+  let lastRespawnAt = 0;          // ★ timestamp ที่ส่ง respawn ล่าสุด (throttle)
+  let postRespawnRest = false;    // ★ บังคับนั่งพักหลัง respawn จนกว่า HP จะเต็ม
 
   // ---------- AUTO-REST state ----------
   let isResting = false;          // กำลังนั่งพักอยู่
@@ -2158,6 +2166,13 @@
     activeWS.send(new Uint8Array([0x0e, 0x00]));
     return true;
   }
+  // ★ RESPAWN OUT: [29][00] — respawn กลับจุด save หลังตาย (2 bytes)
+  //   format ยืนยันจากบอทหลัก protocol.js:356-360 (enc.respawn() = Buffer.from([0x29, 0x00]))
+  function sendRespawn() {
+    if (!activeWS || activeWS.readyState !== 1) return false;
+    activeWS.send(new Uint8Array([0x29, 0x00]));
+    return true;
+  }
   // SELL encoders (mirror protocol.js:367,386,394)
   function sendNpcTalk(npcId) {
     if (!activeWS || activeWS.readyState !== 1) return false;
@@ -2326,8 +2341,45 @@
   let combatCooldownUntil = 0;   // ★ หยุด combat ชั่วคราวจนกว่าจะถึงเวลานี้ (post-combat delay)
   const combatLoop = setInterval(() => {
     if (!CFG.combatEnabled) return;
-    if (isDead) { return; }
+    const now = nowMs();
+    // ★★★ AUTO-RESPAWN — priority สูงสุด: ถ้าตาย → respawn กลับจุด save (mirror bot.js:1404-1406)
+    if (isDead) {
+      if (CFG.autoRespawnEnabled && activeWS && activeWS.readyState === 1) {
+        if (now - lastRespawnAt >= CFG.autoRespawnDelayMs) {
+          if (sendRespawn()) {
+            lastRespawnAt = now;
+            target = null; monsterAggro.clear(); mobAttackers.clear();
+            postRespawnRest = true;   // ★ บังคับนั่งพักหลัง respawn
+            log('💀 ตาย! → respawn กลับจุด save');
+            logImportant('flee', '💀 ตาย → respawn กลับจุด save');
+          }
+        }
+      }
+      return;
+    }
     if (!activeWS || activeWS.readyState !== 1) return;
+    // ★ POST-RESPAWN REST — หลัง respawn บังคับนั่งพักจนเลือดเต็ม (restUntilPercent)
+    //   เหมือน auto-rest ปกติ แต่ trigger จาก flag postRespawnRest ไม่ใช่ HP%
+    if (postRespawnRest && CFG.restEnabled && hp.cur != null) {
+      const pct = hpPct();
+      if (!isResting && pct != null && pct < CFG.restUntilPercent) {
+        if (sendSit()) {
+          isResting = true;
+          restUntil = now + CFG.restMaxSec * 1000;
+          log('🪑 [post-respawn] นั่งพักจนเลือดเต็ม: HP', pct.toFixed(0) + '% → ' + CFG.restUntilPercent + '%');
+        }
+        return;
+      }
+      if (isResting) {
+        if (pct != null && pct >= CFG.restUntilPercent || now >= restUntil) {
+          if (sendStand()) { log('🪑 [post-respawn] ลุกยืน: HP', pct.toFixed(0) + '% → กลับฟาร์ม'); }
+          isResting = false;
+          postRespawnRest = false;   // ★ เคลียร์ flag — กลับสู่ฟาร์มปกติ
+          combatCooldownUntil = now + CFG.postCombatDelayMs;
+        }
+        return;   // ยังนั่งอยู่ → หยุดทุกอย่าง
+      }
+    }
     // ★ farm map guard: ถ้าตั้ง farmMap ไว้ และตอนนี้ไม่ได้อยู่แมปฟาร์ม → ไม่ฟาร์ม
     //   + retry วาร์ปกลับทุก 5s (กันติดแมปผิดถ้าวาร์ปครั้งแรกไม่สำเร็จ)
     if (CFG.farmMap && currentMap && currentMap !== CFG.farmMap
@@ -2340,7 +2392,6 @@
       }
       return;
     }
-    const now = nowMs();
     const pct = hpPct();
     const mobCount = getMobAttackerCount();
 
@@ -4311,6 +4362,10 @@
           <div class="field"><label>นั่งนานสุด (วินาที) — กันค้าง</label><input type="number" id="__assist_restmaxsec" min="5" max="300"></div>
           <div class="btns"><button id="__assist_applyrest">ใช้ค่า rest</button></div>
 
+          <h4>💀 Auto-Respawn (เกิดใหม่อัตโนมัติเมื่อตาย)</h4>
+          <div class="btns"><button id="__assist_respawnbtn" class="on">Respawn: ?</button></div>
+          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ ตาย → respawn กลับจุด save → นั่งพักจนเลือดเต็ม → กลับฟาร์ม</div>
+
           <h4>🗺️ Farm Map (แมปฟาร์ม — วาร์ปกลับเมื่อเผลอเข้าจุดวาร์ป)</h4>
           <div class="btns">
             <button id="__assist_warptofarm" class="primary">🌀 วาร์ปไปแมปฟาร์ม</button>
@@ -4580,6 +4635,7 @@
     });
     // ---- rest wires ----
     root.querySelector('#__assist_restbtn').addEventListener('click', () => CFG.restEnabled ? ASSIST.restOff() : ASSIST.restOn());
+    root.querySelector('#__assist_respawnbtn').addEventListener('click', () => { CFG.autoRespawnEnabled = !CFG.autoRespawnEnabled; saveConfigDebounced(); log('💀 Auto-Respawn:', CFG.autoRespawnEnabled ? 'เปิด' : 'ปิด'); });
     root.querySelector('#__assist_applyrest').addEventListener('click', () => {
       const hp = parseInt(root.querySelector('#__assist_resthp').value, 10);
       const until = parseInt(root.querySelector('#__assist_restuntil').value, 10);
@@ -5097,6 +5153,9 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
     syncInput('#__assist_resthp', CFG.restHpPercent);
     syncInput('#__assist_restuntil', CFG.restUntilPercent);
     syncInput('#__assist_restmaxsec', CFG.restMaxSec);
+    // ★ auto-respawn toggle sync
+    const respawnBtn = root.querySelector('#__assist_respawnbtn');
+    if (respawnBtn) { respawnBtn.textContent = 'Respawn: ' + (CFG.autoRespawnEnabled ? 'ON' : 'OFF'); respawnBtn.className = CFG.autoRespawnEnabled ? 'on' : 'off'; }
     syncInput('#__assist_fleeprox', CFG.fleeOnProximityCount);
     syncInput('#__assist_stuckwarp', CFG.stuckWarpOnAbandon);
     syncInput('#__assist_fleemonsters', (CFG.fleeMonsters || []).join(','));
