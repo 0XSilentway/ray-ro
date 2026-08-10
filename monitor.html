@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RO Assist Monitor</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d1117; color: #e8e8e8; font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+  .container { max-width: 600px; margin: 0 auto; padding: 16px; }
+  .status-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #15171c; border-radius: 8px; margin-bottom: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot.on { background: #27ae60; box-shadow: 0 0 6px #27ae60; }
+  .dot.off { background: #e74c3c; }
+  .card { background: #15171c; border: 1px solid #2a2d35; border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+  .card h3 { color: #8ab4f8; font-size: 12px; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat { display: flex; justify-content: space-between; padding: 4px 8px; background: #0d1117; border-radius: 5px; }
+  .stat .k { color: #9aa0a6; font-size: 12px; }
+  .stat .v { font-weight: 600; font-size: 13px; }
+  .hpbar-bg { background: #2a2d35; height: 18px; border-radius: 9px; overflow: hidden; position: relative; margin-bottom: 4px; }
+  .hpbar-fill { height: 100%; transition: width .3s; border-radius: 9px; }
+  .hpbar-fill.hp { background: linear-gradient(90deg, #e53935, #ef5350); }
+  .hpbar-fill.sp { background: linear-gradient(90deg, #1976d2, #42a5f5); }
+  .hpbar-text { position: absolute; top: 0; left: 0; right: 0; text-align: center; line-height: 18px; font-size: 11px; color: #fff; font-weight: 600; text-shadow: 0 0 3px rgba(0,0,0,.8); }
+  .toggles { display: flex; flex-wrap: wrap; gap: 4px; }
+  .toggle { font-size: 10px; padding: 2px 8px; border-radius: 8px; font-weight: 600; }
+  .toggle.on { background: #1b5e20; color: #a5d6a7; }
+  .toggle.off { background: #4a2020; color: #ef9a9a; }
+  .alert-item { padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-bottom: 2px; }
+  .alert-card { background: rgba(241,196,15,.12); color: #f1c40f; }
+  .alert-chat { background: rgba(239,83,80,.12); color: #ef5350; }
+  .alert-flee { background: rgba(239,83,80,.12); color: #ef5350; }
+  .cooldown { display: flex; justify-content: space-between; padding: 3px 8px; font-size: 11px; border-radius: 4px; background: #0d1117; margin-bottom: 2px; }
+  .cooldown.ready { color: #27ae60; }
+  .cooldown.waiting { color: #f39c12; }
+  .disconnected { text-align: center; padding: 40px; color: #5f6368; }
+  .disconnected .icon { font-size: 48px; margin-bottom: 12px; }
+  @media (max-width: 500px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="status-bar">
+    <div class="dot off" id="dot"></div>
+    <span id="status-text">กำลังรอการเชื่อมต่อ...</span>
+    <span style="margin-left:auto;color:#5f6368;font-size:12px" id="version-text"></span>
+  </div>
+
+  <div id="dashboard" style="display:none">
+
+    <div class="card">
+      <h3>❤️ HP / 💧 SP</h3>
+      <div class="hpbar-bg">
+        <div class="hpbar-fill hp" id="hp-fill" style="width:0%"></div>
+        <div class="hpbar-text" id="hp-text">? / ?</div>
+      </div>
+      <div class="hpbar-bg">
+        <div class="hpbar-fill sp" id="sp-fill" style="width:0%"></div>
+        <div class="hpbar-text" id="sp-text">? / ?</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>📍 ตำแหน่ง</h3>
+      <div class="grid">
+        <div class="stat"><span class="k">พิกัด</span><span class="v" id="pos">?</span></div>
+        <div class="stat"><span class="k">แมป</span><span class="v" id="map">?</span></div>
+        <div class="stat"><span class="k">แมปฟาร์ม</span><span class="v" id="farmmap">-</span></div>
+        <div class="stat"><span class="k">สถานะ</span><span class="v" id="state">?</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>⚔️ Combat</h3>
+      <div class="grid">
+        <div class="stat"><span class="k">เป้าหมาย</span><span class="v" id="target">-</span></div>
+        <div class="stat"><span class="k">มอนรุม</span><span class="v" id="mob-attackers">0</span></div>
+        <div class="stat"><span class="k">Damage/วิ</span><span class="v" id="dps" style="color:#e67e22">0</span></div>
+        <div class="stat"><span class="k">ASPD</span><span class="v" id="aspd" style="color:#3498db">0</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>📊 สถิติ</h3>
+      <div class="grid">
+        <div class="stat"><span class="k">ฆ่าได้</span><span class="v" id="kills">0</span></div>
+        <div class="stat"><span class="k">เก็บของ</span><span class="v" id="looted">0</span></div>
+        <div class="stat"><span class="k">EXP/นาที</span><span class="v" id="expmin">0</span></div>
+        <div class="stat"><span class="k">💰 Zeny/ชม.</span><span class="v" id="goldrate" style="color:#f1c40f">0z</span></div>
+        <div class="stat"><span class="k">เวลาฟาร์ม</span><span class="v" id="elapsed">0s</span></div>
+        <div class="stat"><span class="k">ตาย</span><span class="v" id="deaths">0</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>🔄 ระบบ</h3>
+      <div class="toggles" id="toggles"></div>
+    </div>
+
+    <div class="card" id="buff-card" style="display:none">
+      <h3>✨ Buff / 🔮 Skill Cooldown</h3>
+      <div id="cooldowns"></div>
+    </div>
+
+  </div>
+
+  <div id="disconnected" class="disconnected">
+    <div class="icon">🔌</div>
+    <p>ยังไม่ได้รับข้อมูล</p>
+    <p style="font-size:12px;margin-top:8px;color:#5f6368">
+      เปิดหน้าเกมในแท็บเดียวกัน (rayrag.com) แล้วรอ 2-3 วินาที<br>
+      หรือตรวจสอบว่าสคริปต์ RO Assist รันอยู่
+    </p>
+  </div>
+</div>
+
+<script>
+const channel = new BroadcastChannel('ro-assist-monitor');
+let lastData = null;
+let reconnectTimer = null;
+
+function fmtMs(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ' + (s % 60) + 's';
+  const h = Math.floor(m / 60);
+  return h + 'h ' + (m % 60) + 'm';
+}
+function fmtNum(n) { return (n || 0).toLocaleString(); }
+
+function update(data) {
+  lastData = data;
+  document.getElementById('disconnected').style.display = 'none';
+  document.getElementById('dashboard').style.display = '';
+  const dot = document.getElementById('dot');
+  dot.className = 'dot on';
+  document.getElementById('status-text').textContent = '🟢 เชื่อมต่อแล้ว — ' + new Date(data.t).toLocaleTimeString();
+  document.getElementById('version-text').textContent = 'v' + (data.version || '?');
+
+  // HP
+  const hpPct = data.hpMax > 0 ? (data.hp / data.hpMax * 100) : 0;
+  document.getElementById('hp-fill').style.width = Math.max(0, Math.min(100, hpPct)) + '%';
+  document.getElementById('hp-text').textContent = (data.hp != null ? data.hp : '?') + ' / ' + (data.hpMax || '?') + ' (' + (hpPct ? hpPct.toFixed(0) : '?') + '%)';
+
+  // SP
+  const spPct = data.spMax > 0 ? (data.sp / data.spMax * 100) : 0;
+  document.getElementById('sp-fill').style.width = Math.max(0, Math.min(100, spPct)) + '%';
+  document.getElementById('sp-text').textContent = (data.sp != null ? data.sp : '?') + ' / ' + (data.spMax || '?');
+
+  // Position
+  document.getElementById('pos').textContent = data.player?.x != null ? `(${data.player.x.toFixed(0)}, ${data.player.y.toFixed(0)})` : '?';
+  document.getElementById('map').textContent = data.map || '?';
+  document.getElementById('farmmap').textContent = data.farmMap || '-';
+  let stateStr = data.isDead ? '☠️ ตาย' : (data.isResting ? '🪑 นั่งพัก' : '🟢 ปกติ');
+  if (data.sellState && data.sellState !== 'IDLE') stateStr += ' | 💰 ' + data.sellState;
+  if (data.storageState && data.storageState !== 'IDLE') stateStr += ' | 🏦 ' + data.storageState;
+  document.getElementById('state').textContent = stateStr;
+
+  // Combat
+  const tgt = data.target;
+  document.getElementById('target').textContent = tgt ? `${tgt.name} (${tgt.dist ? tgt.dist.toFixed(1) : '?'}ช่อง)` : '-';
+  document.getElementById('mob-attackers').textContent = data.mobAttackers || 0;
+  document.getElementById('dps').textContent = data.stats?.dps > 0 ? fmtNum(data.stats.dps) : '—';
+  document.getElementById('aspd').textContent = data.stats?.aspd > 0 ? data.stats.aspd.toFixed(1) : '—';
+
+  // Stats
+  document.getElementById('kills').textContent = fmtNum(data.stats?.kills);
+  document.getElementById('looted').textContent = fmtNum(data.stats?.itemsLooted);
+  document.getElementById('expmin').textContent = fmtNum(data.stats?.expPerMin);
+  document.getElementById('goldrate').textContent = data.stats?.goldRatePerHour > 0 ? fmtNum(data.stats.goldRatePerHour) + 'z' : '—';
+  document.getElementById('elapsed').textContent = fmtMs(data.stats?.elapsedMs || 0);
+  document.getElementById('deaths').textContent = data.stats?.deaths || 0;
+
+  // Toggles
+  const t = data.toggles || {};
+  const toggleLabels = [
+    ['loot', '📦 Loot'], ['heal', '💉 Heal'], ['rest', '🪑 Rest'], ['combat', '⚔️ Combat'],
+    ['skill', '🔮 Skill'], ['buff', '✨ Buff'], ['sell', '💰 Sell'], ['storage', '🏦 Kafra'],
+  ];
+  document.getElementById('toggles').innerHTML = toggleLabels.map(([k, label]) =>
+    `<span class="toggle ${t[k] ? 'on' : 'off'}">${label}</span>`
+  ).join('');
+
+  // Cooldowns
+  const cds = [...(data.buffs || []).map(b => ({ name: '✨ ' + b.name, remainingMs: b.remainingMs, type: 'buff' })),
+               ...(data.skills || []).map(s => ({ name: '🔮 ' + s.name, remainingMs: s.remainingMs, type: 'skill' }))];
+  const cdCard = document.getElementById('buff-card');
+  if (cds.length > 0) {
+    cdCard.style.display = '';
+    document.getElementById('cooldowns').innerHTML = cds.map(c => {
+      const ready = c.remainingMs <= 0;
+      const remSec = Math.ceil(c.remainingMs / 1000);
+      const remStr = ready ? 'พร้อม' : (remSec >= 60 ? Math.floor(remSec/60) + 'นาที ' + (remSec%60) + 's' : remSec + 's');
+      return `<div class="cooldown ${ready ? 'ready' : 'waiting'}"><span>${c.name}</span><span>${remStr}</span></div>`;
+    }).join('');
+  } else { cdCard.style.display = 'none'; }
+}
+
+channel.onmessage = (e) => {
+  if (e.data && e.data.version) update(e.data);
+};
+
+// timeout — ถ้าไม่ได้รับข้อมูล 5s → แสดง disconnected
+function checkTimeout() {
+  if (lastData && Date.now() - lastData.t > 5000) {
+    document.getElementById('dot').className = 'dot off';
+    document.getElementById('status-text').textContent = '🔴 ขาดการเชื่อมต่อ — รอสคริปต์ส่งข้อมูล...';
+    document.getElementById('dashboard').style.opacity = '0.4';
+  } else {
+    document.getElementById('dashboard').style.opacity = '1';
+  }
+}
+setInterval(checkTimeout, 2000);
+</script>
+</body>
+</html>

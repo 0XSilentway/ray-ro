@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.17.4
+// @version      4.18.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.17.4';
+  const VERSION = '4.18.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -4650,6 +4650,48 @@
     log('🖥️ แสดง panel แล้ว (คลิกที่แถบมุมขวาบนเพื่อเปิด)');
   }
 
+  // ★ BroadcastChannel — ส่งข้อมูลไป monitor.html (แท็บอื่นในเบราว์เซอร์เดียวกัน)
+  let monitorChannel = null;
+  try { monitorChannel = new BroadcastChannel('ro-assist-monitor'); } catch (_) {}
+  let lastMonitorSendAt = 0;
+  function sendMonitorData() {
+    if (!monitorChannel) return;
+    const now = nowMs();
+    if (now - lastMonitorSendAt < 1000) return;   // throttle 1s
+    lastMonitorSendAt = now;
+    const s = ASSIST.getStats();
+    const tgt = ASSIST.getTarget();
+    const cds = ASSIST.getBuffCountdowns ? ASSIST.getBuffCountdowns() : [];
+    const skCds = ASSIST.getSkillCooldowns ? ASSIST.getSkillCooldowns() : [];
+    monitorChannel.postMessage({
+      t: now,
+      version: VERSION,
+      hp: hp.cur, hpMax: hp.max, hpPct: hpPct(),
+      sp: sp.cur, spMax: sp.max,
+      player: { x: player.x, y: player.y, name: playerName, id: playerId },
+      map: currentMap, farmMap: CFG.farmMap,
+      target: tgt ? { name: tgt.name || tgt.id?.toString(16), hp: (entities.get(tgt.id)?.hp), hpMax: (entities.get(tgt.id)?.hpMax), dist: tgt.lastDist } : null,
+      combat: CFG.combatEnabled,
+      stats: {
+        kills: s.kills, itemsLooted: s.itemsLooted, expGained: s.expGained,
+        expPerMin: s.expPerMin, dps: s.dps, aspd: s.aspd, goldRatePerHour: s.goldRatePerHour,
+        deaths: s.deaths, elapsedMs: s.elapsedMs,
+      },
+      toggles: {
+        loot: CFG.lootEnabled, heal: CFG.healEnabled, rest: CFG.restEnabled,
+        combat: CFG.combatEnabled, skill: CFG.skillEnabled, buff: CFG.buffEnabled,
+        sell: CFG.sellEnabled, storage: CFG.storageEnabled,
+      },
+      mobAttackers: getMobAttackerCount(),
+      monstersNearby: countMonsters(CFG.fleeOnProximityRadius),
+      aggroCount: getAggroCount(CFG.fleeOnProximityRadius),
+      buffs: cds.map(b => ({ name: b.name, remainingMs: b.remainingMs, intervalMin: b.intervalMin })),
+      skills: skCds.map(sk => ({ name: sk.name, remainingMs: sk.remainingMs })),
+      isDead: isDead, isResting: isResting,
+      sellState: sellState, storageState: storageState,
+    });
+  }
+
   // ---------- render loop ----------
   function fmtMs(ms) {
     const s = Math.floor(ms / 1000);
@@ -4995,6 +5037,7 @@
     buildUI();
     uiLoop = setInterval(() => {
       renderUI();
+      sendMonitorData();   // ★ ส่งไป monitor.html
       // auto-save config ทุก ~5 วิ ถ้าค่าเปลี่ยน
       const now = Date.now();
       if (now - lastAutoSaveAt > 5000) {
