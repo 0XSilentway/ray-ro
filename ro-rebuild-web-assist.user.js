@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.30.0
+// @version      4.31.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.30.0';
+  const VERSION = '4.31.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3163,6 +3163,14 @@
   // ---------- patch WebSocket ----------
   function attach(ws) {
     if (ws.__loot) return; ws.__loot = true;
+    // ★★ กัน relay WS แทนที่ game WS — เช็ค URL ว่าเป็น relay server ไหม
+    //   ถ้าใช่ → ไม่ตั้ง activeWS ไม่ hook (relay เป็น text JSON ไม่ใช่ binary game protocol)
+    let wsUrl = '';
+    try { wsUrl = ws.url || ''; } catch (_) {}
+    if (wsUrl && (wsUrl.includes('rayro.catgg.net') || wsUrl.includes('rayrag') || wsUrl.includes(CFG.monitorServerUrl || '\x00'))) {
+      log('🌐 ข้าม attach relay WebSocket (ไม่ใช่เกม):', wsUrl.slice(0, 60));
+      return;
+    }
     activeWS = ws; log('🔌 ต่อ WebSocket แล้ว');
     const origSend = ws.send.bind(ws);
     ws.send = function (data) {
