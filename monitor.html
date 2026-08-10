@@ -116,7 +116,9 @@
 </div>
 
 <script>
-const channel = new BroadcastChannel('ro-assist-monitor');
+const MONITOR_KEY = 'roAssistMonitorData';
+let channel = null;
+try { channel = new BroadcastChannel('ro-assist-monitor'); } catch (_) {}   // file:// = error, ข้าม
 let lastData = null;
 let reconnectTimer = null;
 
@@ -198,19 +200,30 @@ function update(data) {
   } else { cdCard.style.display = 'none'; }
 }
 
-// ★ รับข้อมูลจาก BroadcastChannel (https) หรือ localStorage event (file://)
-channel.onmessage = (e) => {
-  if (e.data && e.data.version) update(e.data);
-};
-// localStorage fallback — ทำงานใน file:// (BroadcastChannel ไม่ได้)
+// ★ รับข้อมูลจาก BroadcastChannel (https) หรือ localStorage (file://)
+if (channel) {
+  channel.onmessage = (e) => {
+    if (e.data && e.data.version) update(e.data);
+  };
+}
+// localStorage event — ทำงานใน file://
 window.addEventListener('storage', (e) => {
-  if (e.key === 'roAssistMonitorData' && e.newValue) {
+  if (e.key === MONITOR_KEY && e.newValue) {
     try { const data = JSON.parse(e.newValue); if (data && data.version) update(data); } catch (_) {}
   }
 });
+// ★ polling localStorage ทุก 1s — สำรองเมื่อ storage event ไม่ทำงาน (file:// บางกรณี)
+setInterval(() => {
+  try {
+    const raw = localStorage.getItem(MONITOR_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (data && data.version && (!lastData || data.t > lastData.t)) update(data);
+  } catch (_) {}
+}, 1000);
 // อ่านข้อมูลล่าสุดจาก localStorage ตอนโหลดหน้า
 try {
-  const cached = localStorage.getItem('roAssistMonitorData');
+  const cached = localStorage.getItem(MONITOR_KEY);
   if (cached) { const data = JSON.parse(cached); if (data && data.version) update(data); }
 } catch (_) {}
 
