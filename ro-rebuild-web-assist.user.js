@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.25.0
+// @version      4.26.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.25.0';
+  const VERSION = '4.26.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -975,6 +975,15 @@
           const prevMap = currentMap;
           currentMap = name;
           log('🗺️ แมป:', name);
+          // ★★★ clear entities ของแมปเก่า — กัน monster ค้างติดมาแมปใหม่ (mirror world.js:293-306)
+          //   ปัญหา: ไม่ clear → Merman/Strouf จากแมปเก่ายังค้าง → บอทพยายามตีมอนที่ไม่มีจริง
+          //   ★ เก็บตัวเองไว้ (re-add self หลัง clear)
+          const myEntry = playerId != null ? entities.get(playerId) : null;
+          entities.clear();
+          if (myEntry) entities.set(playerId, myEntry);
+          monsterAggro.clear(); mobAttackers.clear();
+          target = null;
+          log('🧹 ล้าง entities แมปเก่า (เปลี่ยนแมป)');
           navWanderReset();   // ★ เปลี่ยนแมป → reset wander state (ล้าง target เก่า)
           navPatrolReset();   // ★ reset patrol state ด้วย
           // ★ warp-back-to-farm: ออกจากแมปฟาร์ม → วาร์ปกลับ
