@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.23.0
+// @version      4.24.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.23.0';
+  const VERSION = '4.24.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -1434,6 +1434,12 @@
         let m = entities.get(victimId);
         if (!m) { m = { id: victimId, kind: 1, alive: true }; entities.set(victimId, m); }
         m._lastDamageAt = now;
+        // ★★ ลด HP มอนตาม damage (server นี้ส่ง damage ผ่าน 0x17 เท่านั้น — ไม่มี 0x0b)
+        //   ต่างจากบอทหลักที่ไม่ลดใน 0x17 เพราะกัน double-count กับ 0x0b
+        //   แต่ server rayrag ส่งแค่ 0x17 → ต้องลดที่นี่
+        if (damage > 0 && m.hp != null && m.hpMax != null) {
+          m.hp = Math.max(0, m.hp - damage);
+        }
         // ★★ heuristic: เราเป็นคนตีหรือคนอื่น?
         //   0x17 ไม่มี attacker field → ใช้ "เราส่ง ATTACK ใส่มอนตัวนี้ภายใน 2 วินาทีไหม?" เป็นตัววัด
         //   ถ้าใช่ = เราตี (DPS/claim/reset pending)
