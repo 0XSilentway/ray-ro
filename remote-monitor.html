@@ -79,6 +79,13 @@
   /* cooldown / buff / skill grid */
   .cd-grid { display: flex; flex-direction: column; gap: 2px; }
   .empty { color: #666; font-size: 10px; padding: 4px 0; }
+
+  /* ---------- Debug banner ---------- */
+  #debug-banner { background: #2a1a1a; border: 1px solid #e74c3c; border-radius: 6px; padding: 8px 12px; margin: 6px; font-size: 11px; color: #ef9a9a; display: none; }
+  #debug-banner.show { display: block; }
+  #debug-banner.ok { background: #1a2a1a; border-color: #2ecc71; color: #a5d6a7; }
+  #debug-banner code { background: #000; padding: 1px 4px; border-radius: 3px; color: #ffcc80; }
+  #debug-banner ul { margin: 4px 0 0 16px; line-height: 1.6; }
 </style>
 </head>
 <body>
@@ -103,6 +110,7 @@
 
 <!-- ============ DASHBOARD ============ -->
 <div id="dash">
+  <div id="debug-banner"></div>
   <div class="topbar">
     <h1>📊 RO Remote Monitor</h1>
     <div class="info">
@@ -215,6 +223,8 @@ let ws = null;
 let playerId = null;
 let reconnectTimer = null;
 let lastData = null;
+let msgCount = 0;
+let connectAttempts = 0;
 
 function N(n) { return (n || 0).toLocaleString(); }
 function fmt(ms) {
@@ -227,6 +237,18 @@ function fmt(ms) {
   return h + 'h ' + (m % 60) + 'm';
 }
 
+// ★ Debug banner — แสดงสถานะการเชื่อมต่อแบบละเอียด
+function showDebug(html, isOk) {
+  const el = document.getElementById('debug-banner');
+  if (!el) return;
+  el.innerHTML = html;
+  el.className = 'show' + (isOk ? ' ok' : '');
+}
+function hideDebug() {
+  const el = document.getElementById('debug-banner');
+  if (el) el.className = '';
+}
+
 function connect(pid) {
   playerId = pid;
   if (ws) { try { ws.close(); } catch(_) {} }
@@ -236,12 +258,22 @@ function connect(pid) {
   // ★ URL สำหรับเชื่อม relay server: wss:// ถ้าหน้าเว็บเป็น https, ws:// ถ้า http
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const url = proto + '//' + location.host;
-  log('monitor', 'เชื่อมต่อ relay: ' + url);
+  console.log('[monitor] Connecting to:', url);
   doConnect(url);
 }
 
 function doConnect(url) {
-  ws = new WebSocket(url);
+  connectAttempts++;
+  showDebug(`🔄 กำลังเชื่อมต่อ relay server...<br><code>${url}</code><br><ul><li>พยายามครั้งที่ ${connectAttempts}</li></ul>`, false);
+
+  try {
+    ws = new WebSocket(url);
+  } catch (e) {
+    showDebug(`❌ สร้าง WebSocket ไม่ได้: ${e.message}<br><code>${url}</code>`, false);
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => doConnect(url), 3000);
+    return;
+  }
   const dot = document.getElementById('conn-dot');
   const txt = document.getElementById('conn-text');
 
@@ -251,20 +283,50 @@ function doConnect(url) {
     ws.send(JSON.stringify({ type: 'subscribe', playerId: playerId }));
     // ขอรายชื่อบอทด้วย (อาจใช้ในอนาคต)
     ws.send(JSON.stringify({ type: 'list' }));
+    showDebug(`✅ เชื่อมต่อ relay แล้ว — ส่ง subscribe player_id=<code>${playerId}</code><br>⏳ รอข้อมูลจากบอท... (ถ้าไม่มีข้อมูลใน 5 วินาที = บอทยังไม่ได้ส่ง หรือ player_id ไม่ตรง)`, true);
+    // ★ ถ้า 5 วินาทีแล้วยังไม่มีข้อมูล → เตือน
+    setTimeout(() => {
+      if (msgCount === 0) {
+        showDebug(`⚠️ เชื่อม relay ได้ แต่ 5 วินาทีแล้วยังไม่ได้รับข้อมูล<br><ul>
+          <li>เช็คว่าบอทเปิด "🌐 Remote Monitor" ในแท็บตั้งค่าแล้ว (ต้องเป็น ON)</li>
+          <li>เช็คว่า player_id ของบอทตรงกับที่กรอก (<code>${playerId}</code>) — ดูได้จากแท็บสถิติ</li>
+          <li>เช็คว่า relay ฝั่งบอทแสดงสถานะ "🟢 เชื่อมแล้ว" ไม่ใช่ "🔴 ผิดพลาด"</li>
+        </ul>`, false);
+      }
+    }, 5000);
   };
   ws.onmessage = (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch(_) { return; }
-    if (m.type === 'data') { lastData = m; render(m); }
+    msgCount++;
+    if (m.type === 'data') {
+      lastData = m;
+      if (msgCount === 1) showDebug(`✅ ได้รับข้อมูลแล้ว! (จากบอท ${m.player?.name || '?'})`, true);
+      if (msgCount <= 3) hideDebug();   // ซ่อน debug หลังได้ข้อมูลปกติแล้ว
+      render(m);
+    }
     else if (m.type === 'waiting') { txt.textContent = '⏳ ' + (m.message || 'รอบอท...'); }
     else if (m.type === 'botList') { renderBotList(m.bots); }
   };
   ws.onclose = () => {
     dot.className = 'dot';
     txt.textContent = '🔴 หลุด — เชื่อมใหม่ใน 3s';
+    console.warn('[monitor] WebSocket closed. readyState=', ws?.readyState);
+    showDebug(`🔴 WebSocket หลุด — กำลังเชื่อมใหม่ใน 3 วินาที<br><ul>
+      <li>ถ้าหลุดซ้ำๆ = relay server ไม่ได้รัน หรือ nginx ไม่ส่ง WebSocket ผ่าน</li>
+      <li>เช็ค <code>${url}</code> ว่าเข้าได้จริง (ลองเปิดในเบราว์เซอร์)</li>
+    </ul>`, false);
     clearTimeout(reconnectTimer);
     reconnectTimer = setTimeout(() => doConnect(url), 3000);
   };
-  ws.onerror = () => { try { ws.close(); } catch(_) {} };
+  ws.onerror = (e) => {
+    console.error('[monitor] WebSocket error:', e);
+    showDebug(`❌ WebSocket error — ไม่สามารถเชื่อมต่อ relay server ได้<br><ul>
+      <li>ตรวจสอบว่า relay server รันอยู่ (port 3002)</li>
+      <li>ตรวจสอบ nginx proxy: ต้องเปิด "WebSockets Support"</li>
+      <li>ตรวจสอบ firewall: พอร์ต 3002 ต้องเปิด</li>
+    </ul>`, false);
+    try { ws.close(); } catch(_) {}
+  };
 }
 
 function renderBotList(bots) {
@@ -445,6 +507,26 @@ document.getElementById('connect-btn').onclick = () => {
   if (!pid) { alert('กรุณากรอก player_id'); return; }
   connect(pid);
 };
+
+// ★ โหลดรายชื่อบอทที่ออนไลน์ทันทีที่เปิดหน้า login (เพื่อยืนยันว่า relay ทำงาน)
+(function loadBotListOnLogin() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = proto + '//' + location.host;
+  let probeWs;
+  try {
+    probeWs = new WebSocket(url);
+  } catch (e) { return; }   // ถ้าเชื่อมไม่ได้ → ข้าม (user จะเห็น error ตอนกด connect อยู่แล้ว)
+  probeWs.onopen = () => {
+    probeWs.send(JSON.stringify({ type: 'list' }));
+    // ปิดหลัง 2 วินาที (พอเก็บข้อมูลแล้ว)
+    setTimeout(() => { try { probeWs.close(); } catch(_) {} }, 2000);
+  };
+  probeWs.onmessage = (ev) => {
+    let m; try { m = JSON.parse(ev.data); } catch(_) { return; }
+    if (m.type === 'botList') renderBotList(m.bots);
+  };
+  probeWs.onerror = () => {};
+})();
 document.getElementById('pid-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('connect-btn').click();
 });
