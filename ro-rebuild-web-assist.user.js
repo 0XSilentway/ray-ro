@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.20.0
+// @version      4.21.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -301,7 +301,7 @@
     autoClearConsoleMin: 10,       // ★ 0=off, >0=clear browser console ทุก N นาที (กัน log เยอะค้างหน่วย)
 
     // ---------- REMOTE MONITOR ----------
-    monitorServerEnabled: false,  // ★ เปิดส่งข้อมูลไป relay server (ดูจากมือถือ/เครื่องอื่นได้)
+    monitorServerEnabled: true,  // ★ เปิดส่งข้อมูลไป relay server (ดูจากมือถือ/เครื่องอื่นได้)
     monitorServerUrl: 'wss://rayro.catgg.net',  // URL relay server
 
     // ---------- NAVIGATION (บันทึกเส้นทางเดิน + waypoint graph) ----------
@@ -977,7 +977,7 @@
     //   format: [03][eid:4][len:2][mapname null-terminated]
     else if (op === 0x03 && u.length >= 7) {
       const eid = u32(u, 1);
-      if (playerId == null && eid) { playerId = eid; log('👤 player_id =', eid.toString(16), '(จาก SELECT_CHAR)'); }
+      if (playerId == null && eid) { playerId = eid; log('👤 player_id =', eid.toString(16), '(จาก SELECT_CHAR)'); relayRegisterPlayer(); }
       const mapLen = u16(u, 5);
       if (u.length >= 7 + mapLen && mapLen > 0) {
         let name = new TextDecoder().decode(u.slice(7, 7 + mapLen));
@@ -1222,7 +1222,7 @@
         //   แก้: เช็คชื่อต้องตรงกับ playerName (defense-in-depth)
         if (flag === 1) {
           if (playerId == null) {
-            playerId = id; log('👤 player_id =', id.toString(16), '(จาก SPAWN flag=1)');
+            playerId = id; log('👤 player_id =', id.toString(16), '(จาก SPAWN flag=1)'); relayRegisterPlayer();
           } else if (playerId !== id) {
             // ★★ guard: ถ้าเรารู้ชื่อตัวเองแล้ว และชื่อใน packet นี้ไม่ตรง → เป็นคนอื่น → ไม่ทับ playerId
             //   (กัน false ID change ในที่คนเยอะ — mirror world.js:1235-1238)
@@ -1234,7 +1234,7 @@
               stalePlayerIds.set(playerId, nowMs() + 300000);  // stale 5 นาที
               entities.clear();
               monsterAggro.clear(); mobAttackers.clear();
-              playerId = id;
+              playerId = id; relayRegisterPlayer();
               // ★ grace period 3s — ข้าม STAT HP ที่อาจผิดหลัง ID เปลี่ยน (mirror world.js:1265)
               hpStatGraceUntil = nowMs() + 3000;
               hp.cur = null; hp.max = null;   // reset กันค่าเก่าทับ
@@ -3668,10 +3668,10 @@
     { name: 'Bowling Bash', skillId: 32, level: 10, targeted: true, mobCountMin: 2, maxUsesPerTarget: 1, maxDistance: 2, spMin: 22, cooldownMs: 84, job: 'Knight Lord', desc: 'ตีกระแทก' },
     { name: 'Charge Attack', skillId: 40, level: 1, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, minDistance: 5, spMin: 30, cooldownMs: 114, job: 'Knight', desc: 'พุ่งเข้าหามอน' },
     // ---- Archer/Hunter (ทดลองครบ) ----
-    { name: 'Double Strafe', skillId: 24, level: 10, targeted: true, maxUsesPerTarget: 2, maxDistance: 12, spMin: 14, cooldownMs: 2, job: 'Archer/Hunter', desc: 'ยิง 2 ลูก' },
-    { name: 'Improve Concentration', skillId: 27, level: 10, selfCast: true, intervalMin: 4, spMin: 44, cooldownMs: 1, job: 'Archer/Hunter', desc: 'บัพ DEX+AGI' },
-    { name: 'Charge Arrow', skillId: 25, level: 1, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, spMin: 15, cooldownMs: 2, job: 'Archer/Hunter', desc: 'ดันมอนออกไกล' },
-    { name: 'Arrow Shower', skillId: 26, level: 5, ground: true, maxUsesPerTarget: 1, maxDistance: 9, mobCountMin: 2, spMin: 15, cooldownMs: 3, job: 'Hunter', desc: 'AoE ธนู (เลือกพื้นที่)' },
+    { name: 'Double Strafe', skillId: 24, level: 10, targeted: true, maxUsesPerTarget: 2, maxDistance: 15, spMin: 20, cooldownMs: 60, job: 'Archer/Hunter', desc: 'ยิง 2 ลูก' },
+    { name: 'Improve Concentration', skillId: 27, level: 10, selfCast: true, intervalMin: 4.3, spMin: 70, cooldownMs: 1, job: 'Archer/Hunter', desc: 'บัพ DEX+AGI' },
+    { name: 'Charge Arrow', skillId: 25, level: 1, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, spMin: 20, cooldownMs: 60, job: 'Archer/Hunter', desc: 'ดันมอนออกไกล' },
+    { name: 'Arrow Shower', skillId: 26, level: 5, ground: true, maxUsesPerTarget: 1, maxDistance: 10, mobCountMin: 2, spMin: 20, cooldownMs: 60, job: 'Hunter', desc: 'AoE ธนู (เลือกพื้นที่)' },
   ];
   function skillPresetGroups() {
     const groups = {};
@@ -4194,6 +4194,7 @@
           <div class="row"><span class="k">🗺️ แมป / ฟาร์ม</span><span class="v" data-farmmap>?</span></div>
           <div class="row"><span class="k">player_id</span><span class="v" data-pid>?</span></div>
           <div class="row"><span class="k">สถานะ</span><span class="v" data-state>?</span></div>
+          <div class="row"><span class="k">🌐 Remote Monitor</span><span class="v" data-relay style="color:#9aa0a6">?</span></div>
           <h4>การฟาร์ม</h4>
           <div class="row"><span class="k">ฆ่าได้</span><span class="v" data-kills>0</span></div>
           <div class="row"><span class="k">เก็บของได้</span><span class="v" data-looted>0</span></div>
@@ -4705,6 +4706,14 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
     monitorWin.document.close();
     log('🖥️ เปิด Monitor แล้ว');
   }
+  // ★ Remote relay WebSocket state (ประกาศก่อนใช้ — กัน TDZ)
+  let relayWs = null;
+  let relayReconnectAt = 0;
+  let relayStatus = 'disabled';        // 'disabled' | 'connecting' | 'connected' | 'reconnecting' | 'error'
+  let relayStatusText = 'ปิด';          // ข้อความสั้น
+  let relayConnectedAt = 0;             // เวลาที่เชื่อมต่อสำเร็จ
+  let relayLastDataAt = 0;              // เวลาส่งข้อมูลล่าสุด
+  let relayDataCount = 0;               // จำนวนครั้งที่ส่งข้อมูลแล้ว
   function sendMonitorData() {
     const now = nowMs();
     if (now - lastMonitorSendAt < 1000) return;
@@ -4727,6 +4736,8 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
       skills: skCds.map(sk => ({ name: sk.name, remainingMs: sk.remainingMs })),
       isDead: isDead, isResting: isResting,
       sellState: sellState, storageState: storageState,
+      // ★ relay server status (ส่งไปแสดงใน remote monitor ด้วย)
+      relay: { ...relayStatusInfo(), url: CFG.monitorServerUrl, enabled: CFG.monitorServerEnabled },
     };
     // ★ ส่งผ่าน BroadcastChannel (ถ้ามี) + localStorage (fallback)
     if (monitorChannel) try { monitorChannel.postMessage(payload); } catch (_) {}
@@ -4737,35 +4748,84 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
     }
     // ★ ส่งไป relay server (ดูจากมือถือ/เครื่องอื่นได้)
     if (relayWs && relayWs.readyState === 1 && playerId != null) {
-      try { relayWs.send(JSON.stringify({ type: 'data', payload })); } catch (_) {}
+      try { relayWs.send(JSON.stringify({ type: 'data', payload })); relayLastDataAt = nowMs(); relayDataCount++; } catch (_) {}
     }
   }
-  // ★ Remote relay WebSocket — auto-connect + auto-reconnect
-  let relayWs = null;
-  let relayReconnectAt = 0;
+  function setRelayStatus(status, text) {
+    relayStatus = status;
+    relayStatusText = text;
+    if (status === 'connected' && relayConnectedAt === 0) relayConnectedAt = nowMs();
+  }
+  function relayStatusInfo() {
+    if (!CFG.monitorServerEnabled) return { status: 'disabled', text: 'ปิด', color: '#9aa0a6' };
+    if (relayStatus === 'connected') {
+      const uptime = relayConnectedAt > 0 ? fmtMs(nowMs() - relayConnectedAt) : '—';
+      const sinceData = relayLastDataAt > 0 ? Math.round((nowMs() - relayLastDataAt) / 1000) + 'วิที่แล้ว' : '—';
+      return { status: 'connected', text: `🟢 เชื่อมแล้ว ${uptime} • ${relayDataCount}ครั้ง • ${sinceData}`, color: '#2ecc71' };
+    }
+    if (relayStatus === 'connecting')  return { status: 'connecting',  text: '🟡 กำลังเชื่อม...', color: '#f1c40f' };
+    if (relayStatus === 'reconnecting') {
+      const wait = relayReconnectAt > 0 ? Math.max(0, Math.ceil((relayReconnectAt - nowMs()) / 1000)) : 0;
+      return { status: 'reconnecting', text: `🔄 รอเชื่อมใหม่ใน ${wait}วิ`, color: '#e67e22' };
+    }
+    if (relayStatus === 'error')       return { status: 'error',       text: '🔴 ผิดพลาด (รอเชื่อมใหม่)', color: '#e74c3c' };
+    return { status: 'idle', text: '⚪ ยังไม่เชื่อม', color: '#9aa0a6' };
+  }
   function connectRelay() {
-    if (!CFG.monitorServerEnabled || !CFG.monitorServerUrl) return;
+    if (!CFG.monitorServerEnabled || !CFG.monitorServerUrl) { setRelayStatus('disabled', 'ปิด'); return; }
     if (relayWs && (relayWs.readyState === 0 || relayWs.readyState === 1)) return;  // กำลังเชื่อมหรือเชื่อมแล้ว
-    if (nowMs() < relayReconnectAt) return;   // cooldown
+    if (nowMs() < relayReconnectAt) {
+      // แสดงสถานะ "รอเชื่อมใหม่" ถ้ายังอยู่ใน cooldown
+      if (relayStatus !== 'connected' && relayStatus !== 'connecting') setRelayStatus('reconnecting', 'รอเชื่อมใหม่');
+      return;
+    }
+    setRelayStatus('connecting', 'กำลังเชื่อม...');
     try {
+      log('🌐 กำลังเชื่อม relay server:', CFG.monitorServerUrl);
       relayWs = new WebSocket(CFG.monitorServerUrl);
       relayWs.onopen = () => {
-        log('🌐 เชื่อม relay server แล้ว:', CFG.monitorServerUrl);
+        setRelayStatus('connected', 'เชื่อมแล้ว');
+        relayConnectedAt = nowMs();
+        log('✅ เชื่อม relay server แล้ว:', CFG.monitorServerUrl);
         // ส่ง register
         if (playerId != null) {
-          relayWs.send(JSON.stringify({ type: 'register', playerId: playerId.toString(16), playerName: playerName || '' }));
+          try { relayWs.send(JSON.stringify({ type: 'register', playerId: playerId.toString(16), playerName: playerName || '' })); } catch (_) {}
+        } else {
+          log('⚠️ ยังไม่มี player_id — ระบบจะ register ทันทีเมื่อ SPAWN มา');
         }
       };
-      relayWs.onclose = () => {
+      relayWs.onclose = (ev) => {
+        const wasConnected = relayStatus === 'connected';
         relayWs = null;
+        relayConnectedAt = 0;
         relayReconnectAt = nowMs() + 5000;   // reconnect ใน 5s
+        setRelayStatus('reconnecting', 'รอเชื่อมใหม่ใน 5วิ');
+        log(`🔌 หลุดจาก relay server (code=${ev.code}) — เชื่อมใหม่ใน 5วิ`, CFG.monitorServerUrl);
+        if (ev.code === 1006 && !wasConnected) {
+          log('💡 หมายเหตุ: code=1006 มักเกิดจากเซิร์ฟเวอร์ตอบกลับไม่ได้/proxy ผิด/SSL ไม่ตรง — ตรวจสอบว่า relay server รันอยู่และ nginx ส่ง WS ผ่าน');
+        }
       };
-      relayWs.onerror = () => { try { relayWs.close(); } catch (_) {} };
+      relayWs.onerror = () => {
+        setRelayStatus('error', 'ผิดพลาด');
+        log('❌ relay server error:', CFG.monitorServerUrl);
+        try { relayWs.close(); } catch (_) {}
+      };
       relayWs.onmessage = () => {};   // relay ไม่ส่งอะไรกลับมา (ยกเว้น ack)
-    } catch (_) { relayReconnectAt = nowMs() + 5000; }
+    } catch (e) {
+      setRelayStatus('error', 'สร้าง WS ไม่ได้');
+      log('❌ สร้าง relay WebSocket ไม่ได้:', e.message);
+      relayReconnectAt = nowMs() + 5000;
+    }
   }
-  // re-register เมื่อ playerId เปลี่ยน
-  // (เรียกจาก SPAWN handler ที่ set playerId)
+  // ★ ส่ง register ทันทีเมื่อได้ player_id (เรียกจาก SPAWN/SELECT_CHAR handler)
+  function relayRegisterPlayer() {
+    if (relayWs && relayWs.readyState === 1 && playerId != null) {
+      try {
+        relayWs.send(JSON.stringify({ type: 'register', playerId: playerId.toString(16), playerName: playerName || '' }));
+        log('📡 ลงทะเบียน (register) player_id ' + playerId.toString(16) + ' ไปยัง relay แล้ว');
+      } catch (_) {}
+    }
+  }
 
   // ---------- render loop ----------
   function fmtMs(ms) {
@@ -4829,6 +4889,12 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
     }
     set('[data-pid]', playerId ? playerId.toString(16) : '?');
     set('[data-state]', isDead ? '☠️ ตาย' : (isResting ? '🪑 นั่งพัก' : (activeWS && activeWS.readyState === 1 ? '🟢 เชื่อมต่อ' : '🔴 ไม่ได้ต่อ')));
+    // ★ Remote Monitor status (relay server)
+    {
+      const r = relayStatusInfo();
+      const el = root.querySelector('[data-relay]');
+      if (el) { el.textContent = r.text; el.style.color = r.color; }
+    }
     set('[data-kills]', s.kills);
     set('[data-looted]', s.itemsLooted);
     set('[data-exp]', s.expGained.toLocaleString());

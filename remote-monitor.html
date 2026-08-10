@@ -73,6 +73,7 @@
         <div class="stat"><span class="k">แมป</span><span class="v" id="map">?</span></div>
         <div class="stat"><span class="k">ฟาร์ม</span><span class="v" id="farmmap">-</span></div>
         <div class="stat"><span class="k">สถานะ</span><span class="v" id="state">?</span></div>
+        <div class="stat"><span class="k">🌐 Relay</span><span class="v" id="relay" style="color:#9aa0a6">—</span></div>
       </div></div>
       <div class="card"><h3>⚔️ Combat</h3><div class="grid">
         <div class="stat"><span class="k">เป้าหมาย</span><span class="v" id="target">-</span></div>
@@ -124,6 +125,14 @@ function update(d) {
   if (d.storageState && d.storageState !== 'IDLE') st += ' | 🏦 ' + d.storageState;
   document.getElementById('state').textContent = st;
 
+  // ★ relay status (ส่งมาจากสคริปต์ — บอกว่าสคริปต์เชื่อม relay server ได้ไหม)
+  const rEl = document.getElementById('relay');
+  if (rEl) {
+    const r = d.relay;
+    if (r && r.enabled) { rEl.textContent = r.text || r.status || '?'; rEl.style.color = r.color || '#9aa0a6'; }
+    else if (r && r.enabled === false) { rEl.textContent = '⚪ ปิด'; rEl.style.color = '#9aa0a6'; }
+    else { rEl.textContent = '—'; rEl.style.color = '#9aa0a6'; }
+  }
   const tgt = d.target;
   document.getElementById('target').textContent = tgt ? `${tgt.name} (${tgt.dist ? tgt.dist.toFixed(1) : '?'}ช่อง)` : '-';
   document.getElementById('mob').textContent = d.mobAttackers || 0;
