@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.17.1
+// @version      4.17.2
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.17.1';
+  const VERSION = '4.17.2';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -249,7 +249,12 @@
   // ราคา item (buyPrice) — 0 ถ้าไม่มีข้อมูล
   function itemPrice(id) { return itemDB.prices[String(id)] || 0; }
   // URL รูป item (lazy-load จาก GitHub raw)
-  function itemIconUrl(id) { return ITEMS_ICON_URL + id + '.gif'; }
+  function itemIconUrl(id) {
+    // ★ Card ใช้ card.gif แทนรูปตามไอดี (การ์ดทุดใบเหมือนกัน)
+    const name = itemDisplayName(id);
+    if (name.endsWith(' Card') || (id >= 4001 && id <= 4520)) return ITEMS_ICON_URL + 'card.gif';
+    return ITEMS_ICON_URL + id + '.gif';
+  }
   // ยอด zeny รวม session (จาก inventory จริง × buyPrice)
   function sessionZeny() {
     let total = 0;
