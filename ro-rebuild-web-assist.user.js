@@ -122,7 +122,7 @@
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
   const PERSIST_KEYS = [
     'healEnabled', 'healAtPercent', 'healItems', 'healMode', 'healDelayMs', 'healAtMax',
-    'buffEnabled', 'buffItems', 'buffRebuffDelayMs', 'autoClearConsoleMin', 'monitorServerEnabled', 'monitorServerUrl',
+    'buffEnabled', 'buffItems', 'buffRebuffDelayMs', 'autoClearConsoleMin', 'monitorServerEnabled', 'monitorServerUrl', 'monitorSendIntervalMs',
     'skillEnabled', 'skills', 'disabledSkillIds',
     'lootEnabled', 'lootDelayAfterDropMs', 'lootUseKillPos', 'pickRadiusKill', 'filter',
     'warpLootEnabled',
@@ -303,6 +303,7 @@
     // ---------- REMOTE MONITOR ----------
     monitorServerEnabled: true,  // ★ เปิดส่งข้อมูลไป relay server (ดูจากมือถือ/เครื่องอื่นได้)
     monitorServerUrl: 'wss://rayro.catgg.net',  // URL relay server
+    monitorSendIntervalMs: 3000,  // ★ ส่งข้อมูลทุก 3 วิ (ลดภาร relay server — ค่าเดิม 1000)
 
     // ---------- NAVIGATION (บันทึกเส้นทางเดิน + waypoint graph) ----------
     //  เก็บตำแหน่งที่ผู้เล่นคลิกเดิน → สร้าง waypoint graph → bot เดินตามเส้นทางจริง
@@ -4758,7 +4759,8 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
   let relayDataCount = 0;               // จำนวนครั้งที่ส่งข้อมูลแล้ว
   function sendMonitorData() {
     const now = nowMs();
-    if (now - lastMonitorSendAt < 1000) return;
+    const interval = CFG.monitorSendIntervalMs || 3000;
+    if (now - lastMonitorSendAt < interval) return;
     lastMonitorSendAt = now;
     const s = ASSIST.getStats();
     const tgt = ASSIST.getTarget();
