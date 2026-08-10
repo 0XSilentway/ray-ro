@@ -4326,6 +4326,15 @@
           <div class="field"><label>เมนู choice (0=Save, 1=Storage, 2=Warp)</label><input type="number" id="__assist_kafrachoice" min="0" max="9" placeholder="1"></div>
           <div class="btns"><button id="__assist_applykafra">ใช้ค่า storage</button><button id="__assist_t_depfull" class="on">ฝากตอนเต็ม</button><button id="__assist_t_depaftersell" class="on">ฝากหลังขาย</button></div>
 
+          <h4>🌐 Remote Monitor (ส่งข้อมูลไป relay server — ดูจากมือถือ/เครื่องอื่น)</h4>
+          <div class="btns">
+            <button id="__assist_relaybtn" class="off">Relay: ?</button>
+            <button id="__assist_relayreconnect" class="primary">🔄 เชื่อมใหม่</button>
+          </div>
+          <div class="field"><label>URL relay server (wss:// = SSL, ws:// = ไม่มี SSL)</label><input type="text" id="__assist_relayurl" placeholder="wss://rayro.catgg.net"></div>
+          <div class="btns"><button id="__assist_applyrelay">ใช้ค่า relay</button></div>
+          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เปิดแล้วสคริปต์จะส่งข้อมูลไป relay server ทุก 1 วินาที<br>★ ดูสถานะการเชื่อมต่อได้ที่แท็บ "📊 สถิติ" บรรทัด "🌐 Remote Monitor"<br>★ ตั้งค่า relay server ที่ <code>relay-server.js</code> ฝั่งเซิร์ฟเวอร์</div>
+
           <h4>🗺️ Navigation (บันทึกเส้นทางเดิน + waypoint graph)</h4>
           <div class="btns">
             <button id="__assist_navrecbtn" class="off">บันทึก: ?</button>
@@ -4592,6 +4601,39 @@
     root.querySelector('#__assist_usekafrapos').addEventListener('click', () => { ASSIST.useCurrentPosAsKafra(); });
     root.querySelector('#__assist_t_depfull').addEventListener('click', () => { CFG.depositOnFull = !CFG.depositOnFull; ASSIST.toggleDepositOnFull(CFG.depositOnFull); });
     root.querySelector('#__assist_t_depaftersell').addEventListener('click', () => { CFG.depositAfterSell = !CFG.depositAfterSell; ASSIST.toggleDepositAfterSell(CFG.depositAfterSell); });
+    // ---- relay/remote monitor wires ----
+    root.querySelector('#__assist_relaybtn').addEventListener('click', () => {
+      CFG.monitorServerEnabled = !CFG.monitorServerEnabled;
+      saveConfigDebounced();
+      log('🌐 Remote Monitor:', CFG.monitorServerEnabled ? 'เปิด' : 'ปิด');
+      if (CFG.monitorServerEnabled) {
+        connectRelay();             // พยายามเชื่อมทันที
+        relayRegisterPlayer();      // ส่ง register ทันทีถ้ามี playerId แล้ว
+      } else {
+        // ปิด → ตัดการเชื่อมต่อปัจจุบัน
+        if (relayWs) { try { relayWs.close(); } catch (_) {} relayWs = null; }
+        setRelayStatus('disabled', 'ปิด');
+      }
+    });
+    root.querySelector('#__assist_relayreconnect').addEventListener('click', () => {
+      log('🔄 บังคับเชื่อม relay ใหม่');
+      if (relayWs) { try { relayWs.close(); } catch (_) {} relayWs = null; }
+      relayReconnectAt = 0;          // reset cooldown
+      relayConnectedAt = 0;
+      if (CFG.monitorServerEnabled) { connectRelay(); relayRegisterPlayer(); }
+    });
+    root.querySelector('#__assist_applyrelay').addEventListener('click', () => {
+      const url = root.querySelector('#__assist_relayurl').value.trim();
+      if (url) {
+        const prevUrl = CFG.monitorServerUrl;
+        CFG.monitorServerUrl = url;
+        saveConfigDebounced();
+        log('🌐 relay URL =', url);
+        // ถ้า URL เปลี่ยน → ตัดขาวเชื่อมใหม่
+        if (url !== prevUrl && relayWs) { try { relayWs.close(); } catch (_) {} relayWs = null; relayReconnectAt = 0; relayConnectedAt = 0; }
+        if (CFG.monitorServerEnabled) { connectRelay(); relayRegisterPlayer(); }
+      }
+    });
     // ---- nav wires ----
     root.querySelector('#__assist_navrecbtn').addEventListener('click', () => CFG.navRecording ? ASSIST.navRecordOff() : ASSIST.navRecordOn());
     root.querySelector('#__assist_navwanderbtn').addEventListener('click', () => { CFG.navWanderUseNav = !CFG.navWanderUseNav; ASSIST.navToggleWander(CFG.navWanderUseNav); });
@@ -5039,6 +5081,14 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
     syncInput('#__assist_kafrachoice', CFG.kafraChoice);
     syncToggle('#__assist_t_depfull', CFG.depositOnFull);
     syncToggle('#__assist_t_depaftersell', CFG.depositAfterSell);
+    // ★ relay/remote monitor config sync
+    const relayBtn = root.querySelector('#__assist_relaybtn');
+    if (relayBtn) {
+      const r = relayStatusInfo();
+      relayBtn.textContent = 'Relay: ' + (CFG.monitorServerEnabled ? 'ON' : 'OFF') + ' — ' + r.text;
+      relayBtn.className = CFG.monitorServerEnabled ? 'on' : 'off';
+    }
+    syncInput('#__assist_relayurl', CFG.monitorServerUrl);
     // nav config sync + stats display
     const navRecBtn = root.querySelector('#__assist_navrecbtn');
     if (navRecBtn) { navRecBtn.textContent = 'บันทึก: ' + (CFG.navRecording ? 'ON 🔴' : 'OFF'); navRecBtn.className = CFG.navRecording ? 'on' : 'off'; }
