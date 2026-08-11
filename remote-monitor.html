@@ -42,6 +42,16 @@
   @media (max-width: 1100px) { .grid3 { grid-template-columns: 1fr; } }
   .col { display: flex; flex-direction: column; gap: 6px; }
   .panel { background: #12121e; border: 1px solid #2a2a3a; border-radius: 6px; padding: 8px; }
+
+  /* ---------- Fullscreen mode ---------- */
+  #dash { height: auto; }
+  #dash.fullscreen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; background: #0a0a14; z-index: 9999; overflow: hidden; }
+  #dash.fullscreen .grid3 { flex: 1; min-height: 0; overflow: hidden; }
+  #dash.fullscreen .col { min-height: 0; overflow: hidden; }
+  #dash.fullscreen .col > .panel { flex-shrink: 0; }
+  #dash.fullscreen .col > .panel.flex-scroll { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #dash.fullscreen .col > .panel.flex-scroll > div:last-child { flex: 1; overflow-y: auto; min-height: 0; }
+  #dash.fullscreen .map-box img { max-height: calc(100vh - 350px); }
   .panel-title { font-size: 10px; color: #888; text-transform: uppercase; margin-bottom: 6px; }
   .stat-row { display: flex; justify-content: space-between; padding: 2px 0; font-size: 11px; }
   .stat-val { font-weight: bold; }
@@ -145,6 +155,7 @@
       <span><span class="dot" id="conn-dot"></span> <span id="conn-text">—</span></span>
       <span id="last-update">—</span>
       <span id="relay-status" style="color:#9aa0a6">relay: —</span>
+      <button id="btn-fullscreen">⛶ เต็มจอ</button>
       <button id="back-btn">← เปลี่ยน player_id</button>
     </div>
   </div>
@@ -184,7 +195,7 @@
         <div class="panel-title">✨ Buff / 🔮 Skill</div>
         <div class="cd-grid" id="cd-list"></div>
       </div>
-      <div class="panel">
+      <div class="panel flex-scroll">
         <div class="panel-title">🎒 Inventory</div>
         <div id="inv-list"></div>
       </div>
@@ -209,7 +220,7 @@
           <div class="map-empty">(ยังไม่มีข้อมูลแมป)</div>
         </div>
       </div>
-      <div class="panel" style="min-height:150px;display:flex;flex-direction:column">
+      <div class="panel flex-scroll" style="min-height:150px;display:flex;flex-direction:column">
         <div class="panel-title">💬 Chat (<span id="chat-count">0</span>)</div>
         <div id="chat-list" style="overflow-y:auto;flex:1;font-size:10px;line-height:1.5"></div>
       </div>
@@ -243,7 +254,7 @@
         </div>
         <div id="chat-status" style="font-size:9px;color:#666"></div>
       </div>
-      <div class="panel" style="flex:1;min-height:200px;display:flex;flex-direction:column">
+      <div class="panel flex-scroll" style="flex:1;min-height:200px;display:flex;flex-direction:column">
         <div class="panel-title">📋 Log สำคัญ</div>
         <div id="alert-list" style="overflow-y:auto;flex:1;font-size:10px;line-height:1.5"></div>
       </div>
@@ -881,6 +892,19 @@ document.getElementById('back-btn').onclick = () => {
   document.getElementById('login').style.display = 'block';
 };
 // ★ chat send wiring
+document.getElementById('btn-fullscreen').onclick = () => {
+  const dash = document.getElementById('dash');
+  const btn = document.getElementById('btn-fullscreen');
+  if (!dash.classList.contains('fullscreen')) {
+    dash.classList.add('fullscreen');
+    btn.textContent = '⛶ ออกเต็มจอ';
+    if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
+  } else {
+    dash.classList.remove('fullscreen');
+    btn.textContent = '⛶ เต็มจอ';
+    if (document.exitFullscreen) document.exitFullscreen().catch(()=>{});
+  }
+};
 document.getElementById('btn-sell-now').onclick = () => {
   if (!ws || ws.readyState !== 1) return;
   ws.send(JSON.stringify({ type: 'command', playerId: playerId, system: 'sell', action: 'now' }));
