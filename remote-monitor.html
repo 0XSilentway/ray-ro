@@ -573,6 +573,9 @@ function renderMap(d) {
   if (!mapName) { if (nameEl) nameEl.textContent = '—'; if (box) box.innerHTML = '<div class="map-empty">(ยังไม่มีข้อมูลแมป)</div>'; return; }
   if (nameEl) nameEl.textContent = mapName;
 
+  // ★ ถ้า calibration กำลังโหลดอยู่ → รอให้โหลดเสร็จแล้ว retry
+  if (_calibLoading) { setTimeout(() => renderMap(d), 1000); }
+
   // ★ อัปเดต calibration สำหรับแมปนี้
   if (_calibAll && _calibAll[mapName]) _calibData = _calibAll[mapName];
   else _calibData = null;
@@ -608,6 +611,14 @@ function renderMap(d) {
 function renderMapDots(box, img, d) {
   box.querySelectorAll('.map-dot').forEach(e => e.remove());
   if (!img || !img.clientWidth) return;
+  // ★ debug: ถ้าไม่มี calibration → แสดงข้อความ
+  if (!_calibData || !_calibData.transform) {
+    console.warn('[monitor] No calibration for map:', d.map, '— dots disabled');
+    return;
+  }
+  const entityCount = (d.mapEntities || []).length;
+  const itemCount = (d.groundItems || []).length;
+  console.log('[monitor] renderMapDots:', d.map, 'calib OK, entities:', entityCount, 'items:', itemCount);
 
   // ★ player (สีฟ้า) — วาดก่อน (z ต่ำสุด)
   if (d.player?.x != null && d.player?.y != null) {
