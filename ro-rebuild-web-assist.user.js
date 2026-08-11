@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.34.0
+// @version      4.35.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.34.0';
+  const VERSION = '4.35.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -370,7 +370,7 @@
     lootUseKillPos: true,         // ★ เช็ค item ใกล้พิกัดมอนที่เราฆ่า (นักธนูฆ่าไกล → ของตกไกล)
     pickRadiusKill: 5,            // ★ ระยะ (ช่อง) จากพิกัดมอนที่ตาย ที่จะถือว่าของเป็นของเรา
     attemptIntervalMs: 1200,      // ห่างระหว่างการลองเก็บชิ้นเดิม (1.2 วิ — รอ server เดินไปเก็บ)
-    sendThrottleMs: 500,          // ห่างระหว่างคำสั่งเก็บทุกชิ้น (กันสแปม)
+    sendThrottleMs: 400,          // ห่างระหว่างคำสั่งเก็บทุกชิ้น (กันสแปม)
     maxAttempts: 4,               // เก็บไม่ได้ 6 ครั้ง → ปล่อย (นักธนูฆ่าไกล ตัวเดินไปเก็บนานขึ้น)
     itemMaxAgeMs: 30000,          // ของเก่ากว่านี้ → ทิ้งออกจากคิว
     lootTickMs: 300,
@@ -1590,11 +1590,14 @@
       if (it.attempts >= CFG.maxAttempts) continue;
       if (now - it.lastAttemptAt < CFG.attemptIntervalMs) continue;
       // ★ รอ lootDelayAfterDropMs หลังของตก ก่อนเริ่มเก็บ (addedAt = ตอนของตกเข้าคิว)
-      if (now - it.addedAt < CFG.lootDelayAfterDropMs) continue;
+      //   ★★ แต่ละ drop จะมี delay ต่างกันเล็กน้อย (±200ms jitter — กันดูเป็นบอท)
+      if (it.delayAfterDrop == null) it.delayAfterDrop = CFG.lootDelayAfterDropMs + (Math.random() * 400 - 200);
+      if (now - it.addedAt < it.delayAfterDrop) continue;
       eligible.push(it);
     }
     if (!eligible.length) return;
-    if (now - lastSendAt < CFG.sendThrottleMs) return;
+    // ★★ sendThrottle กับ jitter ±200ms ด้วย — กันสแปมแต่ไม่ตายตัว
+    if (now - lastSendAt < (CFG.sendThrottleMs + (Math.random() * 400 - 200))) return;
 
     eligible.sort((a, b) => a.lastAttemptAt - b.lastAttemptAt);
     const it = eligible[0];
@@ -3777,10 +3780,10 @@
     { name: 'Bowling Bash', skillId: 32, level: 10, targeted: true, mobCountMin: 2, maxUsesPerTarget: 1, maxDistance: 2, spMin: 22, cooldownMs: 84, job: 'Knight Lord', desc: 'ตีกระแทก' },
     { name: 'Charge Attack', skillId: 40, level: 1, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, minDistance: 5, spMin: 30, cooldownMs: 114, job: 'Knight', desc: 'พุ่งเข้าหามอน' },
     // ---- Archer/Hunter (ทดลองครบ) ----
-    { name: 'Double Strafe', skillId: 24, level: 10, targeted: true, maxUsesPerTarget: 2, maxDistance: 15, spMin: 20, cooldownMs: 60, job: 'Archer/Hunter', desc: 'ยิง 2 ลูก' },
+    { name: 'Double Strafe', skillId: 24, level: 10, targeted: true, maxUsesPerTarget: 2, maxDistance: 15, spMin: 20, cooldownMs: 60000, job: 'Archer/Hunter', desc: 'ยิง 2 ลูก' },
     { name: 'Improve Concentration', skillId: 27, level: 10, selfCast: true, intervalMin: 4.3, spMin: 70, cooldownMs: 1, job: 'Archer/Hunter', desc: 'บัพ DEX+AGI' },
-    { name: 'Charge Arrow', skillId: 25, level: 1, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, spMin: 20, cooldownMs: 60, job: 'Archer/Hunter', desc: 'ดันมอนออกไกล' },
-    { name: 'Arrow Shower', skillId: 26, level: 5, ground: true, maxUsesPerTarget: 1, maxDistance: 10, mobCountMin: 2, spMin: 20, cooldownMs: 60, job: 'Hunter', desc: 'AoE ธนู (เลือกพื้นที่)' },
+    { name: 'Charge Arrow', skillId: 25, level: 1, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, spMin: 20, cooldownMs: 60000, job: 'Archer/Hunter', desc: 'ดันมอนออกไกล' },
+    { name: 'Arrow Shower', skillId: 26, level: 5, ground: true, maxUsesPerTarget: 1, maxDistance: 10, mobCountMin: 2, spMin: 20, cooldownMs: 60000, job: 'Hunter', desc: 'AoE ธนู (เลือกพื้นที่)' },
   ];
   function skillPresetGroups() {
     const groups = {};
