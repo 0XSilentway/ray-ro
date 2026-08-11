@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.46.0
+// @version      4.47.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.46.0';
+  const VERSION = '4.47.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -885,12 +885,12 @@
         player.x = x; player.y = y;
         // ★ ซิงค์ entities[playerId] ให้ตรง player.x/y (กัน entity ค้างที่ค่าผิด)
         const pe = entities.get(playerId);
-        if (pe) { pe.x = x; pe.y = y; pe.kind = 0; pe.alive = true; }
-        else { entities.set(playerId, { id, kind: 0, x, y, alive: true }); }
+        if (pe) { pe.x = x; pe.y = y; pe.kind = 0; pe.alive = true; pe._lastSeenAt = nowMs(); }
+        else { entities.set(playerId, { id, kind: 0, x, y, alive: true, _lastSeenAt: nowMs() }); }
       } else {
         const e = entities.get(id);
-        if (e) { e.x = x; e.y = y; }
-        else { entities.set(id, { id, kind: 1, x, y, alive: true }); }   // assume monster
+        if (e) { e.x = x; e.y = y; e._lastSeenAt = nowMs(); }
+        else { entities.set(id, { id, kind: 1, x, y, alive: true, _lastSeenAt: nowMs() }); }   // assume monster
       }
     }
     // 0x0b ATTACK_RESULT: ถ้าตัวเราเป็นคนตี → กำลังสู้
@@ -1369,7 +1369,7 @@
             y: y != null ? y : (existing.y != null ? existing.y : null),
             hp: hp != null ? hp : existing.hp,
             hpMax: hpMax != null ? hpMax : existing.hpMax,
-            alive: true,
+            alive: true, _lastSeenAt: nowMs(),
             _lastEngagedByOtherAt: existing._lastEngagedByOtherAt || 0,
             _lastDamageAt: existing._lastDamageAt || 0,
           });
@@ -1393,8 +1393,8 @@
         if (x >= -500 && x <= 1000 && y >= -500 && y <= 1000) {
           if (id !== playerId && !isStaleId(id, now)) {
             const e = entities.get(id);
-            if (e) { e.x = x; e.y = y; }
-            else { entities.set(id, { id, kind: 1, x, y, alive: true }); }
+            if (e) { e.x = x; e.y = y; e._lastSeenAt = now; }
+            else { entities.set(id, { id, kind: 1, x, y, alive: true, _lastSeenAt: now }); }
           } else if (id === playerId) { player.x = x; player.y = y; }   // ★ player ด้วย
         }
         p += 9;
@@ -1407,8 +1407,8 @@
       if (x >= -500 && x <= 1000 && y >= -500 && y <= 1000) {   // sanity
         if (id !== playerId && !isStaleId(id, nowMs())) {
           const e = entities.get(id);
-          if (e) { e.x = x; e.y = y; }
-          else { entities.set(id, { id, kind: 1, x, y, alive: true }); }
+          if (e) { e.x = x; e.y = y; e._lastSeenAt = nowMs(); }
+          else { entities.set(id, { id, kind: 1, x, y, alive: true, _lastSeenAt: nowMs() }); }
         } else if (id === playerId) { player.x = x; player.y = y; }
       }
     }
@@ -5132,10 +5132,16 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
       // ★ map entities — สำหรับแสดง dots บนแผนที่ใน remote monitor
       mapEntities: (() => {
         const now = nowMs(); const out = [];
+        const STALE_MS = 60000;   // ★ entity ที่ไม่ได้อัปเดตเกิน 60s → ข้าม (mirror bot_server.js:1484)
         for (const e of entities.values()) {
           if (e.id === playerId) continue;   // ตัวเองแสดงแยก
           if (e.x == null || !e.alive) continue;
           if (isStaleId(e.id, now)) continue;
+          // ★ stale check: NPC (kind=2) ไม่หมดอายุ (อยู่กับที่) — มอน/ผู้เล่นหมดอายุถ้าไม่ได้อัปเดต 60s
+          if (e.kind !== 2) {
+            if (!e._lastSeenAt) e._lastSeenAt = now;   // stamp ครั้งแรก
+            if (now - e._lastSeenAt > STALE_MS) continue;
+          }
           // จำกัดจำนวน (กัน payload ใหญ่เกิน)
           if (out.length >= 50) break;
           out.push({ id: e.id.toString(16), kind: e.kind || 0, x: e.x, y: e.y, name: e.name || '', hp: e.hp, hpMax: e.hpMax });
