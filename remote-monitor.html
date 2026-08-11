@@ -53,6 +53,12 @@
   .toggle { padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; }
   .toggle.on { background: #2e7d32; color: #fff; }
   .toggle.off { background: #424242; color: #888; }
+  /* ctrl toggles (interactive — กดได้) */
+  .ctrl-toggles { display: flex; flex-wrap: wrap; gap: 4px; }
+  .ctrl-toggle { padding: 5px 10px; border-radius: 5px; font-size: 10px; font-weight: bold; cursor: pointer; border: 1px solid transparent; transition: all .15s; }
+  .ctrl-toggle.on { background: #1b5e20; color: #a5d6a7; border-color: #2e7d32; }
+  .ctrl-toggle.off { background: #4a2020; color: #ef9a9a; border-color: #6a3030; }
+  .ctrl-toggle:hover { opacity: .85; }
 
   /* cooldown list */
   .cd-item { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; border-bottom: 1px solid #1a1a2a; font-size: 11px; gap: 6px; }
@@ -217,6 +223,22 @@
         <div class="stat-row"><span>🌐 Relay (บอท)</span><span class="stat-val" id="s-relay-bot">—</span></div>
         <div class="stat-row"><span>URL</span><span class="stat-val" id="s-relay-url" style="font-size:9px;color:#666">—</span></div>
       </div>
+      <div class="panel">
+        <div class="panel-title">🎮 ควบคุมระบบ (toggle on/off)</div>
+        <div class="ctrl-toggles" id="ctrl-toggles"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">💬 ส่งแชท</div>
+        <div style="display:flex;gap:4px;margin-bottom:4px">
+          <select id="chat-type" style="background:#1a1a2e;border:1px solid #2a2a3a;color:#e0e0e0;border-radius:4px;padding:4px;font-size:10px;font-family:inherit">
+            <option value="0">ใกล้</option>
+            <option value="1">ตะโกน</option>
+          </select>
+          <input type="text" id="chat-input" placeholder="พิมพ์ข้อความ..." style="flex:1;background:#1a1a2e;border:1px solid #2a2a3a;color:#e0e0e0;border-radius:4px;padding:4px 8px;font-size:11px;font-family:inherit">
+          <button id="chat-send" style="background:#9b59b6;color:#fff;border:none;border-radius:4px;padding:4px 12px;font-size:11px;cursor:pointer;font-family:inherit">ส่ง</button>
+        </div>
+        <div id="chat-status" style="font-size:9px;color:#666"></div>
+      </div>
       <div class="panel" style="flex:1;min-height:200px;display:flex;flex-direction:column">
         <div class="panel-title">📋 Log สำคัญ</div>
         <div id="alert-list" style="overflow-y:auto;flex:1;font-size:10px;line-height:1.5"></div>
@@ -340,6 +362,14 @@ function doConnect(url) {
     }
     else if (m.type === 'waiting') { txt.textContent = '⏳ ' + (m.message || 'รอบอท...'); }
     else if (m.type === 'botList') { renderBotList(m.bots); }
+    // ★ ack จาก relay (forward จาก bot) — ยืนยัน command/chat สำเร็จ
+    else if (m.type === 'commandAck') { console.log('[monitor] commandAck:', m.system, m.action, m.ok); }
+    else if (m.type === 'chatAck') {
+      const statusEl = document.getElementById('chat-status');
+      if (m.ok) { statusEl.textContent = '✅ ส่งแล้ว'; statusEl.style.color = '#2ecc71'; }
+      else { statusEl.textContent = '❌ ส่งไม่สำเร็จ: ' + (m.error || '?'); statusEl.style.color = '#e74c3c'; }
+      setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
+    }
   };
   ws.onclose = () => {
     dot.className = 'dot';
@@ -449,6 +479,9 @@ function render(d) {
   const T = d.toggles || {};
   const tl = [['loot','📦'],['heal','💉'],['rest','🪑'],['combat','⚔️'],['skill','🔮'],['buff','✨'],['sell','💰'],['storage','🏦']];
   document.getElementById('toggles').innerHTML = tl.map(([k,l]) => `<span class="toggle ${T[k]?'on':'off'}">${l} ${k}</span>`).join('');
+
+  // ---- Control toggles (interactive) ----
+  renderCtrlToggles(T);
 
   // ---- Target ----
   const tgt = d.target;
@@ -627,6 +660,55 @@ function renderAlerts(d) {
 
 function escapeHtml(s) { return String(s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
 
+// ============================================================
+//  Control toggles — กดเพื่อสั่ง toggle on/off ผ่าน relay
+// ============================================================
+const CTRL_SYSTEMS = [
+  ['combat','⚔️'],['loot','📦'],['heal','💉'],['rest','🪑'],
+  ['skill','🔮'],['buff','✨'],['sell','💰'],['storage','🏦'],
+];
+let ctrlTogglesState = {};
+
+function renderCtrlToggles(T) {
+  ctrlTogglesState = T || {};
+  const el = document.getElementById('ctrl-toggles');
+  if (!el) return;
+  if (!el.dataset.wired) {
+    el.dataset.wired = '1';
+  }
+  el.innerHTML = CTRL_SYSTEMS.map(([k,icon]) => {
+    const on = ctrlTogglesState[k];
+    return `<div class="ctrl-toggle ${on?'on':'off'}" data-system="${k}">${icon} ${k}</div>`;
+  }).join('');
+  el.querySelectorAll('.ctrl-toggle').forEach(btn => {
+    btn.onclick = () => {
+      const sys = btn.dataset.system;
+      const action = ctrlTogglesState[sys] ? 'off' : 'on';
+      btn.style.opacity = '.5';
+      ws.send(JSON.stringify({ type: 'command', playerId: playerId, system: sys, action }));
+      console.log(`[monitor] command: ${sys} ${action}`);
+    };
+  });
+}
+
+// ============================================================
+//  Chat send — ส่งแชทผ่าน relay
+// ============================================================
+function sendChatMessage() {
+  const input = document.getElementById('chat-input');
+  const typeSel = document.getElementById('chat-type');
+  const statusEl = document.getElementById('chat-status');
+  const msg = input.value.trim();
+  if (!msg) return;
+  if (!ws || ws.readyState !== 1) { statusEl.textContent = '❌ ยังไม่ได้เชื่อม relay'; statusEl.style.color = '#e74c3c'; return; }
+  const chatType = parseInt(typeSel.value, 10) || 0;
+  ws.send(JSON.stringify({ type: 'chat', playerId: playerId, message: msg, chatType }));
+  input.value = '';
+  statusEl.textContent = '⏳ กำลังส่ง...';
+  statusEl.style.color = '#f39c12';
+  console.log(`[monitor] chat (${chatType}): ${msg}`);
+}
+
 function log(tag, msg) { console.log(`[monitor:${tag}]`, msg); }
 
 // ============================================================
@@ -685,6 +767,11 @@ document.getElementById('back-btn').onclick = () => {
   document.getElementById('dash').style.display = 'none';
   document.getElementById('login').style.display = 'block';
 };
+// ★ chat send wiring
+document.getElementById('chat-send').onclick = sendChatMessage;
+document.getElementById('chat-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendChatMessage();
+});
 
 // ★ auto-connect ถ้ามี pid ใน hash (เช่น #pid=2000001)
 const m = location.hash.match(/pid=([0-9a-fA-F]+)/);

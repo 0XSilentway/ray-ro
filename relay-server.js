@@ -221,6 +221,39 @@ wss.on('connection', (ws, req) => {
       }
       return;
     }
+
+    // ---- Monitor client → command (toggle on/off) ไป bot ----
+    if (msg.type === 'command' && msg.playerId && ws.role === 'monitor') {
+      const entry = bots.get(String(msg.playerId));
+      if (entry && entry.botWs && entry.botWs.readyState === 1) {
+        // ★ ฝัง sourceMonitorId เพื่อ forward ack กลับไป monitor ที่สั่ง
+        entry.botWs.send(JSON.stringify({ type: 'command', system: msg.system, action: msg.action, _fromMonitor: ws._monitorId || null }));
+        log(`🎮 Command → bot ${msg.playerId}: ${msg.system} ${msg.action}`);
+      }
+      return;
+    }
+
+    // ---- Monitor client → chat ไป bot ----
+    if (msg.type === 'chat' && msg.playerId && ws.role === 'monitor') {
+      const entry = bots.get(String(msg.playerId));
+      if (entry && entry.botWs && entry.botWs.readyState === 1) {
+        entry.botWs.send(JSON.stringify({ type: 'chat', message: String(msg.message || '').slice(0, 200), chatType: msg.chatType || 0, _fromMonitor: ws._monitorId || null }));
+        log(`💬 Chat → bot ${msg.playerId}: ${(msg.message || '').slice(0, 50)}`);
+      }
+      return;
+    }
+
+    // ---- Bot → ack (forward กลับไป monitor ที่สั่ง) ----
+    if ((msg.type === 'commandAck' || msg.type === 'chatAck') && ws.role === 'bot' && ws.playerId) {
+      const entry = bots.get(ws.playerId);
+      if (entry && entry.monitors) {
+        const ack = JSON.stringify(msg);
+        for (const mon of entry.monitors) {
+          if (mon.readyState === 1) { try { mon.send(ack); } catch (_) {} }
+        }
+      }
+      return;
+    }
   });
 
   ws.on('close', () => {

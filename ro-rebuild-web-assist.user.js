@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.39.0
+// @version      4.40.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.39.0';
+  const VERSION = '4.40.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -333,8 +333,8 @@
     telegramAlertCard: true,       // 🃏 ดรอปการ์ด (logImportant type=card)
     telegramAlertFlee: true,       // 🚨 หนีมอน/ตาย (logImportant type=flee)
     telegramAlertBotMention: true, // 💬 แชทที่พูดถึง bot/บอท/บอต (logImportant type=chat)
-    telegramAlertNearby: false,    // 💬 แชท nearby ทุกข้อความ
-    telegramAlertWhisper: true,    // 💬 แชทกระซิบ (whisper) ทุกข้อความ
+    telegramAlertNearby: true,    // 💬 แชท nearby ทุกข้อความ
+    telegramAlertWhisper: false,    // 💬 แชทกระซิบ (whisper) ทุกข้อความ
 
     // ---------- AUTO-SELL (★ default OFF) ----------
     //  trigger: ของเต็ม (0x20 'too full') OR ครบเวลา sellIntervalMin
@@ -2220,6 +2220,21 @@
   function sendRespawn() {
     if (!activeWS || activeWS.readyState !== 1) return false;
     activeWS.send(new Uint8Array([0x29, 0x00]));
+    return true;
+  }
+  // ★ CHAT OUT: [2c][msg_len:2 LE][msg UTF-8][chat_type:1]
+  //   chatType: 0=nearby, 1=shout, 2=whisper (mirror protocol.js:362-369 enc.chat)
+  function sendChat(message, chatType) {
+    if (!activeWS || activeWS.readyState !== 1) return false;
+    if (!message) return false;
+    const msgBytes = new TextEncoder().encode(message);
+    if (msgBytes.length > 200) return false;   // cap 200 (mirror bot_server.js:1740)
+    const b = new Uint8Array(1 + 2 + msgBytes.length + 1);
+    b[0] = 0x2c;
+    b[1] = msgBytes.length & 0xff; b[2] = (msgBytes.length >> 8) & 0xff;
+    b.set(msgBytes, 3);
+    b[3 + msgBytes.length] = chatType || 0;
+    activeWS.send(b);
     return true;
   }
   // SELL encoders (mirror protocol.js:367,386,394)
@@ -5175,6 +5190,29 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
             updateTelegramStatus('✅ ตั้งค่าแล้ว (Chat ID: ' + m.chatId + ') — แจ้งเตือนจะส่งไป Telegram', '#2ecc71');
           } else {
             updateTelegramStatus('⚠️ ยังไม่ได้ตั้งค่า — กรอก Bot Token + Chat ID แล้วกด บันทึก', '#f39c12');
+          }
+        }
+        // ★ command จาก remote monitor → toggle on/off
+        else if (m.type === 'command' && m.system && m.action) {
+          const method = m.system + (m.action === 'off' ? 'Off' : 'On');
+          if (typeof ASSIST[method] === 'function') {
+            ASSIST[method]();
+            log('🎮 Remote command:', m.system, m.action);
+            // ส่ง ack กลับไป relay เพื่อยืนยัน
+            try { relayWs.send(JSON.stringify({ type: 'commandAck', system: m.system, action: m.action, ok: true })); } catch (_) {}
+          } else {
+            log('⚠️ Remote command: method "' + method + '" ไม่มี');
+            try { relayWs.send(JSON.stringify({ type: 'commandAck', system: m.system, action: m.action, ok: false, error: 'unknown method' })); } catch (_) {}
+          }
+        }
+        // ★ chat จาก remote monitor → ส่งไป game server
+        else if (m.type === 'chat' && m.message != null) {
+          if (sendChat(m.message, m.chatType || 0)) {
+            log('💬 Remote chat (' + (m.chatType === 1 ? 'shout' : 'nearby') + '):', m.message);
+            try { relayWs.send(JSON.stringify({ type: 'chatAck', ok: true })); } catch (_) {}
+          } else {
+            log('⚠️ Remote chat: ส่งไม่ได้ (activeWS ไม่พร้อม?)');
+            try { relayWs.send(JSON.stringify({ type: 'chatAck', ok: false, error: 'not connected' })); } catch (_) {}
           }
         }
       };
