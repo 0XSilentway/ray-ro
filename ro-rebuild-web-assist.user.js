@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.38.0
+// @version      4.39.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.38.0';
+  const VERSION = '4.39.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -130,7 +130,7 @@
     'maxAcquireDistance', 'searchRadii', 'maxChaseDistance', 'antiKS', 'avoidOtherPlayers', 'targetLowestHpFirst',
     'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius', 'fleeMonsters', 'fleeMonsterRadius', 'maxEngageSecSlow', 'slowMonsterSubIds',
     'wanderEnabled', 'warpFindEnabled', 'warpToMonster', 'stuckWarpOnAbandon',
-    'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs', 'autoRespawnEnabled', 'autoRespawnDelayMs',
+    'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs', 'autoRespawnEnabled', 'autoRespawnDelayMs', 'telegramAlertCard', 'telegramAlertFlee', 'telegramAlertBotMention', 'telegramAlertNearby', 'telegramAlertWhisper',
     'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellNpcX', 'sellNpcY', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
     'storageEnabled', 'kafraName', 'kafraMap', 'kafraMapX', 'kafraMapY', 'kafraChoice', 'depositOnFull', 'depositAfterSell', 'depositItemIds',
     'farmMap', 'farmMapX', 'farmMapY', 'warpBackToFarm',
@@ -328,6 +328,14 @@
     autoRespawnEnabled: true,
     autoRespawnDelayMs: 3000,     // รอ N ms หลังตายก่อนส่ง respawn (กันสแปม — ถ้า server lag)
 
+    // ---------- TELEGRAM ALERT FILTERS ----------
+    //   ★ ควบคุมว่าจะส่ง alert ประเภทไหนไป Telegram บ้าง
+    telegramAlertCard: true,       // 🃏 ดรอปการ์ด (logImportant type=card)
+    telegramAlertFlee: true,       // 🚨 หนีมอน/ตาย (logImportant type=flee)
+    telegramAlertBotMention: true, // 💬 แชทที่พูดถึง bot/บอท/บอต (logImportant type=chat)
+    telegramAlertNearby: false,    // 💬 แชท nearby ทุกข้อความ
+    telegramAlertWhisper: true,    // 💬 แชทกระซิบ (whisper) ทุกข้อความ
+
     // ---------- AUTO-SELL (★ default OFF) ----------
     //  trigger: ของเต็ม (0x20 'too full') OR ครบเวลา sellIntervalMin
     //  เลือก NPC + แมป เอง + เลือก item ที่จะขายเอง (default ไม่ขายอะไร)
@@ -475,8 +483,13 @@
     importantLogBuf.push({ t: Date.now(), type, msg });
     while (importantLogBuf.length > IMPORTANT_BUF_MAX) importantLogBuf.shift();
     log(msg);   // ส่งไป log ปกติด้วย
-    // ★ ส่ง alert ไป relay server → forward ไป Telegram (ถ้ามี config)
-    sendRelayAlert(msg);
+    // ★ ส่ง alert ไป relay server → forward ไป Telegram (ถ้ามี config + เปิด toggle ประเภทนี้)
+    let category = null;
+    if (type === 'card') category = 'telegramAlertCard';
+    else if (type === 'flee') category = 'telegramAlertFlee';
+    else if (type === 'chat') category = 'telegramAlertBotMention';
+    else category = 'telegramAlertCard';   // default = ส่ง
+    if (CFG[category] !== false) sendRelayAlert(msg);
   }
   // ★ chat history buffer — เก็บแชทล่าสุดสำหรับ monitor
   const CHAT_BUF_MAX = 50;
@@ -1146,6 +1159,12 @@
         const lower = message.toLowerCase();
         if (lower.includes('bot') || message.includes('บอท') || message.includes('บอต')) {
           logImportant('chat', '💬 [' + typeName + '] ' + (name || '?') + ': ' + message);
+        }
+        // ★ ส่งแชท nearby/whisper ทุกข้อความไป Telegram (ถ้าเปิด toggle)
+        else {
+          const alertMsg = '💬 [' + typeName + '] ' + (name || '?') + ': ' + message;
+          if (chatType === 0 && CFG.telegramAlertNearby !== false) sendRelayAlert(alertMsg);
+          else if (chatType === 2 && CFG.telegramAlertWhisper !== false) sendRelayAlert(alertMsg);
         }
       } catch (e) {}
     }
@@ -4526,6 +4545,17 @@
               <button id="__assist_tg_clear" class="danger">🗑 ล้าง</button>
             </div>
             <div id="__assist_tg_status" style="font-size:10px;color:#9aa0a6;margin-top:6px;line-height:1.6">(ยังไม่ได้ตั้งค่า)</div>
+            <h4>🔔 ประเภทการแจ้งเตือน</h4>
+            <div class="btns">
+              <button id="__assist_t_tgcard" class="on">🃏 การ์ด</button>
+              <button id="__assist_t_tgflee" class="on">🚨 หนี/ตาย</button>
+              <button id="__assist_t_tgbot" class="on">💬 พูดถึง bot</button>
+            </div>
+            <div class="btns">
+              <button id="__assist_t_tgnearby" class="off">💬 แชทใกล้</button>
+              <button id="__assist_t_tgwhisper" class="on">💭 กระซิบ</button>
+            </div>
+            <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เปิด/ปิดการส่งแต่ละประเภทไป Telegram</div>
           </div>
         </div>
         <div class="__assist_page" data-page="alert">
@@ -4850,6 +4880,21 @@
         updateTelegramStatus('🗑 ล้างการตั้งค่าแล้ว', '#9aa0a6');
         log('📨 ล้าง Telegram config');
       }
+    });
+    // ---- telegram alert toggle wires ----
+    const tgToggles = [
+      ['#__assist_t_tgcard', 'telegramAlertCard', '🃏 การ์ด'],
+      ['#__assist_t_tgflee', 'telegramAlertFlee', '🚨 หนี/ตาย'],
+      ['#__assist_t_tgbot', 'telegramAlertBotMention', '💬 พูดถึง bot'],
+      ['#__assist_t_tgnearby', 'telegramAlertNearby', '💬 แชทใกล้'],
+      ['#__assist_t_tgwhisper', 'telegramAlertWhisper', '💭 กระซิบ'],
+    ];
+    tgToggles.forEach(([sel, key, label]) => {
+      const btn = root.querySelector(sel);
+      if (btn) btn.addEventListener('click', () => {
+        CFG[key] = !CFG[key]; saveConfigDebounced();
+        log('📨 Telegram alert', label, CFG[key] ? 'เปิด' : 'ปิด');
+      });
     });
     // ---- nav wires ----
     root.querySelector('#__assist_navrecbtn').addEventListener('click', () => CFG.navRecording ? ASSIST.navRecordOff() : ASSIST.navRecordOn());
@@ -5408,6 +5453,12 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
       relayBtn.className = CFG.monitorServerEnabled ? 'on' : 'off';
     }
     syncInput('#__assist_relayurl', CFG.monitorServerUrl);
+    // ★ telegram alert toggle sync
+    syncToggle('#__assist_t_tgcard', CFG.telegramAlertCard !== false);
+    syncToggle('#__assist_t_tgflee', CFG.telegramAlertFlee !== false);
+    syncToggle('#__assist_t_tgbot', CFG.telegramAlertBotMention !== false);
+    syncToggle('#__assist_t_tgnearby', CFG.telegramAlertNearby === true);
+    syncToggle('#__assist_t_tgwhisper', CFG.telegramAlertWhisper !== false);
     // nav config sync + stats display
     const navRecBtn = root.querySelector('#__assist_navrecbtn');
     if (navRecBtn) { navRecBtn.textContent = 'บันทึก: ' + (CFG.navRecording ? 'ON 🔴' : 'OFF'); navRecBtn.className = CFG.navRecording ? 'on' : 'off'; }
