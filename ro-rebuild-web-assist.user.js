@@ -4356,53 +4356,6 @@
             <div class="subtab" data-sub="storage">🏦 Storage</div>
             <div class="subtab" data-sub="misc">⚙️ อื่นๆ</div>
           </div>
-          <!-- 📦 Loot -->
-          <div class="__assist_subpage active" data-sub="loot">
-            <div class="btns">
-              <button id="__assist_lootbtn" class="on">Loot: ?</button>
-            </div>
-            <div class="field"><label>โหมด loot</label><select id="__assist_lootmode"><option value="all">all (เก็บหมด)</option><option value="only">only (เก็บเฉพาะ)</option><option value="except">except (ยกเว้น)</option></select></div>
-            <div class="btns">
-              <button id="__assist_manageonly">📋 จัดการ 'เก็บเฉพาะ'</button>
-              <button id="__assist_manageexcept">📋 จัดการ 'ยกเว้น'</button>
-            </div>
-            <div class="field"><label>ดีเลย์ก่อนเก็บ (ms หลังของตก) — 0 = เก็บทันที</label><input type="number" id="__assist_lootdelay" min="0" step="100"></div>
-            <div class="field"><label>ดีเลย์ระหว่างเก็บชิ้นต่อไป (ms) — ห่างระหว่าง pickup แต่ละครั้ง</label><input type="number" id="__assist_lootthrottle" min="100" step="100"></div>
-            <div class="field"><label>เช็คของใกล้พิกัดมอนที่ฆ่า (ช่อง) — นักธนูยิงไกล → ของตกที่มอน</label><input type="number" id="__assist_pickradiuskill" min="1" max="20" placeholder="5"></div>
-            <div class="btns"><button id="__assist_applylootdelay">ตั้งดีเลย์</button><button id="__assist_t_lootkillpos" class="on">เช็คพิกัดมอนที่ฆ่า</button></div>
-            <h4>🌀 Warp-to-Loot (วาร์ปไปเก็บของที่ติดกำแพง)</h4>
-            <div class="btns"><button id="__assist_warpbtn" class="off">วาร์ปไปเก็บของ: ?</button></div>
-          </div>
-          <!-- 💉 Heal -->
-          <div class="__assist_subpage" data-sub="heal">
-            <div class="btns">
-              <button id="__assist_healbtn" class="off">Heal: ?</button>
-            </div>
-            <div class="field"><label>HP% เริ่มใช้ยา (healAt)</label><input type="number" id="__assist_healat" min="1" max="100"></div>
-            <div class="field"><label>item id ที่จะใช้ heal (คั่นด้วยจุลภาค)</label><input type="text" id="__assist_healitems" placeholder="เช่น 501,502,503"></div>
-            <div class="btns"><button id="__assist_applyheal">ใช้ค่า heal</button></div>
-            <div class="field"><label>โหมด heal</label><select id="__assist_healmode"><option value="order">order (ใช้ตัวเดิมจนหมด)</option><option value="random">random (สุ่ม)</option></select></div>
-          </div>
-          <!-- ✨ Buff -->
-          <div class="__assist_subpage" data-sub="buff">
-            <div class="btns">
-              <button id="__assist_buffbtn" class="off">Buff: ?</button>
-              <button id="__assist_buffnow" class="primary">ใช้ buff เดี๋ยวนี้</button>
-            </div>
-            <div class="field"><label>buff: itemId,ทุกกี่นาที (คั่นบรรทัด เช่น 656,30) — เพิ่มได้หลายตัว</label><textarea id="__assist_buffitems" rows="3" style="width:100%;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:'Consolas',monospace;resize:vertical" placeholder="656,30&#10;645,30"></textarea></div>
-            <div class="btns"><button id="__assist_applybuff">ใช้ค่า buff</button><button id="__assist_clearbufftimes">รีเซ็ต countdown</button></div>
-            <div id="__assist_buffcountdown" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่ตั้ง buff)</div>
-          </div>
-          <!-- 🔮 Skill -->
-          <div class="__assist_subpage" data-sub="skill">
-            <div class="btns">
-              <button id="__assist_skillbtn" class="off">Skill: ?</button>
-              <button id="__assist_skillnow" class="primary">ใช้ skill เดี๋ยวนี้</button>
-              <button id="__assist_manageskill">📋 จัดการ skill</button>
-            </div>
-            <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เพิ่ม/แก้/ลบ skill list ผ่าน popup — รองรับ targeted (Bash), AoE (Magnum), self-cast (Quicken)</div>
-            <div id="__assist_skillcountdown" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่ตั้ง skill)</div>
-          </div>
           <!-- 🗺️ Farm -->
           <div class="__assist_subpage" data-sub="farm">
             <div class="btns">
@@ -4433,6 +4386,53 @@
             </div>
             <div class="field"><label>stuck abandon N ครั้งใน 60s → วาร์ปสุ่ม (0=ปิด)</label><input type="number" id="__assist_stuckwarp" min="0" max="20"></div>
             <div class="btns"><button id="__assist_applycombat">ใช้ค่า combat</button></div>
+          </div>
+          <!-- 📦 Loot -->
+          <div class="__assist_subpage active" data-sub="loot">
+            <div class="btns">
+              <button id="__assist_lootbtn" class="on">Loot: ?</button>
+            </div>
+            <div class="field"><label>โหมด loot</label><select id="__assist_lootmode"><option value="all">all (เก็บหมด)</option><option value="only">only (เก็บเฉพาะ)</option><option value="except">except (ยกเว้น)</option></select></div>
+            <div class="btns">
+              <button id="__assist_manageonly">📋 จัดการ 'เก็บเฉพาะ'</button>
+              <button id="__assist_manageexcept">📋 จัดการ 'ยกเว้น'</button>
+            </div>
+            <div class="field"><label>ดีเลย์ก่อนเก็บ (ms หลังของตก) — 0 = เก็บทันที</label><input type="number" id="__assist_lootdelay" min="0" step="100"></div>
+            <div class="field"><label>ดีเลย์ระหว่างเก็บชิ้นต่อไป (ms) — ห่างระหว่าง pickup แต่ละครั้ง</label><input type="number" id="__assist_lootthrottle" min="100" step="100"></div>
+            <div class="field"><label>เช็คของใกล้พิกัดมอนที่ฆ่า (ช่อง) — นักธนูยิงไกล → ของตกที่มอน</label><input type="number" id="__assist_pickradiuskill" min="1" max="20" placeholder="5"></div>
+            <div class="btns"><button id="__assist_applylootdelay">ตั้งดีเลย์</button><button id="__assist_t_lootkillpos" class="on">เช็คพิกัดมอนที่ฆ่า</button></div>
+            <h4>🌀 Warp-to-Loot (วาร์ปไปเก็บของที่ติดกำแพง)</h4>
+            <div class="btns"><button id="__assist_warpbtn" class="off">วาร์ปไปเก็บของ: ?</button></div>
+          </div>
+          <!-- 🔮 Skill -->
+          <div class="__assist_subpage" data-sub="skill">
+            <div class="btns">
+              <button id="__assist_skillbtn" class="off">Skill: ?</button>
+              <button id="__assist_skillnow" class="primary">ใช้ skill เดี๋ยวนี้</button>
+              <button id="__assist_manageskill">📋 จัดการ skill</button>
+            </div>
+            <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เพิ่ม/แก้/ลบ skill list ผ่าน popup — รองรับ targeted (Bash), AoE (Magnum), self-cast (Quicken)</div>
+            <div id="__assist_skillcountdown" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่ตั้ง skill)</div>
+          </div>
+          <!-- ✨ Buff -->
+          <div class="__assist_subpage" data-sub="buff">
+            <div class="btns">
+              <button id="__assist_buffbtn" class="off">Buff: ?</button>
+              <button id="__assist_buffnow" class="primary">ใช้ buff เดี๋ยวนี้</button>
+            </div>
+            <div class="field"><label>buff: itemId,ทุกกี่นาที (คั่นบรรทัด เช่น 656,30) — เพิ่มได้หลายตัว</label><textarea id="__assist_buffitems" rows="3" style="width:100%;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:'Consolas',monospace;resize:vertical" placeholder="656,30&#10;645,30"></textarea></div>
+            <div class="btns"><button id="__assist_applybuff">ใช้ค่า buff</button><button id="__assist_clearbufftimes">รีเซ็ต countdown</button></div>
+            <div id="__assist_buffcountdown" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่ตั้ง buff)</div>
+          </div>
+          <!-- 💉 Heal -->
+          <div class="__assist_subpage" data-sub="heal">
+            <div class="btns">
+              <button id="__assist_healbtn" class="off">Heal: ?</button>
+            </div>
+            <div class="field"><label>HP% เริ่มใช้ยา (healAt)</label><input type="number" id="__assist_healat" min="1" max="100"></div>
+            <div class="field"><label>item id ที่จะใช้ heal (คั่นด้วยจุลภาค)</label><input type="text" id="__assist_healitems" placeholder="เช่น 501,502,503"></div>
+            <div class="btns"><button id="__assist_applyheal">ใช้ค่า heal</button></div>
+            <div class="field"><label>โหมด heal</label><select id="__assist_healmode"><option value="order">order (ใช้ตัวเดิมจนหมด)</option><option value="random">random (สุ่ม)</option></select></div>
           </div>
           <!-- 🏃 Flee -->
           <div class="__assist_subpage" data-sub="flee">
