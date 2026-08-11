@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.43.0
+// @version      4.44.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.43.0';
+  const VERSION = '4.44.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -130,7 +130,7 @@
     'maxAcquireDistance', 'searchRadii', 'maxChaseDistance', 'antiKS', 'avoidOtherPlayers', 'targetLowestHpFirst',
     'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius', 'fleeMonsters', 'fleeMonsterRadius', 'maxEngageSecSlow', 'slowMonsterSubIds',
     'wanderEnabled', 'warpFindEnabled', 'warpToMonster', 'stuckWarpOnAbandon',
-    'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs', 'autoRespawnEnabled', 'autoRespawnDelayMs', 'telegramAlertCard', 'telegramAlertFlee', 'telegramAlertBotMention', 'telegramAlertNearby', 'telegramAlertWhisper',
+    'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs', 'autoRespawnEnabled', 'autoRespawnDelayMs', 'telegramAlertCard', 'telegramAlertFlee', 'telegramAlertBotMention', 'telegramAlertNearby', 'telegramAlertWhisper', 'telegramBotToken', 'telegramChatId',
     'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellNpcX', 'sellNpcY', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
     'storageEnabled', 'kafraName', 'kafraMap', 'kafraMapX', 'kafraMapY', 'kafraChoice', 'depositOnFull', 'depositAfterSell', 'depositItemIds',
     'farmMap', 'farmMapX', 'farmMapY', 'warpBackToFarm',
@@ -335,6 +335,8 @@
     telegramAlertBotMention: true, // 💬 แชทที่พูดถึง bot/บอท/บอต (logImportant type=chat)
     telegramAlertNearby: true,    // 💬 แชท nearby ทุกข้อความ
     telegramAlertWhisper: false,    // 💬 แชทกระซิบ (whisper) ทุกข้อความ
+    telegramBotToken: '',           // ★ Bot Token (จาก @BotFather) — persist ในเครื่อง + ส่งไป relay
+    telegramChatId: '',             // ★ Chat ID (จาก @userinfobot)
 
     // ---------- AUTO-SELL (★ default OFF) ----------
     //  trigger: ของเต็ม (0x20 'too full') OR ครบเวลา sellIntervalMin
@@ -4886,8 +4888,12 @@
       const token = root.querySelector('#__assist_tg_token').value.trim();
       const chatId = root.querySelector('#__assist_tg_chatid').value.trim();
       if (!token || !chatId) { updateTelegramStatus('❌ กรุณากรอก Bot Token + Chat ID ให้ครบ', '#e74c3c'); return; }
-      if (playerName == null) { updateTelegramStatus('❌ ยังไม่รู้ชื่อตัวละคร — เข้าเกมก่อน', '#e74c3c'); return; }
-      if (!relayWs || relayWs.readyState !== 1) { updateTelegramStatus('❌ ยังไม่ได้เชื่อม relay server — ไปเปิดที่หน้าอื่นๆ ก่อน', '#e74c3c'); return; }
+      // ★ บันทึกลงเครื่อง (localStorage) — persist ข้าม session
+      CFG.telegramBotToken = token;
+      CFG.telegramChatId = chatId;
+      saveConfigDebounced();
+      if (playerName == null) { updateTelegramStatus('⚠️ บันทึกในเครื่องแล้ว — จะส่งไป relay เมื่อเข้าเกม + เชื่อม relay', '#f39c12'); return; }
+      if (!relayWs || relayWs.readyState !== 1) { updateTelegramStatus('⚠️ บันทึกในเครื่องแล้ว — จะส่งไป relay เมื่อเชื่อมต่อ', '#f39c12'); return; }
       updateTelegramStatus('⏳ กำลังบันทึก...', '#f39c12');
       if (sendSetTelegram(token, chatId)) log('📨 บันทึก Telegram config...');
     });
@@ -5189,6 +5195,13 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
         // ส่ง register
         if (playerId != null) {
           try { relayWs.send(JSON.stringify({ type: 'register', playerId: playerId.toString(16), playerName: playerName || '' })); } catch (_) {}
+          // ★ ส่ง telegram config ทันที (ถ้ามี) — sync ไป relay server
+          if (CFG.telegramBotToken && CFG.telegramChatId) {
+            try { relayWs.send(JSON.stringify({ type: 'setTelegram', botToken: CFG.telegramBotToken, chatId: CFG.telegramChatId })); } catch (_) {}
+            log('📨 ส่ง Telegram config ไป relay แล้ว');
+          }
+          // ★ ส่งแจ้งเตือนยืนยันการเชื่อมต่อ
+          sendRelayAlert('🌐 เชื่อมต่อระบบ Remote Monitor แล้ว');
         } else {
           log('⚠️ ยังไม่มี player_id — ระบบจะ register ทันทีเมื่อ SPAWN มา');
         }
@@ -5264,8 +5277,15 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
       try {
         relayWs.send(JSON.stringify({ type: 'register', playerId: playerId.toString(16), playerName: playerName || '' }));
         log('📡 ลงทะเบียน (register) player_id ' + playerId.toString(16) + ' ไปยัง relay แล้ว');
+        // ★ ส่ง telegram config ทันที (ถ้ามี) — sync ไป relay server
+        if (CFG.telegramBotToken && CFG.telegramChatId) {
+          relayWs.send(JSON.stringify({ type: 'setTelegram', botToken: CFG.telegramBotToken, chatId: CFG.telegramChatId }));
+          log('📨 ส่ง Telegram config ไป relay แล้ว');
+        }
         // ★ ขอ telegram config status หลัง register (เพื่อแสดงใน UI ว่าตั้งไว้แล้วหรือยัง)
         relayWs.send(JSON.stringify({ type: 'getTelegram' }));
+        // ★ ส่งแจ้งเตือนยืนยันการเชื่อมต่อ
+        sendRelayAlert('🌐 เชื่อมต่อระบบ Remote Monitor แล้ว');
       } catch (_) {}
     }
   }
@@ -5533,6 +5553,11 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
     syncToggle('#__assist_t_tgbot', CFG.telegramAlertBotMention !== false);
     syncToggle('#__assist_t_tgnearby', CFG.telegramAlertNearby === true);
     syncToggle('#__assist_t_tgwhisper', CFG.telegramAlertWhisper !== false);
+    // ★ sync telegram token/chatId จาก CFG ลง input fields
+    const tgToken = root.querySelector('#__assist_tg_token');
+    if (tgToken && !isEditing(tgToken) && CFG.telegramBotToken) tgToken.value = CFG.telegramBotToken;
+    const tgChatId = root.querySelector('#__assist_tg_chatid');
+    if (tgChatId && !isEditing(tgChatId) && CFG.telegramChatId) tgChatId.value = CFG.telegramChatId;
     // nav config sync + stats display
     const navRecBtn = root.querySelector('#__assist_navrecbtn');
     if (navRecBtn) { navRecBtn.textContent = 'บันทึก: ' + (CFG.navRecording ? 'ON 🔴' : 'OFF'); navRecBtn.className = CFG.navRecording ? 'on' : 'off'; }
