@@ -627,7 +627,8 @@ function renderChat(d) {
   const chat = d.chatHistory || [];
   if (countEl) countEl.textContent = chat.length;
   if (chat.length === 0) { el.innerHTML = '<div class="empty">(ไม่มีแชท)</div>'; return; }
-  el.innerHTML = chat.map(c => {
+  // ★ เรียงลำดับใหม่ล่าสุดอยู่ด้านบน (reverse — ไม่ต้อง scroll ตาม)
+  el.innerHTML = [...chat].reverse().map(c => {
     const time = new Date(c.t).toLocaleTimeString();
     const typeCls = 'ctype-' + String(c.type || '').replace(/[*]/g, '\\*');
     return `<div class="chat-line">
@@ -637,7 +638,6 @@ function renderChat(d) {
       <span style="color:#ddd">${escapeHtml(c.message || '')}</span>
     </div>`;
   }).join('');
-  el.scrollTop = el.scrollHeight;
 }
 
 function renderAlerts(d) {
