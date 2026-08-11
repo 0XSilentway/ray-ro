@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.45.0
+// @version      4.46.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.45.0';
+  const VERSION = '4.46.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -141,6 +141,12 @@
     try {
       const out = {};
       for (const k of PERSIST_KEYS) if (k in CFG) out[k] = CFG[k];
+      // ★ sort item ID arrays ตามเลขไอดี (เวลาเขียน localStorage/export จะได้มองง่าย)
+      const sortNum = (arr) => Array.isArray(arr) ? [...arr].sort((a, b) => a - b) : arr;
+      if (out.healItems) out.healItems = sortNum(out.healItems);
+      if (out.sellItemIds) out.sellItemIds = sortNum(out.sellItemIds);
+      if (out.depositItemIds) out.depositItemIds = sortNum(out.depositItemIds);
+      if (out.buffItems && Array.isArray(out.buffItems)) out.buffItems = [...out.buffItems].sort((a, b) => a.itemId - b.itemId);
       localStorage.setItem(CFG_STORAGE_KEY, JSON.stringify(out));
     } catch (e) { /* localStorage อาจถูกบล็อก — ข้าม */ }
   }
@@ -348,7 +354,7 @@
     sellNpcY: 55,                 // ★ พิกัด Y ที่จะวาร์ปไป (-999 = random spawn, แต่อาจไกล NPC)
     sellIntervalMin: 0,           // 0=off, >0=ขายทุก N นาที
     sellOnFull: true,             // ขายเมื่อของเต็ม (server ส่ง 'too full')
-    sellItemIds: [908,909,910,911,918,919,920,921,924,926,928,940,943,946,949,950,951,955,960,961,962,1024,1052,7033,935,915,913,957,7032,902,1068,1067,948,907,1021,906,937,945,705,1023,1050,956,1057,963,914,905,511,711,721,1051,1054,1053,901,1094,1020,1019,7054,1022,7013,7094,7356,7317,7004,7049,1055,7064,967,912,1096,7070,7358,7357,942,7359,953,1501,2221,1035,1032,1031,1013,1402,1916,1026,947,1014,1040,1034,1012,737,904,7031,1056,7007,903,7041,930,958,934,1059,1099,1098,7174,1025,1042,1017,7318,1041,1061,7119,923,7012,1063,7009,7002,931,7005,1095,1097,938,2297,1301,932,1505,1060,734,7069,7072,7066,7068,954,7156,7053,7158,7157,7106,7107,7001,7159,7124,7063,7111,7112,1038,7015,713,936,2303,1016,2304,1202,7154,7155,7153,7152,7126,1044,922,1116,1064,1201,1039,1602,1033,7067,1048,1062,944,7003,7006,1036,7123,1037,941,7030,7150,7149,7151,959],              // ★ item id ที่ติ๊กว่าจะขาย (default ว่าง = ไม่ขายอะไร)
+    sellItemIds: [908,909,910,911,918,919,920,921,924,926,928,940,943,946,949,950,951,955,960,961,962,1024,1052,7033,935,915,913,957,7032,902,1068,1067,948,907,1021,906,937,945,705,1023,1050,956,1057,963,914,905,511,711,721,1051,1054,1053,901,1094,1020,1019,7054,1022,7013,7094,7356,7317,7004,7049,1055,7064,967,912,1027,1096,7070,7358,7357,942,7359,953,1501,2221,1035,1032,1031,1013,1402,1916,1026,947,1014,1040,1034,1012,737,904,7031,1056,7007,903,7041,930,958,934,1059,1099,1098,7174,1025,1042,1017,7318,1028,1041,1061,1405,1408,2220,7119,923,7012,1063,7009,7002,931,7005,1095,1097,938,2297,1301,932,1505,1060,734,7069,7072,7066,7068,954,7156,7053,7158,7157,7106,7107,7001,7159,7124,7063,7111,7112,1038,7015,713,936,2303,1016,2304,1202,7154,7155,7153,7152,7126,1044,922,1116,1064,1201,1039,1602,1033,7067,1048,1062,944,7003,7006,1036,7123,1037,941,7030,7150,7149,7151,959],              // ★ item id ที่ติ๊กว่าจะขาย (default ว่าง = ไม่ขายอะไร)
 
     // ---------- AUTO-STORAGE (ฝากของเข้า Kafra) ----------
     //  ★ default OFF — เปิดเองใน config tab หรือ ASSIST.storageOn()
@@ -3741,6 +3747,12 @@
       const data = { _version: VERSION, _exportedAt: new Date().toISOString() };
       const cfg = {};
       for (const k of PERSIST_KEYS) if (k in CFG) cfg[k] = CFG[k];
+      // ★ sort item ID arrays ตามเลขไอดี (เวลา export จะได้มองง่าย)
+      const sortNum = (arr) => Array.isArray(arr) ? [...arr].sort((a, b) => a - b) : arr;
+      if (cfg.healItems) cfg.healItems = sortNum(cfg.healItems);
+      if (cfg.sellItemIds) cfg.sellItemIds = sortNum(cfg.sellItemIds);
+      if (cfg.depositItemIds) cfg.depositItemIds = sortNum(cfg.depositItemIds);
+      if (cfg.buffItems && Array.isArray(cfg.buffItems)) cfg.buffItems = [...cfg.buffItems].sort((a, b) => a.itemId - b.itemId);
       data.config = cfg;
       const buff = {};
       for (const [id, ts] of lastBuffUse) buff[id] = ts;
