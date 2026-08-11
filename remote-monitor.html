@@ -187,10 +187,6 @@
         <div class="stat-row"><span>มอนรุม</span><span class="stat-val" id="s-mob" style="color:#e74c3c">0</span></div>
         <div class="stat-row"><span>💰 เงิน</span><span class="stat-val" id="s-zeny" style="color:#f1c40f">—</span></div>
       </div>
-      <div class="panel">
-        <div class="panel-title">🔄 ระบบ</div>
-        <div class="toggles" id="toggles"></div>
-      </div>
       <div class="panel" id="cd-panel">
         <div class="panel-title">✨ Buff / 🔮 Skill</div>
         <div class="cd-grid" id="cd-list"></div>
@@ -490,13 +486,8 @@ function render(d) {
   }
   document.getElementById('s-relay-url').textContent = r?.url || '—';
 
-  // ---- Toggles ----
-  const T = d.toggles || {};
-  const tl = [['loot','📦'],['heal','💉'],['rest','🪑'],['combat','⚔️'],['skill','🔮'],['buff','✨'],['sell','💰'],['storage','🏦']];
-  document.getElementById('toggles').innerHTML = tl.map(([k,l]) => `<span class="toggle ${T[k]?'on':'off'}">${l} ${k}</span>`).join('');
-
-  // ---- Control toggles (interactive) ----
-  renderCtrlToggles(T);
+  // ---- Control toggles (interactive — แทนการ์ดระบบเดิม) ----
+  renderCtrlToggles(d.toggles || {});
 
   // ---- Target ----
   const tgt = d.target;
