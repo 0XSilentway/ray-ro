@@ -4344,12 +4344,12 @@
         </div>
         <div class="__assist_page" data-page="config">
           <div class="__assist_subtabs">
-            <div class="subtab active" data-sub="loot">📦 Loot</div>
-            <div class="subtab" data-sub="heal">💉 Heal</div>
-            <div class="subtab" data-sub="buff">✨ Buff</div>
-            <div class="subtab" data-sub="skill">🔮 Skill</div>
             <div class="subtab" data-sub="farm">🗺️ Farm</div>
             <div class="subtab" data-sub="combat">⚔️ Combat</div>
+            <div class="subtab active" data-sub="loot">📦 Loot</div>
+            <div class="subtab" data-sub="skill">🔮 Skill</div>
+            <div class="subtab" data-sub="buff">✨ Buff</div>
+            <div class="subtab" data-sub="heal">💉 Heal</div>
             <div class="subtab" data-sub="flee">🏃 Flee</div>
             <div class="subtab" data-sub="rest">🪑 Rest</div>
             <div class="subtab" data-sub="sell">💰 Sell</div>
