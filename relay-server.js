@@ -82,9 +82,11 @@ function log(...args) {
 
 wss.on('connection', (ws, req) => {
   const ip = req.socket.remoteAddress;
+  const origin = req.headers.origin || req.headers['x-forwarded-origin'] || 'unknown';
   ws.isAlive = true;
   ws.role = null;       // 'bot' | 'monitor'
   ws.playerId = null;
+  ws.origin = origin;   // ★ เก็บ Origin (โดเมนเว็บเกมที่รัน userscript)
 
   ws.on('pong', () => { ws.isAlive = true; });
 
@@ -106,7 +108,7 @@ wss.on('connection', (ws, req) => {
         try { entry.botWs.close(); } catch (_) {}
       }
       entry.botWs = ws;
-      log(`🤖 Bot registered: ${msg.playerName || ''} (${ws.playerId}) from ${ip}`);
+      log(`🤖 Bot registered: ${msg.playerName || ''} (${ws.playerId}) from ${ip} | origin: ${origin}`);
       // ส่งข้อมูลล่าสุด (ถ้ามี) กลับไป
       if (entry.lastData) {
         try { ws.send(JSON.stringify({ type: 'data', ...entry.lastData })); } catch (_) {}
@@ -174,6 +176,8 @@ wss.on('connection', (ws, req) => {
             map: d.map || '?',
             version: d.version || '?',
             elapsedMs: d.stats?.elapsedMs || 0,
+            baseExp: d.stats?.baseExpGained || 0,
+            zeny: d.zeny ?? null,
             viewers: entry.monitors ? entry.monitors.size : 0,
           });
         }

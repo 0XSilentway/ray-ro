@@ -9,7 +9,7 @@
   body { font-family: 'Cascadia Code', Consolas, monospace; background: #0a0a14; color: #e0e0e0; min-height: 100vh; }
 
   /* ---------- Login ---------- */
-  #login { max-width: 420px; margin: 80px auto; background: #12121e; border: 1px solid #2a2a3a; border-radius: 10px; padding: 24px; }
+  #login { max-width: 640px; margin: 80px auto; background: #12121e; border: 1px solid #2a2a3a; border-radius: 10px; padding: 24px; }
   #login h1 { font-size: 18px; color: #9b59b6; margin-bottom: 4px; }
   #login .sub { color: #888; font-size: 12px; margin-bottom: 16px; }
   #login label { display: block; font-size: 11px; color: #9aa0a6; margin-bottom: 4px; text-transform: uppercase; }
@@ -21,12 +21,12 @@
   #login #bot-list-wrap { margin-top: 16px; }
   #login #bot-list-wrap h3 { font-size: 11px; color: #888; text-transform: uppercase; margin-bottom: 6px; }
   #login #bot-list { display: flex; flex-direction: column; gap: 4px; }
-  #login .bot-item { background: #1a1a2e; border: 1px solid #2a2a3a; border-radius: 4px; padding: 8px 10px; cursor: pointer; font-size: 11px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  #login .bot-item { background: #1a1a2e; border: 1px solid #2a2a3a; border-radius: 4px; padding: 8px 12px; cursor: pointer; font-size: 11px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   #login .bot-item:hover { border-color: #9b59b6; background: #1f1f33; }
-  #login .bot-item .pid { color: #9b59b6; font-weight: bold; }
-  #login .bot-item .nm { color: #ccc; }
-  #login .bot-item .mp { color: #888; font-size: 10px; }
-  #login .bot-item .extra { color: #666; font-size: 9px; display: flex; gap: 6px; }
+  #login .bot-item .pid { color: #9b59b6; font-weight: bold; min-width: 70px; }
+  #login .bot-item .nm { color: #ccc; min-width: 120px; flex: 1; }
+  #login .bot-item .mp { color: #888; font-size: 10px; min-width: 80px; }
+  #login .bot-item .extra { color: #666; font-size: 10px; display: flex; gap: 10px; flex-wrap: wrap; }
 
   /* ---------- Dashboard ---------- */
   #dash { display: none; }
@@ -412,12 +412,14 @@ function renderBotList(bots) {
   list.innerHTML = bots.map(b => {
     const ver = b.version ? `<span>v${b.version}</span>` : '';
     const elapsed = b.elapsedMs ? `<span>⏱ ${fmt(b.elapsedMs)}</span>` : '';
+    const baseExp = b.baseExp ? `<span style="color:#4f4">EXP ${N(b.baseExp)}</span>` : '';
+    const zeny = b.zeny != null ? `<span style="color:#f1c40f">${N(b.zeny)}z</span>` : '';
     const viewers = b.viewers > 0 ? `<span style="color:#3498db">👁 ${b.viewers}</span>` : '';
     return `<div class="bot-item" data-pid="${b.playerId}">
       <span class="pid">${b.playerId}</span>
       <span class="nm">${b.name || '?'} ${viewers}</span>
       <span class="mp">${b.map || '?'}</span>
-      <span class="extra">${elapsed}${ver}</span>
+      <span class="extra">${elapsed} ${baseExp} ${zeny} ${ver}</span>
     </div>`;
   }).join('');
   list.querySelectorAll('.bot-item').forEach(el => {
