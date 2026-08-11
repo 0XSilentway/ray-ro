@@ -229,6 +229,7 @@
       <div class="panel">
         <div class="panel-title">🎮 ควบคุมระบบ (toggle on/off)</div>
         <div class="ctrl-toggles" id="ctrl-toggles"></div>
+        <div style="margin-top:6px"><button id="btn-sell-now" style="width:100%;background:#e67e22;color:#fff;border:none;border-radius:5px;padding:6px;font-size:11px;cursor:pointer;font-family:inherit;font-weight:bold">💰 ไปขายของ</button></div>
       </div>
       <div class="panel">
         <div class="panel-title">💬 ส่งแชท</div>
@@ -880,6 +881,11 @@ document.getElementById('back-btn').onclick = () => {
   document.getElementById('login').style.display = 'block';
 };
 // ★ chat send wiring
+document.getElementById('btn-sell-now').onclick = () => {
+  if (!ws || ws.readyState !== 1) return;
+  ws.send(JSON.stringify({ type: 'command', playerId: playerId, system: 'sell', action: 'now' }));
+  console.log('[monitor] command: sell now');
+};
 document.getElementById('chat-send').onclick = sendChatMessage;
 document.getElementById('chat-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') sendChatMessage();

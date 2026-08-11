@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.44.0
+// @version      4.45.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.44.0';
+  const VERSION = '4.45.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -4381,7 +4381,7 @@
           <div class="row"><span class="k">🏦 Storage</span><span class="v" data-storagestate>OFF</span></div>
           <h4>ของที่เก็บได้ (ล่าสุด)</h4>
           <div data-items style="font-size:11px;color:#9aa0a6">(ยังไม่มี)</div>
-          <div class="btns"><button class="danger" id="__assist_clearinv">ล้างรายการของ</button><button class="danger" id="__assist_resetstats">รีเซ็ตสถิติ</button></div>
+          <div class="btns"><button class="primary" id="__assist_sellnow2">💰 ไปขายของ</button><button class="danger" id="__assist_clearinv">ล้างรายการของ</button><button class="danger" id="__assist_resetstats">รีเซ็ตสถิติ</button></div>
         </div>
         <div class="__assist_page" data-page="config">
           <div class="__assist_subtabs">
@@ -4968,6 +4968,7 @@
     tBtn('#__assist_t_warptomon', (v) => ASSIST.toggleWarpToMonster(v), 'warpToMonster');
 
     root.querySelector('#__assist_resetstats').addEventListener('click', () => ASSIST.resetStats());
+    root.querySelector('#__assist_sellnow2').addEventListener('click', () => ASSIST.sellNow());
     root.querySelector('#__assist_clearinv').addEventListener('click', () => {
       inventory.clear(); equipmentSlots.clear();
       log('🎒 ล้างรายการของที่เก็บได้แล้ว');
@@ -5241,17 +5242,28 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
             updateTelegramStatus('⚠️ ยังไม่ได้ตั้งค่า — กรอก Bot Token + Chat ID แล้วกด บันทึก', '#f39c12');
           }
         }
-        // ★ command จาก remote monitor → toggle on/off
+        // ★ command จาก remote monitor → toggle on/off หรือ action (sellNow, depositNow)
         else if (m.type === 'command' && m.system && m.action) {
-          const method = m.system + (m.action === 'off' ? 'Off' : 'On');
-          if (typeof ASSIST[method] === 'function') {
-            ASSIST[method]();
-            log('🎮 Remote command:', m.system, m.action);
-            // ส่ง ack กลับไป relay เพื่อยืนยัน
-            try { relayWs.send(JSON.stringify({ type: 'commandAck', system: m.system, action: m.action, ok: true })); } catch (_) {}
+          // ★ action พิเศษ (ไม่ใช่ toggle): sellNow, depositNow, buffNow, skillNow
+          if (m.action === 'now') {
+            const actionMethod = m.system + 'Now';
+            if (typeof ASSIST[actionMethod] === 'function') {
+              ASSIST[actionMethod]();
+              log('🎮 Remote action:', m.system, 'now');
+              try { relayWs.send(JSON.stringify({ type: 'commandAck', system: m.system, action: m.action, ok: true })); } catch (_) {}
+            } else {
+              try { relayWs.send(JSON.stringify({ type: 'commandAck', system: m.system, action: m.action, ok: false, error: 'unknown action' })); } catch (_) {}
+            }
           } else {
-            log('⚠️ Remote command: method "' + method + '" ไม่มี');
-            try { relayWs.send(JSON.stringify({ type: 'commandAck', system: m.system, action: m.action, ok: false, error: 'unknown method' })); } catch (_) {}
+            const method = m.system + (m.action === 'off' ? 'Off' : 'On');
+            if (typeof ASSIST[method] === 'function') {
+              ASSIST[method]();
+              log('🎮 Remote command:', m.system, m.action);
+              try { relayWs.send(JSON.stringify({ type: 'commandAck', system: m.system, action: m.action, ok: true })); } catch (_) {}
+            } else {
+              log('⚠️ Remote command: method "' + method + '" ไม่มี');
+              try { relayWs.send(JSON.stringify({ type: 'commandAck', system: m.system, action: m.action, ok: false, error: 'unknown method' })); } catch (_) {}
+            }
           }
         }
         // ★ chat จาก remote monitor → ส่งไป game server
