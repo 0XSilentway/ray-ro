@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.40.0
+// @version      4.41.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.40.0';
+  const VERSION = '4.41.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -1705,6 +1705,8 @@
     if (!CFG.sellEnabled) return;
     if (!activeWS || activeWS.readyState !== 1) return;
     if (isDead) return;
+    // ★ กัน race: ถ้า storage กำลังทำอยู่ → รอก่อน
+    if (storageState !== 'IDLE') return;
     const now = nowMs();
 
     // === trigger (เฉพาะ IDLE) ===
@@ -1836,6 +1838,8 @@
     if (!CFG.storageEnabled) return;
     if (!activeWS || activeWS.readyState !== 1) return;
     if (isDead) return;
+    // ★ กัน race: ถ้า sell กำลังทำอยู่ → รอก่อน (storage จะ trigger หลัง sell เสร็จผ่าน depositAfterSell chain)
+    if (sellState !== 'IDLE') return;
     const now = nowMs();
 
     // === trigger (IDLE เท่านั้น) ===
@@ -2446,8 +2450,13 @@
     }
     // ★ farm map guard: ถ้าตั้ง farmMap ไว้ และตอนนี้ไม่ได้อยู่แมปฟาร์ม → ไม่ฟาร์ม
     //   + retry วาร์ปกลับทุก 5s (กันติดแมปผิดถ้าวาร์ปครั้งแรกไม่สำเร็จ)
+    //   ★★ ยกเว้น sellNpcMap/kafraMap เฉพาะตอนกำลังขาย/ฝากอยู่ (state ≠ IDLE)
+    //      ถ้า abort แล้ว (state = IDLE) ต้องวาร์ปกลับฟาร์ม ไม่งั้นติดในเมือง
+    const inSellRoutine = sellState !== 'IDLE';
+    const inStorageRoutine = storageState !== 'IDLE';
     if (CFG.farmMap && currentMap && currentMap !== CFG.farmMap
-        && currentMap !== CFG.sellNpcMap && currentMap !== CFG.kafraMap) {
+        && !(inSellRoutine && currentMap === CFG.sellNpcMap)
+        && !(inStorageRoutine && currentMap === CFG.kafraMap)) {
       const now2 = nowMs();
       if (now2 - (lastFarmWarpBackAt || 0) > 5000) {
         log('🌀 ยังอยู่แมปผิด (' + currentMap + ') → วาร์ปกลับอีกครั้ง');
