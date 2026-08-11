@@ -86,7 +86,7 @@
   /* map display */
   .map-box { position: relative; margin-top: 6px; display: inline-block; }
   .map-box img { display: block; border-radius: 6px; max-width: 100%; max-height: 450px; background: #0a0a14; }
-  .map-dot { position: absolute; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: auto; cursor: pointer; }
+  .map-dot { position: absolute; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: auto !important; cursor: pointer; z-index: 10; }
   .map-empty { color: #666; font-size: 11px; padding: 40px 0; text-align: center; }
   /* hover tooltip */
   #map-tooltip { position: fixed; background: #1a1a2e; border: 1px solid #3a3f4b; border-radius: 6px; padding: 8px; font-size: 10px; color: #e0e0e0; z-index: 10000; pointer-events: none; max-width: 260px; display: none; box-shadow: 0 4px 12px rgba(0,0,0,.5); line-height: 1.5; }
@@ -609,7 +609,6 @@ function renderMap(d) {
 
 // ★ วาด dots ของ player + entities + ground items บนแผนที่
 function renderMapDots(box, img, d) {
-  box.querySelectorAll('.map-dot').forEach(e => e.remove());
   if (!img || !img.clientWidth) return;
   // ★ debug: ถ้าไม่มี calibration → แสดงข้อความ
   if (!_calibData || !_calibData.transform) {
@@ -618,7 +617,8 @@ function renderMapDots(box, img, d) {
   }
   const entityCount = (d.mapEntities || []).length;
   const itemCount = (d.groundItems || []).length;
-  console.log('[monitor] renderMapDots:', d.map, 'calib OK, entities:', entityCount, 'items:', itemCount);
+  // ★ ลบ dots เก่า
+  box.querySelectorAll('.map-dot').forEach(e => e.remove());
 
   // ★ player (สีฟ้า) — วาดก่อน (z ต่ำสุด)
   if (d.player?.x != null && d.player?.y != null) {
@@ -693,7 +693,7 @@ function showMapTooltip(html, e) {
   tip.innerHTML = html;
   tip.style.left = (e.clientX + 12) + 'px';
   tip.style.top = (e.clientY - 10) + 'px';
-  tip.style.display = '';
+  tip.style.display = 'block';   // ★ ต้องตั้งเป็น 'block' ไม่ใช่ '' (CSS ตั้ง display:none)
 }
 function hideMapTooltip() {
   const tip = document.getElementById('map-tooltip');
