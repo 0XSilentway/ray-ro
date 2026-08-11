@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.32.0
+// @version      4.33.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.32.0';
+  const VERSION = '4.33.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -4163,7 +4163,7 @@
         background: rgba(20,22,28,.92); border: 1px solid #3a3f4b; border-radius: 8px;
         padding: 5px 8px; display: flex; align-items: center; gap: 4px;
         cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.4); transition: opacity .15s;
-        max-width: 600px; flex-wrap: wrap; justify-content: flex-end;
+        max-width: 900px; flex-wrap: wrap; justify-content: flex-end;
       }
       #__assist_bar:hover { opacity: .85; }
       #__assist_bar .hpbar { width: 60px; height: 8px; background: #2a2d35; border-radius: 4px; overflow: hidden; }
@@ -4216,6 +4216,13 @@
       }
       .__assist_page .logline { color: #b0b0b0; padding: 1px 0; border-bottom: 1px solid rgba(255,255,255,.03); white-space: pre-wrap; word-break: break-word; }
       .__assist_page .logline .ts { color: #5f6368; }
+      /* ===== sub-tabs (ใน config page) ===== */
+      .__assist_subtabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid #3a3f4b; margin-bottom: 8px; padding-bottom: 0; }
+      .__assist_subtabs .subtab { padding: 5px 8px; font-size: 10px; cursor: pointer; color: #9aa0a6; border-bottom: 2px solid transparent; border-radius: 3px 3px 0 0; white-space: nowrap; }
+      .__assist_subtabs .subtab:hover { background: rgba(255,255,255,.04); color: #cdd3de; }
+      .__assist_subtabs .subtab.active { color: #8ab4f8; border-bottom-color: #8ab4f8; }
+      .__assist_subpage { display: none; }
+      .__assist_subpage.active { display: block; }
       .__assist_dead { animation: __assist_blink 1s infinite; }
       @keyframes __assist_blink { 50% { opacity: .4; } }
       /* ===== item-list popup + skill popup (รวม CSS) ===== */
@@ -4333,137 +4340,167 @@
           <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ export รวม config + buff/skill times + nav data<br>★ import = ทับค่าปัจจุบัน</div>
         </div>
         <div class="__assist_page" data-page="config">
-          <div class="btns">
-            <button id="__assist_lootbtn" class="on">Loot: ?</button>
+          <div class="__assist_subtabs">
+            <div class="subtab active" data-sub="loot">📦 Loot</div>
+            <div class="subtab" data-sub="heal">💉 Heal</div>
+            <div class="subtab" data-sub="buff">✨ Buff</div>
+            <div class="subtab" data-sub="skill">🔮 Skill</div>
+            <div class="subtab" data-sub="farm">🗺️ Farm</div>
+            <div class="subtab" data-sub="combat">⚔️ Combat</div>
+            <div class="subtab" data-sub="flee">🏃 Flee</div>
+            <div class="subtab" data-sub="rest">🪑 Rest</div>
+            <div class="subtab" data-sub="sell">💰 Sell</div>
+            <div class="subtab" data-sub="storage">🏦 Storage</div>
+            <div class="subtab" data-sub="misc">⚙️ อื่นๆ</div>
           </div>
-          <div class="field"><label>โหมด loot</label><select id="__assist_lootmode"><option value="all">all (เก็บหมด)</option><option value="only">only (เก็บเฉพาะ)</option><option value="except">except (ยกเว้น)</option></select></div>
-          <div class="btns">
-            <button id="__assist_manageonly">📋 จัดการ 'เก็บเฉพาะ'</button>
-            <button id="__assist_manageexcept">📋 จัดการ 'ยกเว้น'</button>
+          <!-- 📦 Loot -->
+          <div class="__assist_subpage active" data-sub="loot">
+            <div class="btns">
+              <button id="__assist_lootbtn" class="on">Loot: ?</button>
+            </div>
+            <div class="field"><label>โหมด loot</label><select id="__assist_lootmode"><option value="all">all (เก็บหมด)</option><option value="only">only (เก็บเฉพาะ)</option><option value="except">except (ยกเว้น)</option></select></div>
+            <div class="btns">
+              <button id="__assist_manageonly">📋 จัดการ 'เก็บเฉพาะ'</button>
+              <button id="__assist_manageexcept">📋 จัดการ 'ยกเว้น'</button>
+            </div>
+            <div class="field"><label>ดีเลย์ก่อนเก็บ (ms หลังของตก) — 0 = เก็บทันที</label><input type="number" id="__assist_lootdelay" min="0" step="100"></div>
+            <div class="field"><label>เช็คของใกล้พิกัดมอนที่ฆ่า (ช่อง) — นักธนูยิงไกล → ของตกที่มอน</label><input type="number" id="__assist_pickradiuskill" min="1" max="20" placeholder="5"></div>
+            <div class="btns"><button id="__assist_applylootdelay">ตั้งดีเลย์</button><button id="__assist_t_lootkillpos" class="on">เช็คพิกัดมอนที่ฆ่า</button></div>
+            <h4>🌀 Warp-to-Loot (วาร์ปไปเก็บของที่ติดกำแพง)</h4>
+            <div class="btns"><button id="__assist_warpbtn" class="off">วาร์ปไปเก็บของ: ?</button></div>
           </div>
-          <div class="field"><label>ดีเลย์ก่อนเก็บ (ms หลังของตก) — 0 = เก็บทันที</label><input type="number" id="__assist_lootdelay" min="0" step="100"></div>
-          <div class="field"><label>เช็คของใกล้พิกัดมอนที่ฆ่า (ช่อง) — นักธนูยิงไกล → ของตกที่มอน</label><input type="number" id="__assist_pickradiuskill" min="1" max="20" placeholder="5"></div>
-          <div class="btns"><button id="__assist_applylootdelay">ตั้งดีเลย์</button><button id="__assist_t_lootkillpos" class="on">เช็คพิกัดมอนที่ฆ่า</button></div>
-		  <h4>🌀 Warp-to-Loot (วาร์ปไปเก็บของที่ติดกำแพง)</h4>
-          <div class="btns"><button id="__assist_warpbtn" class="off">วาร์ปไปเก็บของ: ?</button></div>
-          <div class="btns">
-            <button id="__assist_healbtn" class="off">Heal: ?</button>
+          <!-- 💉 Heal -->
+          <div class="__assist_subpage" data-sub="heal">
+            <div class="btns">
+              <button id="__assist_healbtn" class="off">Heal: ?</button>
+            </div>
+            <div class="field"><label>HP% เริ่มใช้ยา (healAt)</label><input type="number" id="__assist_healat" min="1" max="100"></div>
+            <div class="field"><label>item id ที่จะใช้ heal (คั่นด้วยจุลภาค)</label><input type="text" id="__assist_healitems" placeholder="เช่น 501,502,503"></div>
+            <div class="btns"><button id="__assist_applyheal">ใช้ค่า heal</button></div>
+            <div class="field"><label>โหมด heal</label><select id="__assist_healmode"><option value="order">order (ใช้ตัวเดิมจนหมด)</option><option value="random">random (สุ่ม)</option></select></div>
           </div>
-          <div class="field"><label>HP% เริ่มใช้ยา (healAt)</label><input type="number" id="__assist_healat" min="1" max="100"></div>
-          <div class="field"><label>item id ที่จะใช้ heal (คั่นด้วยจุลภาค)</label><input type="text" id="__assist_healitems" placeholder="เช่น 501,502,503"></div>
-          <div class="btns"><button id="__assist_applyheal">ใช้ค่า heal</button></div>
-          <div class="field"><label>โหมด heal</label><select id="__assist_healmode"><option value="order">order (ใช้ตัวเดิมจนหมด)</option><option value="random">random (สุ่ม)</option></select></div>
-
-          <h4>✨ Auto-Buff (ใช้ไอเทมบัพเป็นระยะ)</h4>
-          <div class="btns">
-            <button id="__assist_buffbtn" class="off">Buff: ?</button>
-            <button id="__assist_buffnow" class="primary">ใช้ buff เดี๋ยวนี้</button>
+          <!-- ✨ Buff -->
+          <div class="__assist_subpage" data-sub="buff">
+            <div class="btns">
+              <button id="__assist_buffbtn" class="off">Buff: ?</button>
+              <button id="__assist_buffnow" class="primary">ใช้ buff เดี๋ยวนี้</button>
+            </div>
+            <div class="field"><label>buff: itemId,ทุกกี่นาที (คั่นบรรทัด เช่น 656,30) — เพิ่มได้หลายตัว</label><textarea id="__assist_buffitems" rows="3" style="width:100%;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:'Consolas',monospace;resize:vertical" placeholder="656,30&#10;645,30"></textarea></div>
+            <div class="btns"><button id="__assist_applybuff">ใช้ค่า buff</button><button id="__assist_clearbufftimes">รีเซ็ต countdown</button></div>
+            <div id="__assist_buffcountdown" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่ตั้ง buff)</div>
           </div>
-          <div class="field"><label>buff: itemId,ทุกกี่นาที (คั่นบรรทัด เช่น 656,30) — เพิ่มได้หลายตัว</label><textarea id="__assist_buffitems" rows="3" style="width:100%;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:'Consolas',monospace;resize:vertical" placeholder="656,30&#10;645,30"></textarea></div>
-          <div class="btns"><button id="__assist_applybuff">ใช้ค่า buff</button><button id="__assist_clearbufftimes">รีเซ็ต countdown</button></div>
-          <div id="__assist_buffcountdown" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่ตั้ง buff)</div>
-
-          <h4>🔮 Auto-Skill (ใช้สกิลตามเงื่อนไข)</h4>
-          <div class="btns">
-            <button id="__assist_skillbtn" class="off">Skill: ?</button>
-            <button id="__assist_skillnow" class="primary">ใช้ skill เดี๋ยวนี้</button>
-            <button id="__assist_manageskill">📋 จัดการ skill</button>
+          <!-- 🔮 Skill -->
+          <div class="__assist_subpage" data-sub="skill">
+            <div class="btns">
+              <button id="__assist_skillbtn" class="off">Skill: ?</button>
+              <button id="__assist_skillnow" class="primary">ใช้ skill เดี๋ยวนี้</button>
+              <button id="__assist_manageskill">📋 จัดการ skill</button>
+            </div>
+            <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เพิ่ม/แก้/ลบ skill list ผ่าน popup — รองรับ targeted (Bash), AoE (Magnum), self-cast (Quicken)</div>
+            <div id="__assist_skillcountdown" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่ตั้ง skill)</div>
           </div>
-          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เพิ่ม/แก้/ลบ skill list ผ่าน popup — รองรับ targeted (Bash), AoE (Magnum), self-cast (Quicken)</div>
-          <div id="__assist_skillcountdown" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่ตั้ง skill)</div>
-
-          <h4>⚔️ Combat (ส่ง attack packet จริง)</h4>
-          <div class="btns"><button id="__assist_combatbtn" class="off">Combat: ?</button></div>
-          <div class="field"><label>มอนที่จะตี — whitelist (ชื่อหรือ sprite id, คั่นจุลภาค) — ว่าง = ตีทุกมอน</label><input type="text" id="__assist_whitelist" placeholder="เช่น Poring,Lunatic หรือ 4000,1010"></div>
-          <div class="field"><label>มอนที่จะไม่ตี — blacklist</label><input type="text" id="__assist_blacklist" placeholder="เช่น MVP,Boss"></div>
-          <div class="btns"><button id="__assist_applywhitelist">ตั้ง whitelist</button><button id="__assist_applyblacklist">ตั้ง blacklist</button></div>
-          <div class="field"><label>ระยะโจมตี (ช่อง) — นักธนูตั้ง >2 เพื่อตีไกล</label><input type="number" id="__assist_attackrange" min="0" max="15"></div>
-          <div class="field"><label>flee: รุม N ตัว (0=off)</label><input type="number" id="__assist_fleemob" min="0" max="20"></div>
-          <div class="field"><label>flee: aggro N ตัว (0=off)</label><input type="number" id="__assist_fleeaggro" min="0" max="20"></div>
-          <div class="field"><label>flee: มอนรอบ N ตัว ในระยะ (0=off)</label><input type="number" id="__assist_fleeprox" min="0" max="20"></div>
-          <div class="btns">
-            <button id="__assist_t_antiks" class="on">antiKS</button>
-            <button id="__assist_t_avoidp" class="on">avoidPlayers</button>
-            <button id="__assist_t_lowhp" class="on">lowestHP</button>
+          <!-- 🗺️ Farm -->
+          <div class="__assist_subpage" data-sub="farm">
+            <div class="btns">
+              <button id="__assist_warptofarm" class="primary">🌀 วาร์ปไปแมปฟาร์ม</button>
+              <button id="__assist_t_warpback" class="on">วาร์ปกลับอัตโนมัติ</button>
+            </div>
+            <div class="field"><label>ชื่อแมปฟาร์ม</label><input type="text" id="__assist_farmmap" placeholder="เช่น cmd_fild01 (ว่าง=ปิด)"></div>
+            <div class="field"><label>พิกัดวาร์ป X</label><input type="number" id="__assist_farmx" placeholder="-999"><label style="margin-left:8px">Y</label><input type="number" id="__assist_farmy" placeholder="-999"><button id="__assist_usefarmpos" style="margin-left:8px;font-size:10px">ใช้พิกัดตัวละคร</button></div>
+            <div class="btns"><button id="__assist_applyfarm">ใช้ค่า farm map</button></div>
+            <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ วิธีใช้: ยืนในแมปฟาร์ม → กด 'ใช้พิกัดตัวละคร' → ใช้ค่า farm map<br>★ ว่างช่องชื่อแมป = ปิดฟีเจอร์</div>
           </div>
-          <div class="btns">
-            <button id="__assist_t_wander" class="on">เดินหามอน</button>
-            <button id="__assist_t_warpfind" class="off">วาร์ปหามอน</button>
-            <button id="__assist_t_warptomon" class="off">วาร์ปไปหามอนที่ตี</button>
+          <!-- ⚔️ Combat -->
+          <div class="__assist_subpage" data-sub="combat">
+            <div class="btns"><button id="__assist_combatbtn" class="off">Combat: ?</button></div>
+            <div class="field"><label>มอนที่จะตี — whitelist (ชื่อหรือ sprite id, คั่นจุลภาค) — ว่าง = ตีทุกมอน</label><input type="text" id="__assist_whitelist" placeholder="เช่น Poring,Lunatic หรือ 4000,1010"></div>
+            <div class="field"><label>มอนที่จะไม่ตี — blacklist</label><input type="text" id="__assist_blacklist" placeholder="เช่น MVP,Boss"></div>
+            <div class="btns"><button id="__assist_applywhitelist">ตั้ง whitelist</button><button id="__assist_applyblacklist">ตั้ง blacklist</button></div>
+            <div class="field"><label>ระยะโจมตี (ช่อง) — นักธนูตั้ง >2 เพื่อตีไกล</label><input type="number" id="__assist_attackrange" min="0" max="15"></div>
+            <div class="btns">
+              <button id="__assist_t_antiks" class="on">antiKS</button>
+              <button id="__assist_t_avoidp" class="on">avoidPlayers</button>
+              <button id="__assist_t_lowhp" class="on">lowestHP</button>
+            </div>
+            <div class="btns">
+              <button id="__assist_t_wander" class="on">เดินหามอน</button>
+              <button id="__assist_t_warpfind" class="off">วาร์ปหามอน</button>
+              <button id="__assist_t_warptomon" class="off">วาร์ปไปหามอนที่ตี</button>
+            </div>
+            <div class="field"><label>stuck abandon N ครั้งใน 60s → วาร์ปสุ่ม (0=ปิด)</label><input type="number" id="__assist_stuckwarp" min="0" max="20"></div>
+            <div class="btns"><button id="__assist_applycombat">ใช้ค่า combat</button></div>
           </div>
-          <div class="field"><label>stuck abandon N ครั้งใน 60s → วาร์ปสุ่ม (0=ปิด)</label><input type="number" id="__assist_stuckwarp" min="0" max="20"></div>
-          <div class="field"><label>🚨 มอนที่ต้องหนี (ชื่อหรือ sub-ID คั่นจุลภาค) — เจอในระยะ → วาร์ปหนี</label><input type="text" id="__assist_fleemonsters" placeholder="เช่น MVP,Boss,1234"></div>
-          <div class="field"><label>ระยะหนีมอนอันตราย (ช่อง)</label><input type="number" id="__assist_fleemonsterradius" min="1" max="50" placeholder="20"></div>
-          <div class="btns"><button id="__assist_applycombat">ใช้ค่า flee + range</button></div>
-
-          <h4>🪑 Rest (นั่งพักฟื้น HP)</h4>
-          <div class="btns"><button id="__assist_restbtn" class="off">Rest: ?</button></div>
-          <div class="field"><label>HP% ที่จะนั่งพัก (ต่ำกว่านี้ → นั่ง)</label><input type="number" id="__assist_resthp" min="1" max="99"></div>
-          <div class="field"><label>HP% ที่จะลุกยืน (ฟื้นถึงนี้ → ลุก)</label><input type="number" id="__assist_restuntil" min="1" max="100"></div>
-          <div class="field"><label>นั่งนานสุด (วินาที) — กันค้าง</label><input type="number" id="__assist_restmaxsec" min="5" max="300"></div>
-          <div class="btns"><button id="__assist_applyrest">ใช้ค่า rest</button></div>
-
-          <h4>💀 Auto-Respawn (เกิดใหม่อัตโนมัติเมื่อตาย)</h4>
-          <div class="btns"><button id="__assist_respawnbtn" class="on">Respawn: ?</button></div>
-          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ ตาย → respawn กลับจุด save → นั่งพักจนเลือดเต็ม → กลับฟาร์ม</div>
-
-          <h4>🗺️ Farm Map (แมปฟาร์ม — วาร์ปกลับเมื่อเผลอเข้าจุดวาร์ป)</h4>
-          <div class="btns">
-            <button id="__assist_warptofarm" class="primary">🌀 วาร์ปไปแมปฟาร์ม</button>
-            <button id="__assist_t_warpback" class="on">วาร์ปกลับอัตโนมัติ</button>
+          <!-- 🏃 Flee -->
+          <div class="__assist_subpage" data-sub="flee">
+            <div class="field"><label>flee: รุม N ตัว (0=off)</label><input type="number" id="__assist_fleemob" min="0" max="20"></div>
+            <div class="field"><label>flee: aggro N ตัว (0=off)</label><input type="number" id="__assist_fleeaggro" min="0" max="20"></div>
+            <div class="field"><label>flee: มอนรอบ N ตัว ในระยะ (0=off)</label><input type="number" id="__assist_fleeprox" min="0" max="20"></div>
+            <div class="field"><label>🚨 มอนที่ต้องหนี (ชื่อหรือ sub-ID คั่นจุลภาค) — เจอในระยะ → วาร์ปหนี</label><input type="text" id="__assist_fleemonsters" placeholder="เช่น MVP,Boss,1234"></div>
+            <div class="field"><label>ระยะหนีมอนอันตราย (ช่อง)</label><input type="number" id="__assist_fleemonsterradius" min="1" max="50" placeholder="20"></div>
+            <div class="btns"><button id="__assist_applyflee">ใช้ค่า flee</button></div>
           </div>
-          <div class="field"><label>ชื่อแมปฟาร์ม</label><input type="text" id="__assist_farmmap" placeholder="เช่น cmd_fild01 (ว่าง=ปิด)"></div>
-          <div class="field"><label>พิกัดวาร์ป X</label><input type="number" id="__assist_farmx" placeholder="-999"><label style="margin-left:8px">Y</label><input type="number" id="__assist_farmy" placeholder="-999"><button id="__assist_usefarmpos" style="margin-left:8px;font-size:10px">ใช้พิกัดตัวละคร</button></div>
-          <div class="btns"><button id="__assist_applyfarm">ใช้ค่า farm map</button></div>
-          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ วิธีใช้: ยืนในแมปฟาร์ม → กด 'ใช้พิกัดตัวละคร' → ใช้ค่า farm map<br>★ ว่างช่องชื่อแมป = ปิดฟีเจอร์</div>
-
-          <h4>💰 Auto-Sell (ขายของอัตโนมัติ)</h4>
-          <div class="btns">
-            <button id="__assist_sellbtn" class="off">Sell: ?</button>
-            <button id="__assist_sellnow" class="danger">ขายเดี๋ยวนี้</button>
+          <!-- 🪑 Rest -->
+          <div class="__assist_subpage" data-sub="rest">
+            <div class="btns"><button id="__assist_restbtn" class="off">Rest: ?</button></div>
+            <div class="field"><label>HP% ที่จะนั่งพัก (ต่ำกว่านี้ → นั่ง)</label><input type="number" id="__assist_resthp" min="1" max="99"></div>
+            <div class="field"><label>HP% ที่จะลุกยืน (ฟื้นถึงนี้ → ลุก)</label><input type="number" id="__assist_restuntil" min="1" max="100"></div>
+            <div class="field"><label>นั่งนานสุด (วินาที) — กันค้าง</label><input type="number" id="__assist_restmaxsec" min="5" max="300"></div>
+            <div class="btns"><button id="__assist_applyrest">ใช้ค่า rest</button></div>
+            <h4>💀 Auto-Respawn (เกิดใหม่อัตโนมัติเมื่อตาย)</h4>
+            <div class="btns"><button id="__assist_respawnbtn" class="on">Respawn: ?</button></div>
+            <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ ตาย → respawn กลับจุด save → นั่งพักจนเลือดเต็ม → กลับฟาร์ม</div>
           </div>
-          <div class="field"><label>ชื่อ NPC ขายของ</label><input type="text" id="__assist_sellnpc" placeholder="เช่น Tool Dealer"></div>
-          <div class="field"><label>แมปที่ NPC อยู่</label><input type="text" id="__assist_sellmap" placeholder="เช่น izlude_in"></div>
-          <div class="field"><label>พิกัดวาร์ป X</label><input type="number" id="__assist_sellx" placeholder="114"><label style="margin-left:8px">Y</label><input type="number" id="__assist_selly" placeholder="49"><button id="__assist_useselfpos" style="margin-left:8px;font-size:10px">ใช้พิกัดตัวละคร</button></div>
-          <div class="field"><label>ขายทุก N นาที (0=off)</label><input type="number" id="__assist_sellinterval" min="0" max="999"></div>
-          <div class="btns"><button id="__assist_applysell">ใช้ค่า sell</button><button id="__assist_t_sellfull" class="on">ขายตอนเต็ม</button></div>
-          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เลือก item ที่จะขาย/ฝาก: กดปุ่มสีที่รายการของในสถิติ — วน เก็บ(เทา)→ขาย(ส้ม)→ฝาก(เขียว)→เก็บ</div>
-
-          <h4>🏦 Auto-Storage (ฝากของเข้า Kafra)</h4>
-          <div class="btns">
-            <button id="__assist_storagebtn" class="off">Storage: ?</button>
-            <button id="__assist_depositnow" class="primary">ฝากเดี๋ยวนี้</button>
+          <!-- 💰 Sell -->
+          <div class="__assist_subpage" data-sub="sell">
+            <div class="btns">
+              <button id="__assist_sellbtn" class="off">Sell: ?</button>
+              <button id="__assist_sellnow" class="danger">ขายเดี๋ยวนี้</button>
+            </div>
+            <div class="field"><label>ชื่อ NPC ขายของ</label><input type="text" id="__assist_sellnpc" placeholder="เช่น Tool Dealer"></div>
+            <div class="field"><label>แมปที่ NPC อยู่</label><input type="text" id="__assist_sellmap" placeholder="เช่น izlude_in"></div>
+            <div class="field"><label>พิกัดวาร์ป X</label><input type="number" id="__assist_sellx" placeholder="114"><label style="margin-left:8px">Y</label><input type="number" id="__assist_selly" placeholder="49"><button id="__assist_useselfpos" style="margin-left:8px;font-size:10px">ใช้พิกัดตัวละคร</button></div>
+            <div class="field"><label>ขายทุก N นาที (0=off)</label><input type="number" id="__assist_sellinterval" min="0" max="999"></div>
+            <div class="btns"><button id="__assist_applysell">ใช้ค่า sell</button><button id="__assist_t_sellfull" class="on">ขายตอนเต็ม</button></div>
+            <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เลือก item ที่จะขาย/ฝาก: กดปุ่มสีที่รายการของในสถิติ — วน เก็บ(เทา)→ขาย(ส้ม)→ฝาก(เขียว)→เก็บ</div>
           </div>
-          <div class="field"><label>ชื่อ NPC Kafra</label><input type="text" id="__assist_kafra" placeholder="เช่น Kafra Staff"></div>
-          <div class="field"><label>แมปที่ Kafra อยู่</label><input type="text" id="__assist_kaframap" placeholder="เช่น izlude"></div>
-          <div class="field"><label>พิกัดวาร์ป X</label><input type="number" id="__assist_kafrax" placeholder="0=ใช้ sell"><label style="margin-left:8px">Y</label><input type="number" id="__assist_kafray" placeholder="0=ใช้ sell"><button id="__assist_usekafrapos" style="margin-left:8px;font-size:10px">ใช้พิกัดตัวละคร</button></div>
-          <div class="field"><label>เมนู choice (0=Save, 1=Storage, 2=Warp)</label><input type="number" id="__assist_kafrachoice" min="0" max="9" placeholder="1"></div>
-          <div class="btns"><button id="__assist_applykafra">ใช้ค่า storage</button><button id="__assist_t_depfull" class="on">ฝากตอนเต็ม</button><button id="__assist_t_depaftersell" class="on">ฝากหลังขาย</button></div>
-
-          <h4>🌐 Remote Monitor (ส่งข้อมูลไป relay server — ดูจากมือถือ/เครื่องอื่น)</h4>
-          <div class="btns">
-            <button id="__assist_relaybtn" class="off">Relay: ?</button>
-            <button id="__assist_relayreconnect" class="primary">🔄 เชื่อมใหม่</button>
+          <!-- 🏦 Storage -->
+          <div class="__assist_subpage" data-sub="storage">
+            <div class="btns">
+              <button id="__assist_storagebtn" class="off">Storage: ?</button>
+              <button id="__assist_depositnow" class="primary">ฝากเดี๋ยวนี้</button>
+            </div>
+            <div class="field"><label>ชื่อ NPC Kafra</label><input type="text" id="__assist_kafra" placeholder="เช่น Kafra Staff"></div>
+            <div class="field"><label>แมปที่ Kafra อยู่</label><input type="text" id="__assist_kaframap" placeholder="เช่น izlude"></div>
+            <div class="field"><label>พิกัดวาร์ป X</label><input type="number" id="__assist_kafrax" placeholder="0=ใช้ sell"><label style="margin-left:8px">Y</label><input type="number" id="__assist_kafray" placeholder="0=ใช้ sell"><button id="__assist_usekafrapos" style="margin-left:8px;font-size:10px">ใช้พิกัดตัวละคร</button></div>
+            <div class="field"><label>เมนู choice (0=Save, 1=Storage, 2=Warp)</label><input type="number" id="__assist_kafrachoice" min="0" max="9" placeholder="1"></div>
+            <div class="btns"><button id="__assist_applykafra">ใช้ค่า storage</button><button id="__assist_t_depfull" class="on">ฝากตอนเต็ม</button><button id="__assist_t_depaftersell" class="on">ฝากหลังขาย</button></div>
           </div>
-          <div class="field"><label>URL relay server (wss:// = SSL, ws:// = ไม่มี SSL)</label><input type="text" id="__assist_relayurl" placeholder="wss://rayro.catgg.net"></div>
-          <div class="btns"><button id="__assist_applyrelay">ใช้ค่า relay</button></div>
-          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เปิดแล้วสคริปต์จะส่งข้อมูลไป relay server ทุก 3 วินาที<br>★ ดูสถานะการเชื่อมต่อได้ที่แท็บ "📊 สถิติ" บรรทัด "🌐 Remote Monitor"<br>★ ตั้งค่า relay server ที่ <code>relay-server.js</code> ฝั่งเซิร์ฟเวอร์</div>
-
-          <h4>🗺️ Navigation (บันทึกเส้นทางเดิน + waypoint graph)</h4>
-          <div class="btns">
-            <button id="__assist_navrecbtn" class="off">บันทึก: ?</button>
-            <button id="__assist_navwanderbtn" class="on">เดินตาม nav</button>
+          <!-- ⚙️ อื่นๆ -->
+          <div class="__assist_subpage" data-sub="misc">
+            <h4>🌐 Remote Monitor (ส่งข้อมูลไป relay server — ดูจากมือถือ/เครื่องอื่น)</h4>
+            <div class="btns">
+              <button id="__assist_relaybtn" class="off">Relay: ?</button>
+              <button id="__assist_relayreconnect" class="primary">🔄 เชื่อมใหม่</button>
+            </div>
+            <div class="field"><label>URL relay server (wss:// = SSL, ws:// = ไม่มี SSL)</label><input type="text" id="__assist_relayurl" placeholder="wss://rayro.catgg.net"></div>
+            <div class="btns"><button id="__assist_applyrelay">ใช้ค่า relay</button></div>
+            <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เปิดแล้วสคริปต์จะส่งข้อมูลไป relay server ทุก 3 วินาที<br>★ ดูสถานะการเชื่อมต่อได้ที่แท็บ "📊 สถิติ" บรรทัด "🌐 Remote Monitor"<br>★ ตั้งค่า relay server ที่ <code>relay-server.js</code> ฝั่งเซิร์ฟเวอร์</div>
+            <h4>🗺️ Navigation (บันทึกเส้นทางเดิน + waypoint graph)</h4>
+            <div class="btns">
+              <button id="__assist_navrecbtn" class="off">บันทึก: ?</button>
+              <button id="__assist_navwanderbtn" class="on">เดินตาม nav</button>
+            </div>
+            <div class="field"><label>โหมดเดินตาม nav</label><select id="__assist_navmode"><option value="patrol">patrol (เดินตามลำดับ route ครบแล้วย้อนกลับ)</option><option value="graph">graph (wander สุ่มตามกราฟ)</option></select></div>
+            <div class="field"><label>รัศมีรวมจุด (ช่อง) — จุดที่อยู่ใกล้กัน <= N ช่อง = รวม node เดียว</label><input type="number" id="__assist_navradius" min="1" max="20"></div>
+            <div class="btns">
+              <button id="__assist_applynav">ใช้ค่า nav</button>
+              <button id="__assist_navexport">export</button>
+              <button id="__assist_navimport">import</button>
+              <button id="__assist_navclear" class="danger">ล้าง</button>
+            </div>
+            <div id="__assist_navstats" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่มีข้อมูล)</div>
+            <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เปิด 'บันทึก' แล้วเดินเก็บข้อมูลในแมปที่ต้องการ ปิดเมื่อเสร็จ<br>★ wander จะใช้ waypoint graph แทนสุ่ม (ถ้ามีข้อมูลแมปนั้น)</div>
           </div>
-          <div class="field"><label>โหมดเดินตาม nav</label><select id="__assist_navmode"><option value="patrol">patrol (เดินตามลำดับ route ครบแล้วย้อนกลับ)</option><option value="graph">graph (wander สุ่มตามกราฟ)</option></select></div>
-          <div class="field"><label>รัศมีรวมจุด (ช่อง) — จุดที่อยู่ใกล้กัน <= N ช่อง = รวม node เดียว</label><input type="number" id="__assist_navradius" min="1" max="20"></div>
-          <div class="btns">
-            <button id="__assist_applynav">ใช้ค่า nav</button>
-            <button id="__assist_navexport">export</button>
-            <button id="__assist_navimport">import</button>
-            <button id="__assist_navclear" class="danger">ล้าง</button>
-          </div>
-          <div id="__assist_navstats" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่มีข้อมูล)</div>
-          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เปิด 'บันทึก' แล้วเดินเก็บข้อมูลในแมปที่ต้องการ ปิดเมื่อเสร็จ<br>★ wander จะใช้ waypoint graph แทนสุ่ม (ถ้ามีข้อมูลแมปนั้น)</div>
         </div>
         <div class="__assist_page" data-page="alert">
           <div class="logbox" id="__assist_alertbox"></div>
@@ -4600,6 +4637,14 @@
         root.querySelectorAll('.__assist_page').forEach(p => p.classList.toggle('active', p.getAttribute('data-page') === page));
       });
     });
+    // ★ sub-tab switching (ใน config page)
+    root.querySelectorAll('.__assist_subtabs .subtab').forEach(sub => {
+      sub.addEventListener('click', () => {
+        const s = sub.getAttribute('data-sub');
+        root.querySelectorAll('.__assist_subtabs .subtab').forEach(t => t.classList.toggle('active', t === sub));
+        root.querySelectorAll('.__assist_subpage').forEach(p => p.classList.toggle('active', p.getAttribute('data-sub') === s));
+      });
+    });
 
     // config tab buttons
     root.querySelector('#__assist_lootbtn').addEventListener('click', () => CFG.lootEnabled ? ASSIST.lootOff() : ASSIST.lootOn());
@@ -4661,15 +4706,18 @@
     root.querySelector('#__assist_applyblacklist').addEventListener('click', () => ASSIST.setTargetBlacklist(...parseList('#__assist_blacklist')));
     root.querySelector('#__assist_applycombat').addEventListener('click', () => {
       const r = parseInt(root.querySelector('#__assist_attackrange').value, 10);
+      if (!isNaN(r)) { if (r > 2) ASSIST.setRanged(r); else ASSIST.setAttackRange(r || 2); }
+      const sw = parseInt(root.querySelector('#__assist_stuckwarp').value, 10);
+      if (!isNaN(sw)) { CFG.stuckWarpOnAbandon = sw; log('⚔️ stuck abandon → วาร์ปสุ่ม =', sw === 0 ? 'ปิด' : sw + 'ครั้ง'); }
+    });
+    // ---- flee wires (แยกจาก combat) ----
+    root.querySelector('#__assist_applyflee').addEventListener('click', () => {
       const fm = parseInt(root.querySelector('#__assist_fleemob').value, 10);
       const fa = parseInt(root.querySelector('#__assist_fleeaggro').value, 10);
       const fp = parseInt(root.querySelector('#__assist_fleeprox').value, 10);
-      if (!isNaN(r)) { if (r > 2) ASSIST.setRanged(r); else ASSIST.setAttackRange(r || 2); }
       if (!isNaN(fm)) ASSIST.setFleeMob(fm);
       if (!isNaN(fa)) ASSIST.setFleeAggro(fa);
       if (!isNaN(fp)) ASSIST.setFleeProximity(fp);
-      const sw = parseInt(root.querySelector('#__assist_stuckwarp').value, 10);
-      if (!isNaN(sw)) { CFG.stuckWarpOnAbandon = sw; log('⚔️ stuck abandon → วาร์ปสุ่ม =', sw === 0 ? 'ปิด' : sw + ' ครั้ง'); }
       const fmList = root.querySelector('#__assist_fleemonsters').value.trim();
       if (fmList !== '') CFG.fleeMonsters = fmList.split(',').map(s => s.trim()).filter(Boolean);
       const fmr = parseInt(root.querySelector('#__assist_fleemonsterradius').value, 10);
