@@ -541,7 +541,7 @@ function renderAggro(d) {
 let _calibData = null;    // calibration ของแมปปัจจุบัน
 let _calibAll = null;     // calibration ทั้งหมด (map name → { transform })
 let _calibLoading = false;
-const CALIB_URL = GITHUB_RAW.replace('/ro-rebuild-web-assist.user.js', '/map-calibration.json');
+const CALIB_URL = GITHUB_RAW + '/map-calibration.json';
 
 async function loadCalibration() {
   if (_calibAll || _calibLoading) return;
