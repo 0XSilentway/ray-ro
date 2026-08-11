@@ -86,8 +86,10 @@
   /* map display */
   .map-box { position: relative; margin-top: 6px; display: inline-block; }
   .map-box img { display: block; border-radius: 6px; max-width: 100%; max-height: 450px; background: #0a0a14; }
-  .map-dot { position: absolute; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; box-shadow: 0 0 4px #000; }
+  .map-dot { position: absolute; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: auto; cursor: pointer; }
   .map-empty { color: #666; font-size: 11px; padding: 40px 0; text-align: center; }
+  /* hover tooltip */
+  #map-tooltip { position: fixed; background: #1a1a2e; border: 1px solid #3a3f4b; border-radius: 6px; padding: 8px; font-size: 10px; color: #e0e0e0; z-index: 10000; pointer-events: none; max-width: 260px; display: none; box-shadow: 0 4px 12px rgba(0,0,0,.5); line-height: 1.5; }
 
   /* chat + alert lines */
   .chat-line { padding: 2px 4px; border-bottom: 1px solid #1a1a2a; line-height: 1.4; word-break: break-word; }
@@ -136,6 +138,7 @@
 <!-- ============ DASHBOARD ============ -->
 <div id="dash">
   <div id="debug-banner"></div>
+  <div id="map-tooltip"></div>
   <div class="topbar">
     <h1>📊 RO Remote Monitor</h1>
     <div class="info">
@@ -601,43 +604,89 @@ function renderMap(d) {
   img.src = mapIconUrl(mapName);
 }
 
-// ★ วาด dots ของ player + entities (มอน/ผู้เล่น/NPC) บนแผนที่
+// ★ วาด dots ของ player + entities + ground items บนแผนที่
 function renderMapDots(box, img, d) {
-  // ลบ dots เก่า
   box.querySelectorAll('.map-dot').forEach(e => e.remove());
   if (!img || !img.clientWidth) return;
 
-  const dots = [];
-
-  // ★ player (สีฟ้า)
+  // ★ player (สีฟ้า) — วาดก่อน (z ต่ำสุด)
   if (d.player?.x != null && d.player?.y != null) {
     const p = tileToPixel(d.player.x, d.player.y, img);
-    if (p) dots.push({ ...p, color: '#4fc3f7', size: 8, label: 'คุณ', z: 100 });
+    if (p) createMapDot(box, p.x, p.y, '#4fc3f7', 8, '<b style="color:#4fc3f7">👤 คุณ</b><br><span style="color:#888">(' + Math.round(d.player.x) + ',' + Math.round(d.player.y) + ')</span>', false, 5);
   }
 
-  // ★ entities
+  // ★ ground items (ของที่ตก) — เขียวเล็ก
+  for (const item of (d.groundItems || [])) {
+    if (item.x == null) continue;
+    const p = tileToPixel(item.x, item.y, img);
+    if (!p) continue;
+    const html = `📦 <b style="color:#2ecc71">${escapeHtml(item.name || 'item_' + item.itemId)}</b> (${item.itemId})<br><span style="color:#888">(${Math.round(item.x)},${Math.round(item.y)})</span>`;
+    createMapDot(box, p.x, p.y, '#2ecc71', 6, html, false, 3);
+  }
+
+  // ★ entities (มอน/ผู้เล่น/NPC)
   for (const e of (d.mapEntities || [])) {
     if (e.x == null) continue;
     const p = tileToPixel(e.x, e.y, img);
     if (!p) continue;
+    const isTarget = d.targetId && e.id === d.targetId;
     let color = '#666', size = 4;
-    if (e.kind === 1) { color = '#f44'; size = 5; }        // monster = แดง
-    else if (e.kind === 2) { color = '#4caf50'; size = 4; } // NPC = เขียว
-    else { color = '#aaa'; size = 3; }                      // player = เทา
-    // ★ target = ส้ม ใหญ่
-    if (d.targetId && e.id === d.targetId) { color = '#e67e22'; size = 9; }
-    dots.push({ ...p, color, size, z: d.targetId && e.id === d.targetId ? 50 : 10 });
-  }
+    if (e.kind === 1) { color = '#e74c3c'; size = 6; }        // monster = แดง
+    else if (e.kind === 2) { color = '#4caf50'; size = 5; }   // NPC = เขียว
+    else { color = '#aaa'; size = 4; }                        // player = เทา
+    // ★ target = ส้ม ใหญ่ + glow + ring
+    if (isTarget) { color = '#e67e22'; size = 10; }
 
-  // ★ เรียง z-index: target บนสุด, player บนสุด
-  dots.sort((a, b) => (a.z || 0) - (b.z || 0));
+    // tooltip HTML
+    let html = '';
+    if (isTarget) {
+      const mobImg = e.name ? `<img src="${mobIconUrl(e.name)}" style="width:32px;height:32px;border-radius:4px;vertical-align:middle" onerror="this.style.display='none'"> ` : '';
+      let hpBar = '';
+      if (e.hp != null && e.hpMax > 0) {
+        const pct = Math.round(e.hp / e.hpMax * 100);
+        const bc = pct < 25 ? '#e74c3c' : pct < 50 ? '#f39c12' : '#2ecc71';
+        hpBar = `<div style="width:60px;height:4px;background:#333;border-radius:2px;margin-top:2px"><div style="width:${pct}%;height:100%;background:${bc};border-radius:2px"></div></div>`;
+      }
+      html = `<div style="text-align:center">${mobImg}<div><b style="color:#e67e22">🎯 ${escapeHtml(e.name || 'มอน')}</b><br><span style="color:#888">(${Math.round(e.x)},${Math.round(e.y)}) HP ${e.hp ?? '?'}/${e.hpMax ?? '?'}</span></div>${hpBar}</div>`;
+    } else if (e.kind === 1) {
+      const mobImg = e.name ? `<img src="${mobIconUrl(e.name)}" style="width:24px;height:24px;border-radius:3px;vertical-align:middle" onerror="this.style.display='none'"> ` : '';
+      let hpTxt = (e.hp != null && e.hpMax) ? ` HP ${e.hp}/${e.hpMax}` : '';
+      html = `${mobImg}<b style="color:#e74c3c">${escapeHtml(e.name || 'มอน')}</b>${hpTxt}<br><span style="color:#888">(${Math.round(e.x)},${Math.round(e.y)})</span>`;
+    } else if (e.kind === 2) {
+      html = `<b style="color:#4caf50">🟢 ${escapeHtml(e.name || 'NPC')}</b><br><span style="color:#888">(${Math.round(e.x)},${Math.round(e.y)})</span>`;
+    } else {
+      html = `<b style="color:#aaa">${escapeHtml(e.name || 'ผู้เล่น')}</b><br><span style="color:#888">(${Math.round(e.x)},${Math.round(e.y)})</span>`;
+    }
 
-  for (const dd of dots) {
-    const el = document.createElement('div');
-    el.className = 'map-dot';
-    el.style.cssText = `left:${dd.x}px;top:${dd.y}px;width:${dd.size}px;height:${dd.size}px;background:${dd.color};border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 3px #000;`;
-    box.appendChild(el);
+    createMapDot(box, p.x, p.y, color, size, html, isTarget, isTarget ? 6 : 4);
   }
+}
+
+// ★ สร้าง dot element + hover tooltip
+function createMapDot(box, x, y, color, size, tooltipHtml, isTarget, z) {
+  const el = document.createElement('div');
+  el.className = 'map-dot';
+  if (isTarget) {
+    el.style.cssText = `left:${x}px;top:${y}px;width:${size+4}px;height:${size+4}px;background:${color};border-radius:50%;transform:translate(-50%,-50%);border:2px solid #fff;box-shadow:0 0 12px ${color},0 0 4px #fff;z-index:${z};`;
+  } else {
+    el.style.cssText = `left:${x}px;top:${y}px;width:${size}px;height:${size}px;background:${color};border-radius:50%;transform:translate(-50%,-50%);border:1px solid #fff;box-shadow:0 0 4px ${color}99;z-index:${z};`;
+  }
+  el.onmouseenter = (e) => showMapTooltip(tooltipHtml, e);
+  el.onmouseleave = () => hideMapTooltip();
+  box.appendChild(el);
+}
+
+function showMapTooltip(html, e) {
+  const tip = document.getElementById('map-tooltip');
+  if (!tip) return;
+  tip.innerHTML = html;
+  tip.style.left = (e.clientX + 12) + 'px';
+  tip.style.top = (e.clientY - 10) + 'px';
+  tip.style.display = '';
+}
+function hideMapTooltip() {
+  const tip = document.getElementById('map-tooltip');
+  if (tip) tip.style.display = 'none';
 }
 
 function renderCooldowns(d) {

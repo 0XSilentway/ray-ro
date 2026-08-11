@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.42.0
+// @version      4.43.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.42.0';
+  const VERSION = '4.43.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -5124,6 +5124,19 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
         return out;
       })(),
       targetId: target ? target.id.toString(16) : null,
+      // ★ ground items — ของที่ตกอยู่บนพื้น (สำหรับแสดงบนแผนที่)
+      groundItems: (() => {
+        const out = [];
+        const now = nowMs();
+        for (const d of recentDrops.values()) {
+          if (d.x == null) continue;
+          // ข้ามของที่เก็บไปแล้ว (ถ้าไม่อยู่ใน queue = เก็บแล้ว)
+          if (!queue.has(d.dropId) && !warpQueue.has(d.dropId)) continue;
+          out.push({ dropId: d.dropId, itemId: d.itemId, name: itemDisplayName(d.itemId), x: d.x, y: d.y });
+          if (out.length >= 30) break;
+        }
+        return out;
+      })(),
     };
     // ★ ส่งผ่าน BroadcastChannel (ถ้ามี) + localStorage (fallback)
     if (monitorChannel) try { monitorChannel.postMessage(payload); } catch (_) {}
