@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.41.0
+// @version      4.42.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.41.0';
+  const VERSION = '4.42.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -5110,6 +5110,20 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
       chatHistory: chatBuf.slice(-30),
       // ★ important log — ส่ง log สำคัญล่าสุด 30 รายการ
       alerts: importantLogBuf.slice(-30),
+      // ★ map entities — สำหรับแสดง dots บนแผนที่ใน remote monitor
+      mapEntities: (() => {
+        const now = nowMs(); const out = [];
+        for (const e of entities.values()) {
+          if (e.id === playerId) continue;   // ตัวเองแสดงแยก
+          if (e.x == null || !e.alive) continue;
+          if (isStaleId(e.id, now)) continue;
+          // จำกัดจำนวน (กัน payload ใหญ่เกิน)
+          if (out.length >= 50) break;
+          out.push({ id: e.id.toString(16), kind: e.kind || 0, x: e.x, y: e.y, name: e.name || '', hp: e.hp, hpMax: e.hpMax });
+        }
+        return out;
+      })(),
+      targetId: target ? target.id.toString(16) : null,
     };
     // ★ ส่งผ่าน BroadcastChannel (ถ้ามี) + localStorage (fallback)
     if (monitorChannel) try { monitorChannel.postMessage(payload); } catch (_) {}

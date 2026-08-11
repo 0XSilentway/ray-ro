@@ -535,6 +535,34 @@ function renderAggro(d) {
   }).join('');
 }
 
+// ============================================================
+//  Map calibration — โหลดจาก GitHub raw (lazy, cached)
+// ============================================================
+let _calibData = null;    // calibration ของแมปปัจจุบัน
+let _calibAll = null;     // calibration ทั้งหมด (map name → { transform })
+let _calibLoading = false;
+const CALIB_URL = GITHUB_RAW.replace('/ro-rebuild-web-assist.user.js', '/map-calibration.json');
+
+async function loadCalibration() {
+  if (_calibAll || _calibLoading) return;
+  _calibLoading = true;
+  try {
+    const res = await fetch(CALIB_URL);
+    _calibAll = await res.json();
+    console.log('[monitor] Calibration loaded:', Object.keys(_calibAll).length, 'maps');
+  } catch (e) {
+    console.warn('[monitor] Calibration load failed:', e.message);
+  }
+  _calibLoading = false;
+}
+
+function tileToPixel(tx, ty, img) {
+  if (!_calibData || !_calibData.transform || !img || !img.clientWidth) return null;
+  const t = _calibData.transform;
+  const ratio = img.clientWidth / (img.naturalWidth || 1);
+  return { x: (t.scaleX * tx + t.offsetX) * ratio, y: (t.scaleY * ty + t.offsetY) * ratio };
+}
+
 function renderMap(d) {
   const box = document.getElementById('map-box');
   const nameEl = document.getElementById('map-display-name');
@@ -542,12 +570,14 @@ function renderMap(d) {
   if (!mapName) { if (nameEl) nameEl.textContent = '—'; if (box) box.innerHTML = '<div class="map-empty">(ยังไม่มีข้อมูลแมป)</div>'; return; }
   if (nameEl) nameEl.textContent = mapName;
 
-  // ★ ถ้าแมปเดิม → อัปเดตแค่ dot ผู้เล่น (กัน reload รูป)
+  // ★ อัปเดต calibration สำหรับแมปนี้
+  if (_calibAll && _calibAll[mapName]) _calibData = _calibAll[mapName];
+  else _calibData = null;
+
+  // ★ ถ้าแมปเดิม → อัปเดตแค่ dots
   const existingImg = box.querySelector('img.map-img');
   if (existingImg && existingImg.dataset.map === mapName) {
-    // ลบ dot เก่า + วาดใหม่
-    box.querySelectorAll('.map-dot').forEach(e => e.remove());
-    placePlayerDot(box, existingImg, d);
+    renderMapDots(box, existingImg, d);
     return;
   }
 
@@ -563,7 +593,7 @@ function renderMap(d) {
     img.style.display = 'block';
     box.innerHTML = '';
     box.appendChild(img);
-    placePlayerDot(box, img, d);
+    renderMapDots(box, img, d);
   };
   img.onerror = () => {
     box.innerHTML = `<div class="map-empty">❌ ไม่มีรูปแผนที่ ${mapName}<br><span style="font-size:9px;color:#555">(รูปจะถูก cache อัตโนมัติเมื่อมีใน repo)</span></div>`;
@@ -571,21 +601,43 @@ function renderMap(d) {
   img.src = mapIconUrl(mapName);
 }
 
-function placePlayerDot(box, img, d) {
-  if (d.player?.x == null || d.player?.y == null) return;
-  // ★ ไม่มี calibration → วาด dot ที่ตำแหน่งคำนวณจาก aspect ratio ของรูป (ประมาณการ)
-  //   ใช้สัดส่วนพื้นฐาน: แผนที่ RO ส่วนใหญ่ใช้ tile ขนาดเท่ากัน → scale ตามรูป
-  const w = img.clientWidth || img.naturalWidth || 1;
-  const h = img.clientHeight || img.naturalHeight || 1;
-  // ★ heuristic: แผนที่ RO แต่ละแมปขนาดไม่เท่ากัน — ถ้าไม่มี calibration ให้ใช้สัดส่วนกลาง
-  //   ประมาณจาก tile coordinate → pixel (ค่าเฉลี่ย ~8 pixels/tile, offset กลางแผนที่)
-  //   วิธีนี้ไม่แม่นยำ 100% แต่พอให้เห็นตำแหน่งคร่าวๆ
-  const dot = document.createElement('div');
-  dot.className = 'map-dot';
-  // ★ วาง dot ตรงกลางล่าง (ทิศใต้) เป็นค่าเริ่มต้น — จะถูกแม่นยำเมื่อมี calibration
-  //   calibration: ใช้ player position เป็น anchor ถ้ามี entity entities (ไม่มีในเวอร์ชันนี้)
-  dot.style.cssText = `left:50%;top:50%;width:8px;height:8px;background:#4fc3f7;border:1px solid #fff;`;
-  box.appendChild(dot);
+// ★ วาด dots ของ player + entities (มอน/ผู้เล่น/NPC) บนแผนที่
+function renderMapDots(box, img, d) {
+  // ลบ dots เก่า
+  box.querySelectorAll('.map-dot').forEach(e => e.remove());
+  if (!img || !img.clientWidth) return;
+
+  const dots = [];
+
+  // ★ player (สีฟ้า)
+  if (d.player?.x != null && d.player?.y != null) {
+    const p = tileToPixel(d.player.x, d.player.y, img);
+    if (p) dots.push({ ...p, color: '#4fc3f7', size: 8, label: 'คุณ', z: 100 });
+  }
+
+  // ★ entities
+  for (const e of (d.mapEntities || [])) {
+    if (e.x == null) continue;
+    const p = tileToPixel(e.x, e.y, img);
+    if (!p) continue;
+    let color = '#666', size = 4;
+    if (e.kind === 1) { color = '#f44'; size = 5; }        // monster = แดง
+    else if (e.kind === 2) { color = '#4caf50'; size = 4; } // NPC = เขียว
+    else { color = '#aaa'; size = 3; }                      // player = เทา
+    // ★ target = ส้ม ใหญ่
+    if (d.targetId && e.id === d.targetId) { color = '#e67e22'; size = 9; }
+    dots.push({ ...p, color, size, z: d.targetId && e.id === d.targetId ? 50 : 10 });
+  }
+
+  // ★ เรียง z-index: target บนสุด, player บนสุด
+  dots.sort((a, b) => (a.z || 0) - (b.z || 0));
+
+  for (const dd of dots) {
+    const el = document.createElement('div');
+    el.className = 'map-dot';
+    el.style.cssText = `left:${dd.x}px;top:${dd.y}px;width:${dd.size}px;height:${dd.size}px;background:${dd.color};border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 3px #000;`;
+    box.appendChild(el);
+  }
 }
 
 function renderCooldowns(d) {
@@ -774,6 +826,7 @@ document.getElementById('chat-input').addEventListener('keydown', e => {
 });
 
 // ★ auto-connect ถ้ามี pid ใน hash (เช่น #pid=2000001)
+loadCalibration();   // ★ โหลด calibration ล่วงหน้า (async)
 const m = location.hash.match(/pid=([0-9a-fA-F]+)/);
 if (m) { document.getElementById('pid-input').value = m[1]; connect(m[1]); }
 </script>
