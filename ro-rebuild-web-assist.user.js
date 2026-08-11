@@ -4218,7 +4218,7 @@
       .__assist_page .logline .ts { color: #5f6368; }
       /* ===== sub-tabs (ใน config page) ===== */
       .__assist_subtabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid #3a3f4b; margin-bottom: 8px; padding-bottom: 0; }
-      .__assist_subtabs .subtab { padding: 5px 8px; font-size: 10px; cursor: pointer; color: #9aa0a6; border-bottom: 2px solid transparent; border-radius: 3px 3px 0 0; white-space: nowrap; }
+      .__assist_subtabs .subtab { padding: 7px 12px; font-size: 11px; cursor: pointer; color: #9aa0a6; border-bottom: 2px solid transparent; border-radius: 3px 3px 0 0; white-space: nowrap; }
       .__assist_subtabs .subtab:hover { background: rgba(255,255,255,.04); color: #cdd3de; }
       .__assist_subtabs .subtab.active { color: #8ab4f8; border-bottom-color: #8ab4f8; }
       .__assist_subpage { display: none; }
