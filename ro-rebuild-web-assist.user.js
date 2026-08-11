@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.36.0
+// @version      4.37.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.36.0';
+  const VERSION = '4.37.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -4335,12 +4335,6 @@
           <h4>ของที่เก็บได้ (ล่าสุด)</h4>
           <div data-items style="font-size:11px;color:#9aa0a6">(ยังไม่มี)</div>
           <div class="btns"><button class="danger" id="__assist_clearinv">ล้างรายการของ</button><button class="danger" id="__assist_resetstats">รีเซ็ตสถิติ</button></div>
-          <h4>📤 สำรอง / ย้ายเครื่อง</h4>
-          <div class="btns">
-            <button id="__assist_exportall">📤 export ทั้งหมด</button>
-            <button id="__assist_importall">📥 import</button>
-          </div>
-          <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ export รวม config + buff/skill times + nav data<br>★ import = ทับค่าปัจจุบัน</div>
         </div>
         <div class="__assist_page" data-page="config">
           <div class="__assist_subtabs">
@@ -4488,6 +4482,7 @@
             </div>
             <div class="field"><label>URL relay server (wss:// = SSL, ws:// = ไม่มี SSL)</label><input type="text" id="__assist_relayurl" placeholder="wss://rayro.catgg.net"></div>
             <div class="btns"><button id="__assist_applyrelay">ใช้ค่า relay</button></div>
+            <div class="btns"><button id="__assist_openremote" class="primary" style="display:none">🌐 เปิดดูข้อมูลที่เว็บ</button></div>
             <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เปิดแล้วสคริปต์จะส่งข้อมูลไป relay server ทุก 3 วินาที<br>★ ดูสถานะการเชื่อมต่อได้ที่แท็บ "📊 สถิติ" บรรทัด "🌐 Remote Monitor"<br>★ ตั้งค่า relay server ที่ <code>relay-server.js</code> ฝั่งเซิร์ฟเวอร์</div>
             <h4>🗺️ Navigation (บันทึกเส้นทางเดิน + waypoint graph)</h4>
             <div class="btns">
@@ -4504,6 +4499,12 @@
             </div>
             <div id="__assist_navstats" style="font-size:10px;color:#9aa0a6;margin-top:4px;line-height:1.6">(ยังไม่มีข้อมูล)</div>
             <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ เปิด 'บันทึก' แล้วเดินเก็บข้อมูลในแมปที่ต้องการ ปิดเมื่อเสร็จ<br>★ wander จะใช้ waypoint graph แทนสุ่ม (ถ้ามีข้อมูลแมปนั้น)</div>
+            <h4>📤 สำรอง / ย้ายเครื่อง</h4>
+            <div class="btns">
+              <button id="__assist_exportall">📤 export ทั้งหมด</button>
+              <button id="__assist_importall">📥 import</button>
+            </div>
+            <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ export รวม config + buff/skill times + nav data<br>★ import = ทับค่าปัจจุบัน</div>
           </div>
         </div>
         <div class="__assist_page" data-page="alert">
@@ -4804,6 +4805,7 @@
         if (CFG.monitorServerEnabled) { connectRelay(); relayRegisterPlayer(); }
       }
     });
+    root.querySelector('#__assist_openremote').addEventListener('click', () => openRemoteMonitor());
     // ---- nav wires ----
     root.querySelector('#__assist_navrecbtn').addEventListener('click', () => CFG.navRecording ? ASSIST.navRecordOff() : ASSIST.navRecordOn());
     root.querySelector('#__assist_navwanderbtn').addEventListener('click', () => { CFG.navWanderUseNav = !CFG.navWanderUseNav; ASSIST.navToggleWander(CFG.navWanderUseNav); });
@@ -5151,8 +5153,12 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
       const el = root.querySelector('[data-relay]');
       if (el) { el.textContent = r.text; el.style.color = r.color; }
       // ★ ปุ่ม 🌐 แสดงเฉพาะเมื่อ relay เชื่อมต่อแล้ว + มี player_id
+      const showRemote = (r.status === 'connected' && playerId);
       const remoteBtn = root.querySelector('[data-remote]');
-      if (remoteBtn) remoteBtn.style.display = (r.status === 'connected' && playerId) ? '' : 'none';
+      if (remoteBtn) remoteBtn.style.display = showRemote ? '' : 'none';
+      // ★ ปุ่มเปิด remote monitor ใน sub-tab อื่นๆ ก็แสดงเมื่อเชื่อมต่อแล้วเช่นกัน
+      const openRemoteBtn = root.querySelector('#__assist_openremote');
+      if (openRemoteBtn) openRemoteBtn.style.display = showRemote ? '' : 'none';
     }
     set('[data-kills]', s.kills);
     set('[data-looted]', s.itemsLooted);
