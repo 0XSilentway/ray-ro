@@ -15,6 +15,7 @@
 
 const { WebSocketServer } = require('ws');
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
@@ -40,6 +41,40 @@ const wss = new WebSocketServer({ server });
 
 // store: playerId -> { botWs, lastData, monitors: Set<ws> }
 const bots = new Map();
+
+// ★ Telegram configs — เก็บ per playerName { botToken, chatId }
+//   persist ลงไฟล์ telegram-configs.json (ข้าม restart)
+const TELEGRAM_CONFIG_FILE = path.join(__dirname, 'telegram-configs.json');
+let telegramConfigs = {};
+try {
+  telegramConfigs = JSON.parse(fs.readFileSync(TELEGRAM_CONFIG_FILE, 'utf8'));
+  log('📨 Telegram configs loaded:', Object.keys(telegramConfigs).length, 'users');
+} catch (_) { telegramConfigs = {}; }
+
+function saveTelegramConfigs() {
+  try { fs.writeFileSync(TELEGRAM_CONFIG_FILE, JSON.stringify(telegramConfigs, null, 2)); } catch (_) {}
+}
+
+// ★ ส่งข้อความไป Telegram (เรียก Telegram Bot API ผ่าน HTTPS)
+function sendTelegram(botToken, chatId, text) {
+  return new Promise((resolve) => {
+    const postData = JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true });
+    const req = https.request({
+      hostname: 'api.telegram.org',
+      path: `/bot${botToken}/sendMessage`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) },
+      timeout: 10000,
+    }, (res) => {
+      let body = ''; res.on('data', d => body += d);
+      res.on('end', () => resolve(res.statusCode === 200));
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.write(postData);
+    req.end();
+  });
+}
 
 function log(...args) {
   console.log(`[${new Date().toLocaleTimeString()}]`, ...args);
@@ -144,6 +179,46 @@ wss.on('connection', (ws, req) => {
         }
       }
       try { ws.send(JSON.stringify({ type: 'botList', bots: list })); } catch (_) {}
+      return;
+    }
+
+    // ---- Bot client setTelegram config (เก็บ botToken + chatId per playerName) ----
+    if (msg.type === 'setTelegram' && ws.role === 'bot' && ws.playerId) {
+      const entry = bots.get(ws.playerId);
+      const playerName = entry?.lastData?.player?.name;
+      if (!playerName) { try { ws.send(JSON.stringify({ type: 'telegramSaved', ok: false, error: 'ยังไม่รู้ชื่อตัวละคร' })); } catch (_) {} return; }
+      // ★ เก็บ token + chatId (ถ้าส่งมาว่าง = ลบ config)
+      if (msg.botToken && msg.chatId) {
+        telegramConfigs[playerName] = { botToken: msg.botToken, chatId: String(msg.chatId) };
+      } else {
+        delete telegramConfigs[playerName];
+      }
+      saveTelegramConfigs();
+      log(`📨 Telegram config saved for ${playerName}`);
+      try { ws.send(JSON.stringify({ type: 'telegramSaved', ok: true })); } catch (_) {}
+      return;
+    }
+
+    // ---- Bot client request current telegram config (สำหรับแสดงใน UI) ----
+    if (msg.type === 'getTelegram' && ws.role === 'bot' && ws.playerId) {
+      const entry = bots.get(ws.playerId);
+      const playerName = entry?.lastData?.player?.name;
+      const cfg = playerName ? telegramConfigs[playerName] : null;
+      try { ws.send(JSON.stringify({ type: 'telegramConfig', configured: !!cfg, chatId: cfg?.chatId || null })); } catch (_) {}
+      return;
+    }
+
+    // ---- Bot client alert → forward ไป Telegram (ถ้ามี config) ----
+    if (msg.type === 'alert' && ws.role === 'bot' && ws.playerId) {
+      const entry = bots.get(ws.playerId);
+      const playerName = entry?.lastData?.player?.name || '?';
+      const cfg = telegramConfigs[playerName];
+      if (cfg && cfg.botToken && cfg.chatId && msg.msg) {
+        const text = `<b>${playerName}</b>\n${msg.msg}`;
+        sendTelegram(cfg.botToken, cfg.chatId, text).then((ok) => {
+          if (!ok) log(`⚠️ Telegram send failed for ${playerName}`);
+        });
+      }
       return;
     }
   });

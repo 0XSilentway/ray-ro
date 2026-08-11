@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.37.0
+// @version      4.38.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.37.0';
+  const VERSION = '4.38.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -475,6 +475,8 @@
     importantLogBuf.push({ t: Date.now(), type, msg });
     while (importantLogBuf.length > IMPORTANT_BUF_MAX) importantLogBuf.shift();
     log(msg);   // ส่งไป log ปกติด้วย
+    // ★ ส่ง alert ไป relay server → forward ไป Telegram (ถ้ามี config)
+    sendRelayAlert(msg);
   }
   // ★ chat history buffer — เก็บแชทล่าสุดสำหรับ monitor
   const CHAT_BUF_MAX = 50;
@@ -4349,6 +4351,7 @@
             <div class="subtab" data-sub="sell">💰 Sell</div>
             <div class="subtab" data-sub="storage">🏦 Storage</div>
             <div class="subtab" data-sub="misc">⚙️ อื่นๆ</div>
+            <div class="subtab" data-sub="telegram">📨 Telegram</div>
           </div>
           <!-- 🗺️ Farm -->
           <div class="__assist_subpage" data-sub="farm">
@@ -4505,6 +4508,24 @@
               <button id="__assist_importall">📥 import</button>
             </div>
             <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ export รวม config + buff/skill times + nav data<br>★ import = ทับค่าปัจจุบัน</div>
+          </div>
+          <!-- 📨 Telegram -->
+          <div class="__assist_subpage" data-sub="telegram">
+            <h4>📨 Telegram Alerts</h4>
+            <div style="font-size:10px;color:#9aa0a6;margin-top:4px;margin-bottom:8px;line-height:1.6;">
+              ★ แจ้งเตือน Log สำคัญ (การ์ด/ตาย/หนีมอน) ไป Telegram<br>
+              ★ สร้าง Bot Token: คุย <code>@BotFather</code> → /newbot<br>
+              ★ หา Chat ID: คุย <code>@userinfobot</code><br>
+              ★ บอทต้องเชื่อม relay server ก่อน (ดูสถานะที่แท็บ สถิติ)
+            </div>
+            <div class="field"><label>Bot Token (จาก @BotFather)</label><input type="text" id="__assist_tg_token" placeholder="เช่น 123456789:ABCdefGHIjklMNOpqrSTUvwxYZ" autocomplete="off"></div>
+            <div class="field"><label>Chat ID (จาก @userinfobot)</label><input type="text" id="__assist_tg_chatid" placeholder="เช่น 123456789" autocomplete="off"></div>
+            <div class="btns">
+              <button id="__assist_tg_save" class="primary">💾 บันทึก</button>
+              <button id="__assist_tg_test">📨 ทดสอบ</button>
+              <button id="__assist_tg_clear" class="danger">🗑 ล้าง</button>
+            </div>
+            <div id="__assist_tg_status" style="font-size:10px;color:#9aa0a6;margin-top:6px;line-height:1.6">(ยังไม่ได้ตั้งค่า)</div>
           </div>
         </div>
         <div class="__assist_page" data-page="alert">
@@ -4806,6 +4827,30 @@
       }
     });
     root.querySelector('#__assist_openremote').addEventListener('click', () => openRemoteMonitor());
+    // ---- telegram wires ----
+    root.querySelector('#__assist_tg_save').addEventListener('click', () => {
+      const token = root.querySelector('#__assist_tg_token').value.trim();
+      const chatId = root.querySelector('#__assist_tg_chatid').value.trim();
+      if (!token || !chatId) { updateTelegramStatus('❌ กรุณากรอก Bot Token + Chat ID ให้ครบ', '#e74c3c'); return; }
+      if (playerName == null) { updateTelegramStatus('❌ ยังไม่รู้ชื่อตัวละคร — เข้าเกมก่อน', '#e74c3c'); return; }
+      if (!relayWs || relayWs.readyState !== 1) { updateTelegramStatus('❌ ยังไม่ได้เชื่อม relay server — ไปเปิดที่หน้าอื่นๆ ก่อน', '#e74c3c'); return; }
+      updateTelegramStatus('⏳ กำลังบันทึก...', '#f39c12');
+      if (sendSetTelegram(token, chatId)) log('📨 บันทึก Telegram config...');
+    });
+    root.querySelector('#__assist_tg_test').addEventListener('click', () => {
+      if (!relayWs || relayWs.readyState !== 1) { updateTelegramStatus('❌ ยังไม่ได้เชื่อม relay server', '#e74c3c'); return; }
+      updateTelegramStatus('⏳ กำลังส่งทดสอบ...', '#f39c12');
+      sendRelayAlert('📨 ทดสอบแจ้งเตือนจาก RO Assist — หากคุณเห็นข้อความนี้ = ใช้งานได้แล้ว!');
+      log('📨 ส่งข้อความทดสอบไป Telegram');
+    });
+    root.querySelector('#__assist_tg_clear').addEventListener('click', () => {
+      if (sendClearTelegram()) {
+        root.querySelector('#__assist_tg_token').value = '';
+        root.querySelector('#__assist_tg_chatid').value = '';
+        updateTelegramStatus('🗑 ล้างการตั้งค่าแล้ว', '#9aa0a6');
+        log('📨 ล้าง Telegram config');
+      }
+    });
     // ---- nav wires ----
     root.querySelector('#__assist_navrecbtn').addEventListener('click', () => CFG.navRecording ? ASSIST.navRecordOff() : ASSIST.navRecordOn());
     root.querySelector('#__assist_navwanderbtn').addEventListener('click', () => { CFG.navWanderUseNav = !CFG.navWanderUseNav; ASSIST.navToggleWander(CFG.navWanderUseNav); });
@@ -5068,7 +5113,26 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
         log('❌ relay server error:', CFG.monitorServerUrl);
         try { relayWs.close(); } catch (_) {}
       };
-      relayWs.onmessage = () => {};   // relay ไม่ส่งอะไรกลับมา (ยกเว้น ack)
+      relayWs.onmessage = (ev) => {
+        // ★ รับ message จาก relay server (telegramSaved, telegramConfig)
+        let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
+        if (m.type === 'telegramSaved') {
+          if (m.ok) {
+            log('📨 บันทึก Telegram config แล้ว');
+            updateTelegramStatus('✅ บันทึกแล้ว — แจ้งเตือนจะส่งไป Telegram เมื่อมี log สำคัญ', '#2ecc71');
+          } else {
+            log('⚠️ บันทึก Telegram config ล้มเหลว:', m.error || '?');
+            updateTelegramStatus('❌ บันทึกไม่สำเร็จ: ' + (m.error || '?'), '#e74c3c');
+          }
+        } else if (m.type === 'telegramConfig') {
+          // relay บอกว่ามี config อยู่แล้วหรือไม่
+          if (m.configured) {
+            updateTelegramStatus('✅ ตั้งค่าแล้ว (Chat ID: ' + m.chatId + ') — แจ้งเตือนจะส่งไป Telegram', '#2ecc71');
+          } else {
+            updateTelegramStatus('⚠️ ยังไม่ได้ตั้งค่า — กรอก Bot Token + Chat ID แล้วกด บันทึก', '#f39c12');
+          }
+        }
+      };
     } catch (e) {
       setRelayStatus('error', 'สร้าง WS ไม่ได้');
       log('❌ สร้าง relay WebSocket ไม่ได้:', e.message);
@@ -5081,8 +5145,35 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
       try {
         relayWs.send(JSON.stringify({ type: 'register', playerId: playerId.toString(16), playerName: playerName || '' }));
         log('📡 ลงทะเบียน (register) player_id ' + playerId.toString(16) + ' ไปยัง relay แล้ว');
+        // ★ ขอ telegram config status หลัง register (เพื่อแสดงใน UI ว่าตั้งไว้แล้วหรือยัง)
+        relayWs.send(JSON.stringify({ type: 'getTelegram' }));
       } catch (_) {}
     }
+  }
+  // ★ ส่ง alert ไป relay server (relay จะ forward ไป Telegram ถ้ามี config)
+  function sendRelayAlert(msg) {
+    if (relayWs && relayWs.readyState === 1 && playerId != null) {
+      try { relayWs.send(JSON.stringify({ type: 'alert', msg })); } catch (_) {}
+    }
+  }
+  // ★ บันทึก telegram config (botToken + chatId) ที่ relay server
+  function sendSetTelegram(botToken, chatId) {
+    if (relayWs && relayWs.readyState === 1) {
+      try { relayWs.send(JSON.stringify({ type: 'setTelegram', botToken, chatId: String(chatId) })); return true; } catch (_) {}
+    }
+    return false;
+  }
+  // ★ ลบ telegram config (ส่งค่าว่างไป)
+  function sendClearTelegram() {
+    if (relayWs && relayWs.readyState === 1) {
+      try { relayWs.send(JSON.stringify({ type: 'setTelegram', botToken: '', chatId: '' })); return true; } catch (_) {}
+    }
+    return false;
+  }
+  // ★ อัปเดตสถานะ Telegram ใน UI
+  function updateTelegramStatus(text, color) {
+    const el = document.getElementById('__assist_tg_status');
+    if (el) { el.innerHTML = text; el.style.color = color || '#9aa0a6'; }
   }
 
   // ---------- render loop ----------
