@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RO Rebuild Web Assist
 // @namespace    ro-rebuild-web-assist
-// @version      4.35.0
+// @version      4.36.0
 // @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.35.0';
+  const VERSION = '4.36.0';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -5345,8 +5345,12 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
       if (box) {
         const logs = ASSIST.getLogs();
         const wasNearBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
-        // rebuild เฉพาะถ่ายจำนวนเปลี่ยน (กัน thrash)
-        if (box.childElementCount !== logs.length) {
+        // ★ rebuild เมื่อจำนวนเปลี่ยน OR log ล่าสุดเปลี่ยน (กันค้างตอน buffer เต็ม 200 แล้ว shift)
+        const lastT = logs.length ? logs[logs.length - 1].t : 0;
+        const firstT = logs.length ? logs[0].t : 0;
+        const sig = logs.length + ':' + firstT + ':' + lastT;
+        if (box.dataset.sig !== sig) {
+          box.dataset.sig = sig;
           box.innerHTML = logs.map(l => {
             const d = new Date(l.t);
             const ts = d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')+':'+d.getSeconds().toString().padStart(2,'0');
@@ -5363,7 +5367,11 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
       if (box) {
         const logs = ASSIST.getImportantLogs();
         const wasNearBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
-        if (box.childElementCount !== logs.length) {
+        const lastT = logs.length ? logs[logs.length - 1].t : 0;
+        const firstT = logs.length ? logs[0].t : 0;
+        const sig = logs.length + ':' + firstT + ':' + lastT;
+        if (box.dataset.sig !== sig) {
+          box.dataset.sig = sig;
           box.innerHTML = logs.length ? logs.map(l => {
             const d = new Date(l.t);
             const ts = d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')+':'+d.getSeconds().toString().padStart(2,'0');
