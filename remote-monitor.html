@@ -41,7 +41,7 @@
   .grid3 { display: grid; grid-template-columns: 320px 1fr 340px; gap: 6px; padding: 6px; }
   @media (max-width: 1100px) { .grid3 { grid-template-columns: 1fr; } }
   .col { display: flex; flex-direction: column; gap: 6px; }
-  .panel { background: #12121e; border: 1px solid #2a2a3a; border-radius: 6px; padding: 8px; }
+  .panel { background: #12121e; border: 1px solid #2a2a3a; border-radius: 6px; padding: 6px 8px; }
 
   /* ---------- Fullscreen mode ---------- */
   #dash { height: auto; }
@@ -52,8 +52,8 @@
   #dash.fullscreen .col > .panel.flex-scroll { flex: 1; min-height: 0; display: flex; flex-direction: column; }
   #dash.fullscreen .col > .panel.flex-scroll > div:last-child { flex: 1; overflow-y: auto; min-height: 0; }
   #dash.fullscreen .map-box img { max-height: calc(100vh - 350px); }
-  .panel-title { font-size: 10px; color: #888; text-transform: uppercase; margin-bottom: 6px; }
-  .stat-row { display: flex; justify-content: space-between; padding: 2px 0; font-size: 11px; }
+  .panel-title { font-size: 9px; color: #888; text-transform: uppercase; margin-bottom: 4px; }
+  .stat-row { display: flex; justify-content: space-between; padding: 1px 0; font-size: 10px; }
   .stat-val { font-weight: bold; }
   .bar-track { background: #333; border-radius: 4px; height: 14px; overflow: hidden; margin-bottom: 3px; }
   .bar-fill { height: 100%; transition: width 0.3s; border-radius: 4px; }
@@ -164,6 +164,10 @@
     <div class="col">
       <div class="panel">
         <div class="panel-title">⏱️ Session / EXP</div>
+        <div class="stat-row"><span>ชื่อ</span><span class="stat-val" id="s-name">—</span></div>
+        <div class="stat-row"><span>player_id</span><span class="stat-val" id="s-pid" style="color:#9b59b6">—</span></div>
+        <div class="stat-row"><span>เวอร์ชัน</span><span class="stat-val" id="s-ver">—</span></div>
+        <div class="stat-row"><span>สถานะ</span><span class="stat-val" id="s-state">—</span></div>
         <div class="stat-row"><span>เวลาทำงาน</span><span class="stat-val" id="s-elapsed" style="color:#aaa">—</span></div>
         <div class="stat-row"><span>🟢 Session Base EXP</span><span class="stat-val" id="s-baseexp" style="color:#4f4">—</span></div>
         <div class="stat-row"><span>🔵 Session Job EXP</span><span class="stat-val" id="s-jobexp" style="color:#3498db">—</span></div>
@@ -171,6 +175,7 @@
         <div class="stat-row"><span>ฆ่ามอน</span><span class="stat-val" id="s-kills" style="color:#e67e22">—</span></div>
         <div class="stat-row"><span>เก็บของ</span><span class="stat-val" id="s-looted" style="color:#e67e22">—</span></div>
         <div class="stat-row"><span>ตาย</span><span class="stat-val" id="s-deaths" style="color:#e74c3c">—</span></div>
+        <div class="stat-row"><span>ฟาร์ม</span><span class="stat-val" id="s-farmmap">—</span></div>
       </div>
       <div class="panel">
         <div class="panel-title">❤️ HP / SP</div>
@@ -199,19 +204,12 @@
     <!-- CENTER COLUMN -->
     <div class="col">
       <div class="panel">
-        <div class="panel-title">📍 ตำแหน่ง / สถานะ</div>
-        <div class="stat-row"><span>พิกัด</span><span class="stat-val" id="s-pos">—</span></div>
-        <div class="stat-row"><span>แมป</span><span class="stat-val" id="s-map" style="color:#9b59b6">—</span></div>
-        <div class="stat-row"><span>ฟาร์ม</span><span class="stat-val" id="s-farmmap">—</span></div>
-        <div class="stat-row"><span>สถานะ</span><span class="stat-val" id="s-state">—</span></div>
-      </div>
-      <div class="panel">
         <div class="panel-title">🎯 เป้าหมาย + มอนที่รุม</div>
         <div class="stat-row" style="margin-bottom:4px"><span>เป้าหมายปัจจุบัน</span><span class="stat-val" id="s-target">—</span></div>
         <div class="aggro-wrap" id="aggro-list" style="min-height:58px;max-height:116px;overflow-y:auto"></div>
       </div>
       <div class="panel">
-        <div class="panel-title">🗺️ แผนที่ — <span id="map-display-name" style="color:#9b59b6">—</span></div>
+        <div class="panel-title">🗺️ แผนที่ — <span id="map-display-name" style="color:#9b59b6">—</span> <span style="color:#666;font-size:9px" id="s-pos"></span></div>
         <div class="map-box" id="map-box">
           <div class="map-empty">(ยังไม่มีข้อมูลแมป)</div>
         </div>
@@ -223,16 +221,6 @@
     </div>
     <!-- RIGHT COLUMN -->
     <div class="col">
-      <div class="panel">
-        <div class="panel-title">👤 ตัวละคร / 🔗 การเชื่อมต่อ</div>
-        <div class="stat-row"><span>ชื่อ</span><span class="stat-val" id="s-name">—</span></div>
-        <div class="stat-row"><span>player_id</span><span class="stat-val" id="s-pid" style="color:#9b59b6">—</span></div>
-        <div class="stat-row"><span>เวอร์ชัน</span><span class="stat-val" id="s-ver">—</span></div>
-        <div class="stat-row"><span>Sell</span><span class="stat-val" id="s-sell">IDLE</span></div>
-        <div class="stat-row"><span>Storage</span><span class="stat-val" id="s-storage">IDLE</span></div>
-        <div class="stat-row"><span>🌐 Relay (บอท)</span><span class="stat-val" id="s-relay-bot">—</span></div>
-        <div class="stat-row"><span>URL</span><span class="stat-val" id="s-relay-url" style="font-size:9px;color:#666">—</span></div>
-      </div>
       <div class="panel">
         <div class="panel-title">🎮 ควบคุมระบบ (toggle on/off)</div>
         <div class="ctrl-toggles" id="ctrl-toggles"></div>
@@ -463,8 +451,7 @@ function render(d) {
   document.getElementById('s-jobexp').textContent = N(s.jobExpGained);
 
   // ---- Position / map / state ----
-  document.getElementById('s-pos').textContent = d.player?.x != null ? `(${d.player.x.toFixed(0)}, ${d.player.y.toFixed(0)})` : '—';
-  document.getElementById('s-map').textContent = d.map || '—';
+  document.getElementById('s-pos').textContent = d.player?.x != null ? `(${d.player.x.toFixed(0)}, ${d.player.y.toFixed(0)})` : '';
   document.getElementById('s-farmmap').textContent = d.farmMap || '—';
   let st = d.isDead ? '☠️ ตาย' : (d.isResting ? '🪑 นั่งพัก' : '🟢 ปกติ');
   if (d.sellState && d.sellState !== 'IDLE') st += ' | 💰 ' + d.sellState;
@@ -474,19 +461,6 @@ function render(d) {
   // ---- Character ----
   document.getElementById('s-name').textContent = d.player?.name || '—';
   document.getElementById('s-pid').textContent = d.player?.id != null ? d.player.id.toString(16) : '—';
-
-  // ---- Sell / Storage ----
-  document.getElementById('s-sell').textContent = d.sellState || 'IDLE';
-  document.getElementById('s-storage').textContent = d.storageState || 'IDLE';
-
-  // ---- Relay status ----
-  const r = d.relay;
-  if (r && r.enabled) {
-    document.getElementById('s-relay-bot').innerHTML = `<span style="color:${r.color || '#9aa0a6'}">${r.text || r.status || '?'}</span>`;
-  } else {
-    document.getElementById('s-relay-bot').innerHTML = '<span style="color:#9aa0a6">⚪ ปิด</span>';
-  }
-  document.getElementById('s-relay-url').textContent = r?.url || '—';
 
   // ---- Control toggles (interactive — แทนการ์ดระบบเดิม) ----
   renderCtrlToggles(d.toggles || {});
