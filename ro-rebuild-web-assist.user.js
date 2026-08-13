@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.51.1-ray5
+// @version      4.51.2-ray6
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.51.1-ray5';
+  const VERSION = '4.51.2-ray6';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/0XSilentway/ray-ro/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -4134,17 +4134,20 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
       log('📍 บันทึกแมปฟาร์ม:', CFG.farmMap, '@(', CFG.farmMapX + ',' + CFG.farmMapY + ')');
       return true;
     },
-    // vending shops appear as kind=2 too — filter by name heuristic (ตัวเลข+k, !!, ราคา, ฯลฯ)
+    // vending shops appear as kind=2 too — filter by name heuristic
     _isProbablyVendShop(name) {
       if (!name) return false;
-      // "Ori 55k !!" / "+9 saber ..." / "ขาย ... 100k" / "1.5m"
-      if (/!!|~/.test(name)) return true;
-      if (/\d+\s*(k|m|K|M|บา|บาท|z|Z)\b/.test(name)) return true;
-      if (/\+\d+\s/.test(name)) return true;                        // "+9 xxxxx"
-      if (/(ขาย|รับ|เช่า|แลก|ซื้อ|ราคา)/.test(name)) return true;
+      if (/!!|~/.test(name)) return true;                            // "Ori 55k !!" / "~SALE~"
+      if (/\d+\s*(k|m|K|M|บา|บาท|z|Z)\b/.test(name)) return true;   // "55k", "1.5m", "100z"
+      if (/\+\d+\s/.test(name)) return true;                         // "+9 saber"
+      if (/(ขาย|รับ|เช่า|แลก|ซื้อ|ราคา|ตัน)/.test(name)) return true;
+      if (/\[\s*\d*\s*\]/.test(name)) return true;                   // "Earring[]" / "Sword[3]" — item slot notation
+      // common equipment/item words used in vend titles
+      if (/(sword|shield|armor|helm|earring|ring|necklace|robe|potion|card|elu|ori|item|slot)/i.test(name)) return true;
       return false;
     },
-    _findNearestNpc(preferPattern) {
+    _findNearestNpc(preferPattern, opts) {
+      const strict = !!(opts && opts.strict);
       if (player.x == null) return null;
       let best = null, bestD = Infinity, preferredBest = null, preferredBestD = Infinity;
       for (const e of entities.values()) {
@@ -4154,14 +4157,32 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
         if (d < bestD) { bestD = d; best = e; }
         if (preferPattern && preferPattern.test(e.name) && d < preferredBestD) { preferredBestD = d; preferredBest = e; }
       }
+      if (strict && !preferredBest) return null;
       const pick = preferredBest || best;
       return pick ? { name: pick.name, x: pick.x, y: pick.y, dist: preferredBest ? preferredBestD : bestD, preferred: !!preferredBest } : null;
     },
+    listNearbyNpcs(radius) {
+      const R = Number(radius) || 30;
+      if (player.x == null) return [];
+      const out = [];
+      for (const e of entities.values()) {
+        if (e.kind !== 2 || !e.alive || e.x == null || !e.name) continue;
+        const d = Math.hypot(e.x - player.x, e.y - player.y);
+        if (d > R) continue;
+        out.push({ name: e.name, x: e.x, y: e.y, dist: +d.toFixed(1), isShop: ASSIST._isProbablyVendShop(e.name) });
+      }
+      return out.sort((a, b) => a.dist - b.dist);
+    },
     saveKafraHere() {
       if (player.x == null || !currentMap) { log('⚠️ ยังไม่รู้พิกัด/แมปตัวละคร'); return false; }
-      const npc = ASSIST._findNearestNpc(/kafra|คาฟร|เคฟร/i);
-      if (!npc) { log('⚠️ ไม่เจอ NPC ที่ไม่ใช่ร้านขาย — ยืนใกล้ Kafra จริง แล้วกดใหม่'); return false; }
-      if (!npc.preferred) log('⚠️ ไม่เจอ Kafra ชื่อตรง — ใช้ NPC ใกล้สุดแทน: "' + npc.name + '"');
+      // strict: ต้องเจอชื่อ Kafra จริงเท่านั้น (ไม่ fallback สุ่ม)
+      const npc = ASSIST._findNearestNpc(/kafra|คาฟร|เคฟร/i, { strict: true });
+      if (!npc) {
+        const near = ASSIST.listNearbyNpcs(20).filter(n => !n.isShop).slice(0, 5);
+        log('⚠️ ไม่เจอ Kafra จริงในระยะ 20 ช่อง. NPC ใกล้ที่ไม่ใช่ร้าน:', near.length ? near.map(n => n.name + ' (' + n.dist + ')').join(' | ') : '(ไม่มี)');
+        log('   → เดินเข้าเมือง (izlude/prontera) หรือหา Kafra Employee/Staff ก่อน แล้วกดใหม่');
+        return false;
+      }
       CFG.kafraName = npc.name; CFG.kafraMap = currentMap;
       CFG.kafraMapX = Math.round(player.x); CFG.kafraMapY = Math.round(player.y);
       saveConfig();
@@ -4170,9 +4191,13 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
     },
     saveSellHere() {
       if (player.x == null || !currentMap) { log('⚠️ ยังไม่รู้พิกัด/แมปตัวละคร'); return false; }
-      const npc = ASSIST._findNearestNpc(/dealer|tool|shop|merchant|ร้าน|ขายของ|พ่อค้า/i);
-      if (!npc) { log('⚠️ ไม่เจอ NPC ที่ไม่ใช่ร้าน vend — ยืนใกล้ NPC ขายของจริง แล้วกดใหม่'); return false; }
-      if (!npc.preferred) log('⚠️ ไม่เจอชื่อ Dealer/Tool/ร้าน — ใช้ NPC ใกล้สุดแทน: "' + npc.name + '"');
+      const npc = ASSIST._findNearestNpc(/dealer|tool|shop|merchant|ร้าน|ขายของ|พ่อค้า/i, { strict: true });
+      if (!npc) {
+        const near = ASSIST.listNearbyNpcs(20).filter(n => !n.isShop).slice(0, 5);
+        log('⚠️ ไม่เจอ Dealer/Tool NPC ในระยะ 20 ช่อง. NPC ใกล้ที่ไม่ใช่ร้าน:', near.length ? near.map(n => n.name + ' (' + n.dist + ')').join(' | ') : '(ไม่มี)');
+        log('   → เดินเข้าเมือง (izlude_in/prontera_in) หา Tool Dealer แล้วกดใหม่');
+        return false;
+      }
       CFG.sellNpcName = npc.name; CFG.sellNpcMap = currentMap;
       CFG.sellNpcX = Math.round(player.x); CFG.sellNpcY = Math.round(player.y);
       saveConfig();
