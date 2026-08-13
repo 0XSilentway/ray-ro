@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.50.0-ray3
+// @version      4.51.0-ray4
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.50.0-ray3';
+  const VERSION = '4.51.0-ray4';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/0XSilentway/ray-ro/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3099,6 +3099,228 @@
   const disguiseStatusLoop = setInterval(disguiseUpdateStatus, 2000);
 
   // ============================================================
+  //  🖥️ CONFIG POPUP — หน้าต่างควบคุมแยก (window.open) sync ผ่าน BroadcastChannel
+  //   game tab = ทำงานจริง; popup = UI-only, ส่งคำสั่งกลับ + รับ status
+  //   ใช้ same-origin BroadcastChannel 'ray-ro-control'
+  //   auto-reopen เมื่อ reload ถ้าเคยเปิด (CFG.configPopupOpen)
+  // ============================================================
+  const configPopup = { win: null };
+  const configChannel = new BroadcastChannel('ray-ro-control');
+  configChannel.onmessage = (e) => {
+    const msg = e.data;
+    if (!msg || msg.type !== 'call') return;
+    try {
+      const A = window.ASSIST;
+      const fn = A && A[msg.method];
+      if (typeof fn !== 'function') { configChannel.postMessage({ type: 'result', requestId: msg.requestId, error: 'unknown method: ' + msg.method }); return; }
+      const val = fn.apply(A, Array.isArray(msg.args) ? msg.args : []);
+      configChannel.postMessage({ type: 'result', requestId: msg.requestId, value: (val && typeof val === 'object') ? JSON.parse(JSON.stringify(val)) : val });
+    } catch (err) {
+      configChannel.postMessage({ type: 'result', requestId: msg.requestId, error: err && err.message || String(err) });
+    }
+  };
+  function configPopupBroadcast() {
+    if (!configChannel) return;
+    try {
+      const hpPct = (hp.cur != null && hp.max) ? (hp.cur / hp.max * 100) : 0;
+      const spPct = (sp.cur != null && sp.max) ? (sp.cur / sp.max * 100) : 0;
+      configChannel.postMessage({
+        type: 'status',
+        version: VERSION,
+        player: { name: playerName || '-', x: player.x, y: player.y, zeny: playerZeny || 0 },
+        map: currentMap || '-',
+        hp: { cur: hp.cur, max: hp.max, pct: hpPct },
+        sp: { cur: sp.cur, max: sp.max, pct: spPct },
+        stats: { kills: stats.kills || 0, itemsLooted: stats.itemsLooted || 0, deaths: stats.deaths || 0, elapsedMs: stats.elapsedMs || 0 },
+        toggles: {
+          loot: !!CFG.lootEnabled, heal: !!CFG.healEnabled, rest: !!CFG.restEnabled,
+          combat: !!CFG.combatEnabled, skill: !!CFG.skillEnabled, buff: !!CFG.buffEnabled,
+          sell: !!CFG.sellEnabled, storage: !!CFG.storageEnabled,
+          stealthIdle: !!CFG.stealthIdleEnabled, chatReply: !!CFG.chatReplyEnabled,
+          disguise: !!disguise.active, warpBack: !!CFG.warpBackToFarm,
+        },
+        farm: {
+          map: CFG.farmMap || '', mapX: CFG.farmMapX, mapY: CFG.farmMapY,
+          kafraName: CFG.kafraName || '', kafraMap: CFG.kafraMap || '',
+          sellName: CFG.sellNpcName || '', sellMap: CFG.sellNpcMap || '',
+        },
+        isDead: !!isDead, isResting: !!isResting,
+        logs: (typeof logBuf !== 'undefined' && logBuf) ? logBuf.slice(-20) : [],
+      });
+    } catch (_) {}
+  }
+  const configPopupBroadcastLoop = setInterval(configPopupBroadcast, 2000);
+
+  const CONFIG_POPUP_HTML = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>RAY-RO Control</title>
+<link rel="icon" href="data:,">
+<style>
+* { box-sizing: border-box; }
+body { background:#1e2127; color:#cdd3de; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; font-size:13px; margin:0; padding:10px; }
+h3 { color:#8ab4f8; margin:14px 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:0.5px; }
+.card { background:#232830; padding:10px; border-radius:6px; margin-bottom:10px; }
+.row { display:flex; justify-content:space-between; padding:3px 0; font-size:12px; }
+.lbl { color:#9aa0a6; }
+.val { color:#cdd3de; font-weight:500; }
+.btns { display:flex; gap:5px; flex-wrap:wrap; margin:4px 0; }
+button { background:#3a3f4b; color:#cdd3de; border:none; padding:8px 10px; border-radius:4px; cursor:pointer; font-size:12px; flex:1; min-width:0; font-family:inherit; }
+button:hover { background:#4a4f5b; }
+button:active { transform:translateY(1px); }
+button.on { background:#2e7d32; color:#fff; }
+button.off { background:#3a3f4b; color:#9aa0a6; }
+button.primary { background:#1a73e8; color:#fff; font-weight:500; }
+button.danger { background:#c62828; color:#fff; font-weight:500; }
+button.large { font-size:14px; padding:12px 10px; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+.log { background:#14161c; padding:8px; border-radius:4px; font-family:'SF Mono',Menlo,monospace; font-size:11px; max-height:180px; overflow-y:auto; line-height:1.55; }
+.log div { white-space:pre-wrap; word-break:break-word; }
+.bar { background:#14161c; height:12px; border-radius:3px; overflow:hidden; margin:2px 0 6px; }
+.bar > div { height:100%; transition:width 0.3s; }
+.hpfill { background:linear-gradient(90deg,#c62828,#e53935); }
+.spfill { background:linear-gradient(90deg,#1565c0,#2196f3); }
+.expfill { background:linear-gradient(90deg,#f57f17,#ffb300); }
+.connected { color:#4caf50; }
+.disconnected { color:#f44336; }
+.tiny { font-size:10px; color:#5f6368; }
+</style></head><body>
+<div class="card">
+  <div class="row"><span class="lbl">🌐 สถานะ</span><span id="conn" class="val disconnected">รอ...</span></div>
+  <div class="row"><span class="lbl">👤 ตัวละคร</span><span class="val" id="name">-</span></div>
+  <div class="row"><span class="lbl">🗺️ แมป</span><span class="val" id="map">-</span></div>
+  <div class="row"><span class="lbl">HP</span><span class="val" id="hp">-</span></div>
+  <div class="bar"><div class="hpfill" id="hpbar" style="width:0%"></div></div>
+  <div class="row"><span class="lbl">SP</span><span class="val" id="sp">-</span></div>
+  <div class="bar"><div class="spfill" id="spbar" style="width:0%"></div></div>
+  <div class="row"><span class="lbl">💰 Zeny</span><span class="val" id="zeny">-</span></div>
+  <div class="row"><span class="lbl">⚔️ ฆ่าได้</span><span class="val" id="kills">-</span></div>
+  <div class="row"><span class="lbl">📦 เก็บได้</span><span class="val" id="looted">-</span></div>
+</div>
+<div class="card">
+  <div class="row"><span class="lbl">📍 แมปฟาร์ม</span><span class="val" id="farm">-</span></div>
+  <div class="row"><span class="lbl">🏦 Kafra</span><span class="val" id="kafra">-</span></div>
+  <div class="row"><span class="lbl">💰 ร้านขาย</span><span class="val" id="sellnpc">-</span></div>
+</div>
+
+<h3>🎯 Farm (1-click)</h3>
+<div class="btns">
+  <button data-call="saveFarmHere">📍 แมป=ฟาร์ม</button>
+  <button data-call="saveKafraHere">🏦 NPC=Kafra</button>
+  <button data-call="saveSellHere">💰 NPC=ร้าน</button>
+</div>
+<div class="btns">
+  <button class="primary large" data-call="startFarming">▶️ START FARMING</button>
+  <button class="danger large" data-call="stopFarming">⏹ STOP</button>
+</div>
+<div class="btns">
+  <button data-call="warpToFarm">🌀 วาร์ปไปฟาร์ม</button>
+  <button data-toggle="warpBack" data-on="toggleWarpBack:true" data-off="toggleWarpBack:false">วาร์ปกลับอัตโนมัติ: ?</button>
+</div>
+
+<h3>🥷 Stealth</h3>
+<div class="btns">
+  <button data-toggle="stealthIdle" data-on="stealthIdleOn" data-off="stealthIdleOff">💤 Idle: ?</button>
+  <button data-toggle="chatReply" data-on="chatReplyOn" data-off="chatReplyOff">💬 Reply: ?</button>
+  <button data-toggle="disguise" data-on="disguiseOn" data-off="disguiseOff">🎭 Disguise: ?</button>
+</div>
+
+<h3>⚙️ ระบบ</h3>
+<div class="grid2">
+  <button data-toggle="loot" data-on="lootOn" data-off="lootOff">📦 Loot: ?</button>
+  <button data-toggle="heal" data-on="healOn" data-off="healOff">💉 Heal: ?</button>
+  <button data-toggle="rest" data-on="restOn" data-off="restOff">🪑 Rest: ?</button>
+  <button data-toggle="combat" data-on="combatOn" data-off="combatOff">⚔️ Combat: ?</button>
+  <button data-toggle="skill" data-on="skillOn" data-off="skillOff">🔮 Skill: ?</button>
+  <button data-toggle="buff" data-on="buffOn" data-off="buffOff">✨ Buff: ?</button>
+  <button data-toggle="sell" data-on="sellOn" data-off="sellOff">💰 Sell: ?</button>
+  <button data-toggle="storage" data-on="storageOn" data-off="storageOff">🏦 Kafra: ?</button>
+</div>
+
+<h3>📋 Log</h3>
+<div class="log" id="log"><div class="tiny">รอ log จาก game tab...</div></div>
+<div class="tiny" style="margin-top:8px;">v<span id="ver">?</span> · sync ทุก 2s · BroadcastChannel 'ray-ro-control'</div>
+
+<script>
+const chan = new BroadcastChannel('ray-ro-control');
+let lastAt = 0, toggles = {};
+function call(method, ...args) {
+  const [m, ...rest] = method.split(':');
+  const parsed = rest.length ? rest.map(a => a === 'true' ? true : a === 'false' ? false : (isNaN(+a) ? a : +a)) : args;
+  chan.postMessage({ type:'call', method:m, args:parsed, requestId: Date.now()+Math.random() });
+}
+document.querySelectorAll('button[data-call]').forEach(btn => {
+  btn.addEventListener('click', () => call(btn.dataset.call));
+});
+document.querySelectorAll('button[data-toggle]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const key = btn.dataset.toggle;
+    const on = toggles[key];
+    call(on ? btn.dataset.off : btn.dataset.on);
+  });
+});
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+chan.onmessage = (e) => {
+  const m = e.data;
+  if (!m || m.type !== 'status') return;
+  lastAt = Date.now();
+  document.getElementById('conn').textContent = '● เชื่อมกับ game tab';
+  document.getElementById('conn').className = 'val connected';
+  document.getElementById('ver').textContent = m.version || '?';
+  document.getElementById('name').textContent = m.player.name || '-';
+  document.getElementById('map').textContent = m.map || '-';
+  const hpTxt = m.hp.cur != null ? m.hp.cur + ' / ' + (m.hp.max || '?') + (m.hp.max ? ' (' + m.hp.pct.toFixed(0) + '%)' : '') : '-';
+  document.getElementById('hp').textContent = hpTxt;
+  document.getElementById('hpbar').style.width = (m.hp.pct || 0) + '%';
+  const spTxt = m.sp.cur != null ? m.sp.cur + ' / ' + (m.sp.max || '?') : '-';
+  document.getElementById('sp').textContent = spTxt;
+  document.getElementById('spbar').style.width = (m.sp.pct || 0) + '%';
+  document.getElementById('zeny').textContent = (m.player.zeny || 0).toLocaleString();
+  document.getElementById('kills').textContent = (m.stats.kills || 0).toLocaleString();
+  document.getElementById('looted').textContent = (m.stats.itemsLooted || 0).toLocaleString();
+  document.getElementById('farm').textContent = m.farm.map ? (m.farm.map + ' (' + m.farm.mapX + ',' + m.farm.mapY + ')') : 'ยังไม่บันทึก';
+  document.getElementById('kafra').textContent = m.farm.kafraName ? (m.farm.kafraName + ' @ ' + m.farm.kafraMap) : 'ยังไม่บันทึก';
+  document.getElementById('sellnpc').textContent = m.farm.sellName ? (m.farm.sellName + ' @ ' + m.farm.sellMap) : 'ยังไม่บันทึก';
+  toggles = m.toggles;
+  document.querySelectorAll('button[data-toggle]').forEach(btn => {
+    const key = btn.dataset.toggle; const on = toggles[key];
+    const base = btn.textContent.replace(/:\\s*(ON|OFF|\\?)\\s*$/, '');
+    btn.textContent = base + ': ' + (on ? 'ON' : 'OFF');
+    btn.className = on ? 'on' : 'off';
+  });
+  if (m.logs && m.logs.length) {
+    const box = document.getElementById('log');
+    const wasBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+    box.innerHTML = m.logs.slice(-20).map(l => '<div>' + esc(l) + '</div>').join('');
+    if (wasBottom) box.scrollTop = box.scrollHeight;
+  }
+};
+setInterval(() => {
+  if (Date.now() - lastAt > 6000) {
+    document.getElementById('conn').textContent = '⚠ ไม่ได้รับข้อมูล 6s+';
+    document.getElementById('conn').className = 'val disconnected';
+  }
+}, 1000);
+window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'popup-closed' }); } catch(_){}; try { chan.close(); } catch(_){} });
+</script></body></html>`;
+
+  function configPopupOpen() {
+    if (configPopup.win && !configPopup.win.closed) { configPopup.win.focus(); return true; }
+    const w = window.open('about:blank', 'ray-ro-config', 'width=480,height=780,scrollbars=yes,resizable=yes');
+    if (!w) { log('⚠️ popup ถูกบล็อก — Brave ต้องอนุญาต popup สำหรับ rayrag.com (ไอคอน pop-up ใน address bar)'); return false; }
+    configPopup.win = w;
+    w.document.open();
+    w.document.write(CONFIG_POPUP_HTML);
+    w.document.close();
+    log('🖥️ Config window เปิดแล้ว — ย้ายไปหน้าจอสองได้');
+    configPopupBroadcast();
+    return true;
+  }
+  function configPopupClose() {
+    if (configPopup.win && !configPopup.win.closed) configPopup.win.close();
+    configPopup.win = null;
+    log('🖥️ Config window ปิด');
+  }
+
+  // ============================================================
   //  NAVIGATION — บันทึกเส้นทางเดิน + สร้าง waypoint graph
   //    Trail (ตามเวลา) → merge nodes (ใกล้กัน) + edges (เชื่อมต่อกัน)
   //    localStorage per-map (roAssistNav_<map>) + export/import + sync GitHub
@@ -3626,6 +3848,9 @@
       console.log('  ASSIST.disguiseOn() / disguiseOff() / disguiseToggle()');
       console.log('  ASSIST.setDisguiseTabTitle("Google Sheets")         // ชื่อ tab');
       console.log('  ASSIST.setDisguiseFavicon("https://...")            // favicon');
+      console.log(`%c 🖥️ Config Popup Window `, 'color:#1a73e8;font-weight:bold');
+      console.log('  ASSIST.openConfigWindow()   // เปิด popup แยก (ย้ายไปหน้าจอ 2 ได้)');
+      console.log('  ASSIST.closeConfigWindow()');
       console.log('  ASSIST.name(935,"Feather")        // ตั้งชื่อ item');
       console.log('  ASSIST.status()  ASSIST.config()  ASSIST.stopAll()');
     },
@@ -3833,6 +4058,10 @@
     disguiseToggle() { disguiseToggle(); },
     setDisguiseTabTitle(t) { CFG.disguiseTabTitle = String(t || 'Untitled spreadsheet - Google Sheets'); if (disguise.active) document.title = CFG.disguiseTabTitle; saveConfig(); log('🎭 tab title:', CFG.disguiseTabTitle); },
     setDisguiseFavicon(url) { CFG.disguiseFavicon = String(url || ''); saveConfig(); log('🎭 favicon:', CFG.disguiseFavicon, '— ต้อง disguiseOff/On ใหม่เพื่อ apply'); },
+
+    // ---------- 🖥️ Config Popup Window ----------
+    openConfigWindow()  { return configPopupOpen(); },
+    closeConfigWindow() { configPopupClose(); },
 
     // ---------- Auto-Sell ----------
     sellOn()  { CFG.sellEnabled = true;  log('💰 Auto-Sell: ON'); },
@@ -4153,10 +4382,11 @@
     getImportantLogs() { return importantLogBuf.slice(); },
     clearImportantLogs() { importantLogBuf.length = 0; log('🧹 ล้าง log สำคัญ'); },
     stopAll() {
-      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop); clearInterval(storageLoop); clearInterval(buffLoop); clearInterval(consoleClearLoop); clearInterval(stealthLoop); clearInterval(disguiseStatusLoop);
+      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop); clearInterval(storageLoop); clearInterval(buffLoop); clearInterval(consoleClearLoop); clearInterval(stealthLoop); clearInterval(disguiseStatusLoop); clearInterval(configPopupBroadcastLoop);
       for (const t of stealth.pendingReplyTimers) clearTimeout(t); stealth.pendingReplyTimers.clear();
       if (disguise.hotkeyHandler) window.removeEventListener('keydown', disguise.hotkeyHandler, true);
       disguiseDisable();
+      configPopupClose(); try { configChannel.close(); } catch (_) {}
       if (typeof uiLoop !== 'undefined') clearInterval(uiLoop);
       log('⏹ หยุดระบบทั้งหมดแล้ว');
     },
