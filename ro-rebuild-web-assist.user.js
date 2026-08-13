@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.51.2-ray6
+// @version      4.51.3-ray7
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.51.2-ray6';
+  const VERSION = '4.51.3-ray7';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/0XSilentway/ray-ro/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3302,6 +3302,7 @@ setInterval(() => {
 window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'popup-closed' }); } catch(_){}; try { chan.close(); } catch(_){} });
 </script></body></html>`;
 
+  const CONFIG_POPUP_STATE_KEY = 'roAssistConfigPopupOpen';
   function configPopupOpen() {
     if (configPopup.win && !configPopup.win.closed) { configPopup.win.focus(); return true; }
     const w = window.open('about:blank', 'ray-ro-config', 'width=480,height=780,scrollbars=yes,resizable=yes');
@@ -3310,15 +3311,35 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
     w.document.open();
     w.document.write(CONFIG_POPUP_HTML);
     w.document.close();
-    log('🖥️ Config window เปิดแล้ว — ย้ายไปหน้าจอสองได้');
+    try { localStorage.setItem(CONFIG_POPUP_STATE_KEY, '1'); } catch (_) {}
+    log('🖥️ Config window เปิดแล้ว — ย้ายไปหน้าจอสองได้ (Ctrl+Shift+P toggle)');
     configPopupBroadcast();
     return true;
   }
   function configPopupClose() {
     if (configPopup.win && !configPopup.win.closed) configPopup.win.close();
     configPopup.win = null;
+    try { localStorage.setItem(CONFIG_POPUP_STATE_KEY, '0'); } catch (_) {}
     log('🖥️ Config window ปิด');
   }
+  function configPopupToggle() {
+    if (configPopup.win && !configPopup.win.closed) configPopupClose();
+    else configPopupOpen();
+  }
+  // hotkey Ctrl+Shift+P (Popup) — capture ก่อน game canvas
+  const configPopupHotkeyHandler = function(e) {
+    if (e.ctrlKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+      e.preventDefault(); e.stopPropagation();
+      configPopupToggle();
+    }
+  };
+  window.addEventListener('keydown', configPopupHotkeyHandler, true);
+  // auto-reopen หลัง reload ถ้าเคยเปิด (delay 3s ให้ ASSIST init ก่อน)
+  try {
+    if (localStorage.getItem(CONFIG_POPUP_STATE_KEY) === '1') {
+      setTimeout(() => { if (!configPopup.win || configPopup.win.closed) configPopupOpen(); }, 3000);
+    }
+  } catch (_) {}
 
   // ============================================================
   //  NAVIGATION — บันทึกเส้นทางเดิน + สร้าง waypoint graph
@@ -3849,8 +3870,8 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
       console.log('  ASSIST.setDisguiseTabTitle("Google Sheets")         // ชื่อ tab');
       console.log('  ASSIST.setDisguiseFavicon("https://...")            // favicon');
       console.log(`%c 🖥️ Config Popup Window `, 'color:#1a73e8;font-weight:bold');
-      console.log('  ASSIST.openConfigWindow()   // เปิด popup แยก (ย้ายไปหน้าจอ 2 ได้)');
-      console.log('  ASSIST.closeConfigWindow()');
+      console.log('  ★ Hotkey: Ctrl+Shift+P (toggle) | auto-reopen หลัง reload ถ้าเคยเปิด');
+      console.log('  ASSIST.openConfigWindow() / closeConfigWindow() / toggleConfigWindow()');
       console.log('  ASSIST.name(935,"Feather")        // ตั้งชื่อ item');
       console.log('  ASSIST.status()  ASSIST.config()  ASSIST.stopAll()');
     },
@@ -4060,8 +4081,9 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
     setDisguiseFavicon(url) { CFG.disguiseFavicon = String(url || ''); saveConfig(); log('🎭 favicon:', CFG.disguiseFavicon, '— ต้อง disguiseOff/On ใหม่เพื่อ apply'); },
 
     // ---------- 🖥️ Config Popup Window ----------
-    openConfigWindow()  { return configPopupOpen(); },
-    closeConfigWindow() { configPopupClose(); },
+    openConfigWindow()   { return configPopupOpen(); },
+    closeConfigWindow()  { configPopupClose(); },
+    toggleConfigWindow() { configPopupToggle(); },
 
     // ---------- Auto-Sell ----------
     sellOn()  { CFG.sellEnabled = true;  log('💰 Auto-Sell: ON'); },
@@ -4425,6 +4447,7 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
       clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop); clearInterval(storageLoop); clearInterval(buffLoop); clearInterval(consoleClearLoop); clearInterval(stealthLoop); clearInterval(disguiseStatusLoop); clearInterval(configPopupBroadcastLoop);
       for (const t of stealth.pendingReplyTimers) clearTimeout(t); stealth.pendingReplyTimers.clear();
       if (disguise.hotkeyHandler) window.removeEventListener('keydown', disguise.hotkeyHandler, true);
+      window.removeEventListener('keydown', configPopupHotkeyHandler, true);
       disguiseDisable();
       configPopupClose(); try { configChannel.close(); } catch (_) {}
       if (typeof uiLoop !== 'undefined') clearInterval(uiLoop);
