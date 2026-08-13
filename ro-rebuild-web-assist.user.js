@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.48.0-ray1
+// @version      4.49.0-ray2
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.48.0-ray1';
+  const VERSION = '4.49.0-ray2';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/0XSilentway/ray-ro/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3418,6 +3418,13 @@
       console.log('  ASSIST.navRecordOn() / navRecordOff()   // บันทึกเส้นทางเดิน');
       console.log('  ASSIST.navGetAllStats()                  // ดูข้อมูลทุกแมป');
       console.log('  ASSIST.navExport() / navImport(json)     // export/import ไฟล์');
+      console.log(`%c 🎯 Easy Farm (1-click) `, 'color:#4caf50;font-weight:bold');
+      console.log('  ASSIST.saveFarmHere()               // ยืนในแมปมอน → บันทึกเป็นฟาร์ม');
+      console.log('  ASSIST.saveKafraHere()              // ยืนใกล้ NPC Kafra → บันทึก');
+      console.log('  ASSIST.saveSellHere()               // ยืนใกล้ NPC ร้าน → บันทึก');
+      console.log('  ASSIST.startFarming()               // ▶️ เปิดทุกระบบฟาร์ม');
+      console.log('  ASSIST.stopFarming()                // ⏹ ปิดทุกระบบฟาร์ม');
+      console.log('  ASSIST.farmStatus()                 // ดู config ที่บันทึกไว้');
       console.log(`%c 🥷 Stealth `, 'color:#ff9800;font-weight:bold');
       console.log('  ASSIST.stealthIdleOn() / stealthIdleOff()          // พักสุ่มระหว่างฟาร์ม');
       console.log('  ASSIST.stealthIdleNow()                             // สั่งพักทันที (ทดสอบ)');
@@ -3694,6 +3701,74 @@
     toggleWarpBack(on) { CFG.warpBackToFarm = !!on; log('🗺️ วาร์ปกลับแมปฟาร์มอัตโนมัติ =', CFG.warpBackToFarm); },
     openMonitor() { openMonitor(); },
     getSellState() { return { state: sellState, full: inventoryFull, returnTo: sellReturnTo }; },
+
+    // ---------- 🎯 Easy Farm Mode (1-click) ----------
+    saveFarmHere() {
+      if (player.x == null || !currentMap) { log('⚠️ ยังไม่รู้พิกัด/แมปตัวละคร'); return false; }
+      CFG.farmMap = currentMap; CFG.farmMapX = Math.round(player.x); CFG.farmMapY = Math.round(player.y);
+      saveConfig();
+      log('📍 บันทึกแมปฟาร์ม:', CFG.farmMap, '@(', CFG.farmMapX + ',' + CFG.farmMapY + ')');
+      return true;
+    },
+    _findNearestNpc() {
+      if (player.x == null) return null;
+      let best = null, bestD = Infinity;
+      for (const e of entities.values()) {
+        if (e.kind !== 2 || !e.alive || e.x == null || !e.name) continue;
+        const d = Math.hypot(e.x - player.x, e.y - player.y);
+        if (d < bestD) { bestD = d; best = e; }
+      }
+      return best ? { name: best.name, x: best.x, y: best.y, dist: bestD } : null;
+    },
+    saveKafraHere() {
+      if (player.x == null || !currentMap) { log('⚠️ ยังไม่รู้พิกัด/แมปตัวละคร'); return false; }
+      const npc = ASSIST._findNearestNpc();
+      if (!npc) { log('⚠️ ไม่เจอ NPC ใกล้ตัว — ยืนใกล้ NPC Kafra (ระยะ ≤ 20 ช่อง) แล้วกดใหม่'); return false; }
+      CFG.kafraName = npc.name; CFG.kafraMap = currentMap;
+      CFG.kafraMapX = Math.round(player.x); CFG.kafraMapY = Math.round(player.y);
+      saveConfig();
+      log('🏦 บันทึก Kafra:', npc.name, '@', currentMap, '(', CFG.kafraMapX + ',' + CFG.kafraMapY, '| ระยะ', npc.dist.toFixed(1), 'ช่อง )');
+      return true;
+    },
+    saveSellHere() {
+      if (player.x == null || !currentMap) { log('⚠️ ยังไม่รู้พิกัด/แมปตัวละคร'); return false; }
+      const npc = ASSIST._findNearestNpc();
+      if (!npc) { log('⚠️ ไม่เจอ NPC ใกล้ตัว — ยืนใกล้ NPC ร้านขาย (ระยะ ≤ 20 ช่อง) แล้วกดใหม่'); return false; }
+      CFG.sellNpcName = npc.name; CFG.sellNpcMap = currentMap;
+      CFG.sellNpcX = Math.round(player.x); CFG.sellNpcY = Math.round(player.y);
+      saveConfig();
+      log('💰 บันทึกร้านขาย:', npc.name, '@', currentMap, '(', CFG.sellNpcX + ',' + CFG.sellNpcY, '| ระยะ', npc.dist.toFixed(1), 'ช่อง )');
+      return true;
+    },
+    startFarming() {
+      const missing = [];
+      if (!CFG.farmMap) missing.push('แมปฟาร์ม (กด 📍)');
+      if (!CFG.kafraName || !CFG.kafraMap) missing.push('Kafra (กด 🏦)');
+      if (missing.length > 0) { log('⚠️ ยังไม่พร้อมเริ่ม — ขาด:', missing.join(', ')); return false; }
+      CFG.combatEnabled = true; CFG.lootEnabled = true; CFG.restEnabled = true;
+      CFG.sellEnabled = true; CFG.storageEnabled = true; CFG.warpBackToFarm = true;
+      if (CFG.healItems && CFG.healItems.length > 0) CFG.healEnabled = true;
+      saveConfig();
+      log('▶️ START FARMING — combat/loot/rest/sell/kafra/warpback: ON' + (CFG.healEnabled ? ' | heal: ON' : ' | heal: OFF (ยังไม่ตั้ง item)'));
+      log('   ★ แมปฟาร์ม:', CFG.farmMap, '| Kafra:', CFG.kafraName, '@', CFG.kafraMap);
+      return true;
+    },
+    stopFarming() {
+      CFG.combatEnabled = false; CFG.lootEnabled = false; CFG.healEnabled = false;
+      CFG.sellEnabled = false; CFG.storageEnabled = false; CFG.warpBackToFarm = false;
+      saveConfig();
+      log('⏹ STOP FARMING — ปิดทุกระบบฟาร์ม (rest ยังเปิดไว้)');
+      return true;
+    },
+    farmStatus() {
+      return {
+        farm: CFG.farmMap ? { map: CFG.farmMap, x: CFG.farmMapX, y: CFG.farmMapY } : null,
+        kafra: (CFG.kafraName && CFG.kafraMap) ? { name: CFG.kafraName, map: CFG.kafraMap, x: CFG.kafraMapX, y: CFG.kafraMapY } : null,
+        sell: (CFG.sellNpcName && CFG.sellNpcMap) ? { name: CFG.sellNpcName, map: CFG.sellNpcMap, x: CFG.sellNpcX, y: CFG.sellNpcY } : null,
+        running: !!(CFG.combatEnabled && CFG.lootEnabled),
+        healReady: !!(CFG.healItems && CFG.healItems.length > 0),
+      };
+    },
 
     // ---------- Navigation (บันทึกเส้นทางเดิน + waypoint graph) ----------
     navRecordOn()  { CFG.navRecording = true;  log('🗺️ บันทึกเส้นทาง: ON — เดินเก็บข้อมูลในแมปที่ต้องการ'); },
@@ -4565,14 +4640,34 @@
           </div>
           <!-- 🗺️ Farm -->
           <div class="__assist_subpage" data-sub="farm">
+            <div id="__assist_farm_status" style="background:#232830;padding:8px;border-radius:4px;margin-bottom:8px;font-size:11px;line-height:1.7;">
+              📍 <b>แมปฟาร์ม:</b> <span id="__assist_farm_map_lbl" style="color:#9aa0a6;">-</span><br>
+              🏦 <b>Kafra:</b> <span id="__assist_farm_kafra_lbl" style="color:#9aa0a6;">-</span><br>
+              💰 <b>ร้านขาย:</b> <span id="__assist_farm_sell_lbl" style="color:#9aa0a6;">-</span>
+            </div>
             <div class="btns">
-              <button id="__assist_warptofarm" class="primary">🌀 วาร์ปไปแมปฟาร์ม</button>
+              <button id="__assist_savefarm" title="ยืนในแมปมอน แล้วกด">📍 บันทึกแมปนี้=ฟาร์ม</button>
+              <button id="__assist_savekafra" title="ยืนใกล้ NPC Kafra แล้วกด">🏦 NPC ใกล้สุด=Kafra</button>
+              <button id="__assist_savesell" title="ยืนใกล้ NPC ร้านขาย แล้วกด">💰 NPC ใกล้สุด=ร้านขาย</button>
+            </div>
+            <div class="btns" style="margin-top:8px;">
+              <button id="__assist_farm_start" class="primary" style="flex:2;font-size:14px;padding:10px 8px;">▶️ START FARMING</button>
+              <button id="__assist_farm_stop" class="danger" style="flex:1;font-size:14px;padding:10px 8px;">⏹ STOP</button>
+            </div>
+            <div class="btns" style="margin-top:8px;">
+              <button id="__assist_warptofarm">🌀 วาร์ปไปฟาร์ม</button>
               <button id="__assist_t_warpback" class="on">วาร์ปกลับอัตโนมัติ</button>
             </div>
-            <div class="field"><label>ชื่อแมปฟาร์ม</label><input type="text" id="__assist_farmmap" placeholder="เช่น cmd_fild01 (ว่าง=ปิด)"></div>
-            <div class="field"><label>พิกัดวาร์ป X</label><input type="number" id="__assist_farmx" placeholder="-999"><label style="margin-left:8px">Y</label><input type="number" id="__assist_farmy" placeholder="-999"><button id="__assist_usefarmpos" style="margin-left:8px;font-size:10px">ใช้พิกัดตัวละคร</button></div>
-            <div class="btns"><button id="__assist_applyfarm">ใช้ค่า farm map</button></div>
-            <div style="font-size:10px;color:#9aa0a6;margin-top:4px;">★ วิธีใช้: ยืนในแมปฟาร์ม → กด 'ใช้พิกัดตัวละคร' → ใช้ค่า farm map<br>★ ว่างช่องชื่อแมป = ปิดฟีเจอร์</div>
+            <div style="font-size:10px;color:#9aa0a6;margin-top:8px;line-height:1.6;">
+              <b>ขั้นตอน:</b><br>
+              1. เดินไปแมปมอน → กด <b>📍</b><br>
+              2. เดินไปหา NPC Kafra (ยืนใกล้) → กด <b>🏦</b><br>
+              3. (option) หา NPC ขายของ → กด <b>💰</b><br>
+              4. กลับแมปฟาร์ม → กด <b>▶️ START</b><br>
+              <br>★ ▶️ START = เปิด combat + loot + rest + sell + kafra + warpback พร้อมกัน<br>
+              ★ ของเต็ม → บอทวาร์ปหา Kafra เอง → ฝาก → กลับฟาร์ม<br>
+              ★ Manual: <code>ASSIST.setFarmMap('mapname', x, y)</code>
+            </div>
           </div>
           <!-- ⚔️ Combat -->
           <div class="__assist_subpage" data-sub="combat">
@@ -5117,13 +5212,11 @@
     // ---- farm map wires ----
     root.querySelector('#__assist_warptofarm').addEventListener('click', () => ASSIST.warpToFarm());
     root.querySelector('#__assist_t_warpback').addEventListener('click', () => { CFG.warpBackToFarm = !CFG.warpBackToFarm; ASSIST.toggleWarpBack(CFG.warpBackToFarm); });
-    root.querySelector('#__assist_usefarmpos').addEventListener('click', () => { ASSIST.useCurrentPosAsFarm(); });
-    root.querySelector('#__assist_applyfarm').addEventListener('click', () => {
-      const fm = root.querySelector('#__assist_farmmap').value.trim();
-      const fx = parseInt(root.querySelector('#__assist_farmx').value, 10);
-      const fy = parseInt(root.querySelector('#__assist_farmy').value, 10);
-      ASSIST.setFarmMap(fm, !isNaN(fx) ? fx : -999, !isNaN(fy) ? fy : -999);
-    });
+    root.querySelector('#__assist_savefarm').addEventListener('click', () => ASSIST.saveFarmHere());
+    root.querySelector('#__assist_savekafra').addEventListener('click', () => ASSIST.saveKafraHere());
+    root.querySelector('#__assist_savesell').addEventListener('click', () => ASSIST.saveSellHere());
+    root.querySelector('#__assist_farm_start').addEventListener('click', () => ASSIST.startFarming());
+    root.querySelector('#__assist_farm_stop').addEventListener('click', () => ASSIST.stopFarming());
     const tBtn = (sel, fn, cfgKey) => root.querySelector(sel).addEventListener('click', () => { CFG[cfgKey] = !CFG[cfgKey]; fn(CFG[cfgKey]); });
     tBtn('#__assist_t_antiks', (v) => ASSIST.toggleAntiKS(v), 'antiKS');
     tBtn('#__assist_t_avoidp', (v) => ASSIST.toggleAvoidPlayers(v), 'avoidOtherPlayers');
@@ -5763,10 +5856,22 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
       }
     }
     // farm map config sync
-    syncInput('#__assist_farmmap', CFG.farmMap);
-    syncInput('#__assist_farmx', CFG.farmMapX);
-    syncInput('#__assist_farmy', CFG.farmMapY);
     syncToggle('#__assist_t_warpback', CFG.warpBackToFarm);
+    const farmMapLbl = root.querySelector('#__assist_farm_map_lbl');
+    const farmKafraLbl = root.querySelector('#__assist_farm_kafra_lbl');
+    const farmSellLbl = root.querySelector('#__assist_farm_sell_lbl');
+    if (farmMapLbl) {
+      if (CFG.farmMap) { farmMapLbl.textContent = CFG.farmMap + ' (' + CFG.farmMapX + ',' + CFG.farmMapY + ')'; farmMapLbl.style.color = '#8bc34a'; }
+      else { farmMapLbl.textContent = 'ยังไม่บันทึก'; farmMapLbl.style.color = '#9aa0a6'; }
+    }
+    if (farmKafraLbl) {
+      if (CFG.kafraName && CFG.kafraMap) { farmKafraLbl.textContent = CFG.kafraName + ' @ ' + CFG.kafraMap + ' (' + CFG.kafraMapX + ',' + CFG.kafraMapY + ')'; farmKafraLbl.style.color = '#8bc34a'; }
+      else { farmKafraLbl.textContent = 'ยังไม่บันทึก'; farmKafraLbl.style.color = '#9aa0a6'; }
+    }
+    if (farmSellLbl) {
+      if (CFG.sellNpcName && CFG.sellNpcMap) { farmSellLbl.textContent = CFG.sellNpcName + ' @ ' + CFG.sellNpcMap + ' (' + CFG.sellNpcX + ',' + CFG.sellNpcY + ')'; farmSellLbl.style.color = '#8bc34a'; }
+      else { farmSellLbl.textContent = 'ยังไม่บันทึก (optional)'; farmSellLbl.style.color = '#9aa0a6'; }
+    }
 
     // log page (อัปเดตเฉพาะถ้าเปิดอยู่ เพื่อประหยัด)
     const logPage = root.querySelector('.__assist_page[data-page="log"]');
