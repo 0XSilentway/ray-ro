@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.51.3-ray7
+// @version      4.51.4-ray8
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.51.3-ray7';
+  const VERSION = '4.51.4-ray8';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/0XSilentway/ray-ro/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3080,10 +3080,11 @@
     log('🎭 disguise: OFF');
   }
   function disguiseToggle() { if (disguise.active) disguiseDisable(); else disguiseEnable(); }
-  // hotkey (window capture — จับก่อน game canvas)
+  // hotkey (window capture — จับก่อน game canvas); รองรับทั้ง Ctrl (Win/Linux) และ Cmd (Mac)
   disguise.hotkeyHandler = function(e) {
-    // Ctrl+Shift+H = toggle
-    if (e.ctrlKey && e.shiftKey && (e.key === 'H' || e.key === 'h')) {
+    const mod = e.ctrlKey || e.metaKey;
+    // Ctrl/Cmd+Shift+H = toggle
+    if (mod && e.shiftKey && (e.key === 'H' || e.key === 'h')) {
       e.preventDefault(); e.stopPropagation();
       disguiseToggle();
       return;
@@ -3096,6 +3097,7 @@
     }
   };
   window.addEventListener('keydown', disguise.hotkeyHandler, true);
+  document.addEventListener('keydown', disguise.hotkeyHandler, true);
   const disguiseStatusLoop = setInterval(disguiseUpdateStatus, 2000);
 
   // ============================================================
@@ -3326,14 +3328,16 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
     if (configPopup.win && !configPopup.win.closed) configPopupClose();
     else configPopupOpen();
   }
-  // hotkey Ctrl+Shift+P (Popup) — capture ก่อน game canvas
+  // hotkey Ctrl/Cmd+Shift+P (Popup) — capture ก่อน game canvas; register บนทั้ง window และ document เผื่อ Unity capture ก่อน
   const configPopupHotkeyHandler = function(e) {
-    if (e.ctrlKey && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
       e.preventDefault(); e.stopPropagation();
       configPopupToggle();
     }
   };
   window.addEventListener('keydown', configPopupHotkeyHandler, true);
+  document.addEventListener('keydown', configPopupHotkeyHandler, true);
   // auto-reopen หลัง reload ถ้าเคยเปิด (delay 3s ให้ ASSIST init ก่อน)
   try {
     if (localStorage.getItem(CONFIG_POPUP_STATE_KEY) === '1') {
@@ -4446,8 +4450,9 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
     stopAll() {
       clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop); clearInterval(storageLoop); clearInterval(buffLoop); clearInterval(consoleClearLoop); clearInterval(stealthLoop); clearInterval(disguiseStatusLoop); clearInterval(configPopupBroadcastLoop);
       for (const t of stealth.pendingReplyTimers) clearTimeout(t); stealth.pendingReplyTimers.clear();
-      if (disguise.hotkeyHandler) window.removeEventListener('keydown', disguise.hotkeyHandler, true);
+      if (disguise.hotkeyHandler) { window.removeEventListener('keydown', disguise.hotkeyHandler, true); document.removeEventListener('keydown', disguise.hotkeyHandler, true); }
       window.removeEventListener('keydown', configPopupHotkeyHandler, true);
+      document.removeEventListener('keydown', configPopupHotkeyHandler, true);
       disguiseDisable();
       configPopupClose(); try { configChannel.close(); } catch (_) {}
       if (typeof uiLoop !== 'undefined') clearInterval(uiLoop);
