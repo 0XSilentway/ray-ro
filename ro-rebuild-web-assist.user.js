@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.49.0-ray2
+// @version      4.50.0-ray3
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.49.0-ray2';
+  const VERSION = '4.50.0-ray3';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/0XSilentway/ray-ro/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -137,6 +137,7 @@
     'navRecording', 'navMergeRadius', 'navWanderUseNav', 'navWanderMode',
     'stealthIdleEnabled', 'stealthIdleMinIntervalMin', 'stealthIdleMaxIntervalMin', 'stealthIdleMinDurationSec', 'stealthIdleMaxDurationSec', 'stealthIdleSit',
     'chatReplyEnabled', 'chatReplyOnMentionOnly', 'chatReplyMinDelayMs', 'chatReplyMaxDelayMs', 'chatReplyPerSenderCooldownSec', 'chatReplyMessages',
+    'disguiseTabTitle', 'disguiseFavicon',
     'itemNames',
   ];
   function saveConfig() {
@@ -352,6 +353,12 @@
     chatReplyMaxDelayMs: 12000,              // หน่วงก่อนตอบ ช้าสุด N ms
     chatReplyPerSenderCooldownSec: 300,      // ห้ามตอบคนเดิมซ้ำภายใน N วินาที (กัน spam)
     chatReplyMessages: ['brb', 'sec', 'afk', 'hru', 'brb กินข้าว', 'sry lag', 'รอแป๊บ'],
+
+    // ---------- 🎭 DISGUISE (Google Sheets overlay + tab title/favicon swap) ----------
+    //   toggle: Ctrl+Shift+H (hotkey ในตัว) หรือ ASSIST.disguiseToggle()
+    //   Esc = panic exit (ปิด disguise ทันที)
+    disguiseTabTitle: 'Untitled spreadsheet - Google Sheets',
+    disguiseFavicon: 'https://ssl.gstatic.com/docs/spreadsheets/favicon3.ico',
 
     // ---------- TELEGRAM ALERT FILTERS ----------
     //   ★ ควบคุมว่าจะส่ง alert ประเภทไหนไป Telegram บ้าง
@@ -2916,6 +2923,182 @@
   }
 
   // ============================================================
+  //  🎭 DISGUISE — overlay หน้าเกมด้วย Google Sheets ปลอม + สลับ tab title/favicon
+  //   toggle: Ctrl+Shift+H | panic exit: Esc
+  //   สถานะบอทซ่อนในเซล A1 (HP/EXP/kills) → ดูเหมือนข้อมูล spreadsheet
+  //   ข้อจำกัด: tab ยังต้อง active (ห้าม minimize) ไม่งั้น browser throttle timer
+  // ============================================================
+  const disguise = {
+    active: false,
+    overlay: null,
+    origTitle: null,
+    origFaviconHref: null,
+    origFaviconType: null,
+    hotkeyHandler: null,
+    selectedCell: 'A1',
+  };
+  const DISGUISE_COLS = 'ABCDEFGHIJKLMNOPQRST'.split('');   // 20 columns
+  const DISGUISE_ROWS = 30;
+  // mock data (ภาษาไทย, dept + sales + student list — ดูเป็น office/school)
+  const DISGUISE_HEADERS = ['รหัส', 'ชื่อ-นามสกุล', 'แผนก', 'ตำแหน่ง', 'เริ่มงาน', 'เงินเดือน', 'OT', 'โบนัส', 'รวม', 'สถานะ', 'อีเมล', 'มือถือ', 'ไลน์', 'ที่อยู่', 'หมายเหตุ', 'อัปเดต', 'ผู้ตรวจ', 'อนุมัติ', 'จ่ายแล้ว', 'ล็อค'];
+  const DISGUISE_NAMES = ['สมชาย ใจดี', 'นภา สายทอง', 'ณัฐพล ทวีศักดิ์', 'อรอุมา สินไชย', 'พิชิต วงศ์ไทย', 'จันทร์เพ็ญ ใหญ่มาก', 'ธนกร ปัญญาดี', 'สุภาพร รักสงบ', 'วีระ พงษ์ประเสริฐ', 'มัณฑนา บุญส่ง', 'ปรีชา อร่ามศรี', 'ลลิตา จิรวัฒน์', 'ภาคิน เจริญยิ่ง', 'ศิริพร ธรรมชัย', 'อนุชา รุ่งเรือง'];
+  const DISGUISE_DEPTS = ['บัญชี', 'ทรัพยากรบุคคล', 'ไอที', 'การตลาด', 'ปฏิบัติการ', 'จัดซื้อ'];
+  const DISGUISE_POSITIONS = ['ผู้จัดการ', 'ผู้ช่วย', 'พนักงาน', 'ซีเนียร์', 'จูเนียร์', 'หัวหน้าฝ่าย'];
+  const DISGUISE_STATUS = ['✓ ปกติ', 'รอตรวจ', '⚠ แก้ไข', '✓ อนุมัติ', '✓ จ่ายแล้ว'];
+  function disguiseGenCell(col, row) {
+    if (row === 0) return DISGUISE_HEADERS[col] || '';
+    const r = row - 1;
+    // seed pseudo-random from (col, row) เพื่อ deterministic
+    const seed = (col * 137 + row * 71) % 1000;
+    const nameIdx = (r * 3 + col) % DISGUISE_NAMES.length;
+    switch (col) {
+      case 0: return 'EMP' + String(1000 + r).padStart(4, '0');
+      case 1: return DISGUISE_NAMES[nameIdx];
+      case 2: return DISGUISE_DEPTS[r % DISGUISE_DEPTS.length];
+      case 3: return DISGUISE_POSITIONS[(r + 1) % DISGUISE_POSITIONS.length];
+      case 4: return (2020 + (r % 5)) + '-' + String(1 + (r % 12)).padStart(2, '0') + '-' + String(1 + (r % 28)).padStart(2, '0');
+      case 5: return (18000 + seed * 20).toLocaleString('en-US');
+      case 6: return (1000 + (seed % 5000)).toLocaleString('en-US');
+      case 7: return (500 + (seed % 3000)).toLocaleString('en-US');
+      case 8: return (20000 + seed * 22).toLocaleString('en-US');
+      case 9: return DISGUISE_STATUS[r % DISGUISE_STATUS.length];
+      case 10: return 'emp' + (1000 + r) + '@company.co.th';
+      case 11: return '08' + String(10000000 + seed * 100).slice(-8);
+      default: return '';
+    }
+  }
+  function disguiseGetStatusCell() {
+    // ซ่อน bot status ใน A1 (แทน header "รหัส") — ดูเหมือนสูตร/label
+    const hpStr = (hp && hp.cur != null) ? hp.cur + '/' + (hp.max || '?') : '-';
+    const pctStr = (hp && hp.cur != null && hp.max) ? Math.round(hp.cur / hp.max * 100) + '%' : '-';
+    const mapStr = currentMap || '-';
+    return 'HP ' + hpStr + ' (' + pctStr + ') · ' + mapStr;
+  }
+  function disguiseBuildOverlay() {
+    const o = document.createElement('div');
+    o.id = '__assist_disguise';
+    o.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#f8f9fa;color:#202124;font-family:Roboto,Arial,sans-serif;overflow:hidden;user-select:none;';
+    // rows HTML
+    let gridHtml = '<tr><th style="background:#f8f9fa;border:1px solid #e0e0e0;width:40px;height:22px;font-weight:normal;color:#5f6368;"></th>';
+    for (const c of DISGUISE_COLS) gridHtml += '<th style="background:#f8f9fa;border:1px solid #e0e0e0;padding:2px 8px;font-weight:normal;color:#5f6368;font-size:12px;min-width:90px;">' + c + '</th>';
+    gridHtml += '</tr>';
+    for (let r = 0; r <= DISGUISE_ROWS; r++) {
+      gridHtml += '<tr>';
+      gridHtml += '<td style="background:#f8f9fa;border:1px solid #e0e0e0;text-align:center;color:#5f6368;font-size:11px;width:40px;height:22px;">' + (r + 1) + '</td>';
+      for (let c = 0; c < DISGUISE_COLS.length; c++) {
+        const val = (r === 0 && c === 0) ? disguiseGetStatusCell() : disguiseGenCell(c, r);
+        const align = (c === 5 || c === 6 || c === 7 || c === 8) ? 'right' : 'left';
+        gridHtml += '<td data-cell="' + DISGUISE_COLS[c] + (r + 1) + '" style="border:1px solid #e0e0e0;padding:2px 6px;font-size:12px;height:22px;text-align:' + align + ';overflow:hidden;white-space:nowrap;cursor:cell;">' + val + '</td>';
+      }
+      gridHtml += '</tr>';
+    }
+    o.innerHTML = ''
+      + '<div style="background:#fff;border-bottom:1px solid #dadce0;padding:6px 12px;display:flex;align-items:center;gap:10px;">'
+      + '<img src="' + CFG.disguiseFavicon + '" style="width:24px;height:24px;" onerror="this.style.display=\'none\'">'
+      + '<div>'
+      +   '<div style="font-size:14px;color:#202124;font-weight:500;">Untitled spreadsheet</div>'
+      +   '<div style="font-size:11px;color:#5f6368;margin-top:2px;">File · Edit · View · Insert · Format · Data · Tools · Extensions · Help · <span style="color:#0d652d;">✓ Saved to Drive</span></div>'
+      + '</div>'
+      + '<div style="margin-left:auto;display:flex;gap:6px;align-items:center;">'
+      +   '<span style="background:#0b8043;color:#fff;padding:6px 12px;border-radius:4px;font-size:12px;font-weight:500;">Share</span>'
+      +   '<span style="width:32px;height:32px;border-radius:50%;background:#1a73e8;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:500;">U</span>'
+      + '</div>'
+      + '</div>'
+      + '<div style="background:#f1f3f4;padding:4px 12px;font-size:12px;color:#5f6368;border-bottom:1px solid #dadce0;display:flex;align-items:center;gap:12px;">'
+      +   '<span>↶ Undo</span><span>↷ Redo</span><span>🖨 Print</span><span>|</span>'
+      +   '<span>100% ▾</span><span>|</span><span>฿ % .0 123 ▾</span><span>|</span>'
+      +   '<span>Arial ▾</span><span>10 ▾</span><span><b>B</b> <i>I</i> <u>U</u></span>'
+      + '</div>'
+      + '<div style="background:#fff;padding:4px 12px;font-size:12px;border-bottom:1px solid #dadce0;display:flex;align-items:center;gap:8px;">'
+      +   '<span id="__assist_disguise_ref" style="background:#f1f3f4;border:1px solid #dadce0;padding:2px 8px;min-width:60px;">A1</span>'
+      +   '<span style="color:#5f6368;">fx</span>'
+      +   '<span id="__assist_disguise_formula" style="flex:1;color:#202124;"></span>'
+      + '</div>'
+      + '<div style="overflow:auto;height:calc(100vh - 130px);background:#fff;">'
+      +   '<table style="border-collapse:collapse;font-family:Arial,sans-serif;">' + gridHtml + '</table>'
+      + '</div>'
+      + '<div style="position:fixed;bottom:0;left:0;right:0;background:#f1f3f4;border-top:1px solid #dadce0;padding:4px 12px;display:flex;gap:6px;font-size:12px;color:#5f6368;">'
+      +   '<span style="background:#fff;padding:4px 10px;border-top:2px solid #0b8043;color:#202124;">Sheet1</span>'
+      +   '<span style="padding:4px 10px;">Sheet2</span>'
+      +   '<span style="padding:4px 10px;">Q4</span>'
+      +   '<span style="margin-left:auto;color:#5f6368;">Sum: 0</span>'
+      + '</div>';
+    // cell click interaction
+    o.addEventListener('click', (e) => {
+      const td = e.target.closest('td[data-cell]');
+      if (!td) return;
+      o.querySelectorAll('td[data-cell]').forEach(el => { el.style.outline = ''; el.style.background = ''; });
+      td.style.outline = '2px solid #1a73e8';
+      td.style.background = '#e8f0fe';
+      disguise.selectedCell = td.getAttribute('data-cell');
+      const ref = o.querySelector('#__assist_disguise_ref');
+      const formula = o.querySelector('#__assist_disguise_formula');
+      if (ref) ref.textContent = disguise.selectedCell;
+      if (formula) formula.textContent = td.textContent;
+    });
+    return o;
+  }
+  function disguiseUpdateStatus() {
+    if (!disguise.active || !disguise.overlay) return;
+    const cellA1 = disguise.overlay.querySelector('td[data-cell="A1"]');
+    if (cellA1) cellA1.textContent = disguiseGetStatusCell();
+  }
+  function disguiseEnable() {
+    if (disguise.active) return;
+    if (!disguise.origTitle) disguise.origTitle = document.title;
+    const linkOld = document.querySelector('link[rel~="icon"]');
+    if (linkOld) {
+      disguise.origFaviconHref = linkOld.href;
+      disguise.origFaviconType = linkOld.type;
+      linkOld.href = CFG.disguiseFavicon;
+      linkOld.type = 'image/x-icon';
+    } else {
+      const nl = document.createElement('link'); nl.rel = 'icon'; nl.href = CFG.disguiseFavicon; nl.type = 'image/x-icon';
+      nl.setAttribute('data-assist-disguise', '1');
+      document.head.appendChild(nl);
+    }
+    document.title = CFG.disguiseTabTitle;
+    disguise.overlay = disguiseBuildOverlay();
+    document.body.appendChild(disguise.overlay);
+    disguise.active = true;
+    log('🎭 disguise: ON — Ctrl+Shift+H หรือ Esc เพื่อปิด');
+  }
+  function disguiseDisable() {
+    if (!disguise.active) return;
+    if (disguise.overlay) { disguise.overlay.remove(); disguise.overlay = null; }
+    if (disguise.origTitle) document.title = disguise.origTitle;
+    const addedLink = document.querySelector('link[data-assist-disguise="1"]');
+    if (addedLink) addedLink.remove();
+    else {
+      const linkNow = document.querySelector('link[rel~="icon"]');
+      if (linkNow && disguise.origFaviconHref) {
+        linkNow.href = disguise.origFaviconHref;
+        if (disguise.origFaviconType) linkNow.type = disguise.origFaviconType;
+      }
+    }
+    disguise.active = false;
+    log('🎭 disguise: OFF');
+  }
+  function disguiseToggle() { if (disguise.active) disguiseDisable(); else disguiseEnable(); }
+  // hotkey (window capture — จับก่อน game canvas)
+  disguise.hotkeyHandler = function(e) {
+    // Ctrl+Shift+H = toggle
+    if (e.ctrlKey && e.shiftKey && (e.key === 'H' || e.key === 'h')) {
+      e.preventDefault(); e.stopPropagation();
+      disguiseToggle();
+      return;
+    }
+    // Esc = panic exit (ปิดเท่านั้น ไม่เปิด)
+    if (e.key === 'Escape' && disguise.active) {
+      e.preventDefault(); e.stopPropagation();
+      disguiseDisable();
+      return;
+    }
+  };
+  window.addEventListener('keydown', disguise.hotkeyHandler, true);
+  const disguiseStatusLoop = setInterval(disguiseUpdateStatus, 2000);
+
+  // ============================================================
   //  NAVIGATION — บันทึกเส้นทางเดิน + สร้าง waypoint graph
   //    Trail (ตามเวลา) → merge nodes (ใกล้กัน) + edges (เชื่อมต่อกัน)
   //    localStorage per-map (roAssistNav_<map>) + export/import + sync GitHub
@@ -3438,6 +3621,11 @@
       console.log('  ASSIST.setChatReplyCooldown(300)                    // คนเดิม cooldown 300s');
       console.log('  ASSIST.chatReplyTest("Foo","hey Novice")            // ทดสอบตอบ');
       console.log('  ASSIST.stealthStatus()                              // ดูสถานะ stealth');
+      console.log(`%c 🎭 Disguise (Work Mode) `, 'color:#0b8043;font-weight:bold');
+      console.log('  ★ Hotkey: Ctrl+Shift+H (toggle) | Esc (panic exit)');
+      console.log('  ASSIST.disguiseOn() / disguiseOff() / disguiseToggle()');
+      console.log('  ASSIST.setDisguiseTabTitle("Google Sheets")         // ชื่อ tab');
+      console.log('  ASSIST.setDisguiseFavicon("https://...")            // favicon');
       console.log('  ASSIST.name(935,"Feather")        // ตั้งชื่อ item');
       console.log('  ASSIST.status()  ASSIST.config()  ASSIST.stopAll()');
     },
@@ -3638,6 +3826,13 @@
     setChatReplyDelay(minMs, maxMs) { CFG.chatReplyMinDelayMs = Math.max(100, Number(minMs) || 3000); CFG.chatReplyMaxDelayMs = Math.max(CFG.chatReplyMinDelayMs + 500, Number(maxMs) || 12000); log('🥷 chat reply delay:', CFG.chatReplyMinDelayMs + '-' + CFG.chatReplyMaxDelayMs + 'ms'); saveConfig(); },
     setChatReplyCooldown(sec) { CFG.chatReplyPerSenderCooldownSec = Math.max(10, Number(sec) || 300); log('🥷 chat reply per-sender cooldown:', CFG.chatReplyPerSenderCooldownSec + 's'); saveConfig(); },
     chatReplyTest(name, msg, chatType) { stealthMaybeReply(name || 'TestPlayer', msg || (playerName ? ('hey ' + playerName) : 'hey'), chatType == null ? 0 : chatType); },
+
+    // ---------- 🎭 Disguise (Work Mode overlay) ----------
+    disguiseOn()  { disguiseEnable(); },
+    disguiseOff() { disguiseDisable(); },
+    disguiseToggle() { disguiseToggle(); },
+    setDisguiseTabTitle(t) { CFG.disguiseTabTitle = String(t || 'Untitled spreadsheet - Google Sheets'); if (disguise.active) document.title = CFG.disguiseTabTitle; saveConfig(); log('🎭 tab title:', CFG.disguiseTabTitle); },
+    setDisguiseFavicon(url) { CFG.disguiseFavicon = String(url || ''); saveConfig(); log('🎭 favicon:', CFG.disguiseFavicon, '— ต้อง disguiseOff/On ใหม่เพื่อ apply'); },
 
     // ---------- Auto-Sell ----------
     sellOn()  { CFG.sellEnabled = true;  log('💰 Auto-Sell: ON'); },
@@ -3958,8 +4153,10 @@
     getImportantLogs() { return importantLogBuf.slice(); },
     clearImportantLogs() { importantLogBuf.length = 0; log('🧹 ล้าง log สำคัญ'); },
     stopAll() {
-      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop); clearInterval(storageLoop); clearInterval(buffLoop); clearInterval(consoleClearLoop); clearInterval(stealthLoop);
+      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop); clearInterval(storageLoop); clearInterval(buffLoop); clearInterval(consoleClearLoop); clearInterval(stealthLoop); clearInterval(disguiseStatusLoop);
       for (const t of stealth.pendingReplyTimers) clearTimeout(t); stealth.pendingReplyTimers.clear();
+      if (disguise.hotkeyHandler) window.removeEventListener('keydown', disguise.hotkeyHandler, true);
+      disguiseDisable();
       if (typeof uiLoop !== 'undefined') clearInterval(uiLoop);
       log('⏹ หยุดระบบทั้งหมดแล้ว');
     },
