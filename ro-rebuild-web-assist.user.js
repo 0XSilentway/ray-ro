@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.51.4-ray8
+// @version      4.52.0-ray9
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.51.4-ray8';
+  const VERSION = '4.52.0-ray9';
   const GITHUB_RAW = 'https://raw.githubusercontent.com/0XSilentway/ray-ro/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3080,24 +3080,15 @@
     log('🎭 disguise: OFF');
   }
   function disguiseToggle() { if (disguise.active) disguiseDisable(); else disguiseEnable(); }
-  // hotkey (window capture — จับก่อน game canvas); รองรับทั้ง Ctrl (Win/Linux) และ Cmd (Mac)
+  // hotkey — เหลือแค่ Esc panic exit (Cmd+Shift+H ชน browser home)
+  //   toggle เปิด/ปิด disguise ใช้ 🎭 floating button หรือ ASSIST.disguiseToggle()
   disguise.hotkeyHandler = function(e) {
-    const mod = e.ctrlKey || e.metaKey;
-    // Ctrl/Cmd+Shift+H = toggle
-    if (mod && e.shiftKey && (e.key === 'H' || e.key === 'h')) {
-      e.preventDefault(); e.stopPropagation();
-      disguiseToggle();
-      return;
-    }
-    // Esc = panic exit (ปิดเท่านั้น ไม่เปิด)
     if (e.key === 'Escape' && disguise.active) {
       e.preventDefault(); e.stopPropagation();
       disguiseDisable();
-      return;
     }
   };
   window.addEventListener('keydown', disguise.hotkeyHandler, true);
-  document.addEventListener('keydown', disguise.hotkeyHandler, true);
   const disguiseStatusLoop = setInterval(disguiseUpdateStatus, 2000);
 
   // ============================================================
@@ -3328,22 +3319,32 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
     if (configPopup.win && !configPopup.win.closed) configPopupClose();
     else configPopupOpen();
   }
-  // hotkey Ctrl/Cmd+Shift+P (Popup) — capture ก่อน game canvas; register บนทั้ง window และ document เผื่อ Unity capture ก่อน
-  const configPopupHotkeyHandler = function(e) {
-    const mod = e.ctrlKey || e.metaKey;
-    if (mod && e.shiftKey && (e.key === 'P' || e.key === 'p')) {
-      e.preventDefault(); e.stopPropagation();
-      configPopupToggle();
-    }
-  };
-  window.addEventListener('keydown', configPopupHotkeyHandler, true);
-  document.addEventListener('keydown', configPopupHotkeyHandler, true);
+  // (hotkey ถูกลบ เพราะ Cmd+Shift+P ชน DevTools Command menu; toggle popup ผ่าน 🖥️ floating button หรือ ASSIST.toggleConfigWindow())
+  const configPopupHotkeyHandler = function() {};
   // auto-reopen หลัง reload ถ้าเคยเปิด (delay 3s ให้ ASSIST init ก่อน)
   try {
     if (localStorage.getItem(CONFIG_POPUP_STATE_KEY) === '1') {
       setTimeout(() => { if (!configPopup.win || configPopup.win.closed) configPopupOpen(); }, 3000);
     }
   } catch (_) {}
+
+  // ---- 🎈 Floating quick-access buttons (bottom-right, always visible) ----
+  //   ทางเลือกเสถียรกว่า hotkey เพราะ browser reserve Cmd+Shift+P/H
+  function mountFloatingButtons() {
+    if (document.getElementById('__assist_float_dock')) return;
+    const dock = document.createElement('div');
+    dock.id = '__assist_float_dock';
+    dock.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:2147483646;display:flex;flex-direction:column;gap:6px;pointer-events:none;';
+    dock.innerHTML = `
+      <button id="__assist_float_popup" title="Config Window (popup)" style="pointer-events:auto;width:44px;height:44px;border-radius:50%;border:none;background:#1a73e8;color:#fff;font-size:20px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.4);">🖥️</button>
+      <button id="__assist_float_disguise" title="Disguise (Google Sheets)" style="pointer-events:auto;width:44px;height:44px;border-radius:50%;border:none;background:#0b8043;color:#fff;font-size:20px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,0.4);">🎭</button>
+    `;
+    document.body.appendChild(dock);
+    document.getElementById('__assist_float_popup').addEventListener('click', () => configPopupToggle());
+    document.getElementById('__assist_float_disguise').addEventListener('click', () => disguiseToggle());
+  }
+  if (document.body) mountFloatingButtons();
+  else document.addEventListener('DOMContentLoaded', mountFloatingButtons, { once: true });
 
   // ============================================================
   //  NAVIGATION — บันทึกเส้นทางเดิน + สร้าง waypoint graph
@@ -3869,12 +3870,12 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
       console.log('  ASSIST.chatReplyTest("Foo","hey Novice")            // ทดสอบตอบ');
       console.log('  ASSIST.stealthStatus()                              // ดูสถานะ stealth');
       console.log(`%c 🎭 Disguise (Work Mode) `, 'color:#0b8043;font-weight:bold');
-      console.log('  ★ Hotkey: Ctrl+Shift+H (toggle) | Esc (panic exit)');
+      console.log('  ★ ปุ่ม 🎭 ลอยมุมขวาล่าง (toggle) | Esc = panic exit');
       console.log('  ASSIST.disguiseOn() / disguiseOff() / disguiseToggle()');
       console.log('  ASSIST.setDisguiseTabTitle("Google Sheets")         // ชื่อ tab');
       console.log('  ASSIST.setDisguiseFavicon("https://...")            // favicon');
       console.log(`%c 🖥️ Config Popup Window `, 'color:#1a73e8;font-weight:bold');
-      console.log('  ★ Hotkey: Ctrl+Shift+P (toggle) | auto-reopen หลัง reload ถ้าเคยเปิด');
+      console.log('  ★ ปุ่ม 🖥️ ลอยมุมขวาล่าง (toggle) | auto-reopen หลัง reload');
       console.log('  ASSIST.openConfigWindow() / closeConfigWindow() / toggleConfigWindow()');
       console.log('  ASSIST.name(935,"Feather")        // ตั้งชื่อ item');
       console.log('  ASSIST.status()  ASSIST.config()  ASSIST.stopAll()');
