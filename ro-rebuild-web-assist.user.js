@@ -1,13 +1,13 @@
 // ==UserScript==
-// @name         RO Rebuild Web Assist
-// @namespace    ro-rebuild-web-assist
-// @version      4.47.0
-// @description  ผู้ช่วยเล่นเว็บ client RO — auto-loot, auto-heal, auto-combat, auto-rest + อัปเดตอัตโนมัติ (Unity WebGL / WebSocket)
+// @name         RAY-RO Assist
+// @namespace    ray-ro
+// @version      4.48.0-ray1
+// @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
 // @grant        none
-// @updateURL    https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js
-// @downloadURL  https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js
+// @updateURL    https://raw.githubusercontent.com/0XSilentway/ray-ro/main/ro-rebuild-web-assist.user.js
+// @downloadURL  https://raw.githubusercontent.com/0XSilentway/ray-ro/main/ro-rebuild-web-assist.user.js
 // ==/UserScript==
 
 /* ==========================================================================
@@ -116,8 +116,8 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.47.0';
-  const GITHUB_RAW = 'https://raw.githubusercontent.com/superogira/ro-rebuild-web-assist/main/ro-rebuild-web-assist.user.js';
+  const VERSION = '4.48.0-ray1';
+  const GITHUB_RAW = 'https://raw.githubusercontent.com/0XSilentway/ray-ro/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
   const PERSIST_KEYS = [
@@ -135,6 +135,8 @@
     'storageEnabled', 'kafraName', 'kafraMap', 'kafraMapX', 'kafraMapY', 'kafraChoice', 'depositOnFull', 'depositAfterSell', 'depositItemIds',
     'farmMap', 'farmMapX', 'farmMapY', 'warpBackToFarm',
     'navRecording', 'navMergeRadius', 'navWanderUseNav', 'navWanderMode',
+    'stealthIdleEnabled', 'stealthIdleMinIntervalMin', 'stealthIdleMaxIntervalMin', 'stealthIdleMinDurationSec', 'stealthIdleMaxDurationSec', 'stealthIdleSit',
+    'chatReplyEnabled', 'chatReplyOnMentionOnly', 'chatReplyMinDelayMs', 'chatReplyMaxDelayMs', 'chatReplyPerSenderCooldownSec', 'chatReplyMessages',
     'itemNames',
   ];
   function saveConfig() {
@@ -333,6 +335,23 @@
     //  หลัง respawn → บังคับนั่งพักจนเลือดเต็ม → กลับฟาร์ม
     autoRespawnEnabled: true,
     autoRespawnDelayMs: 3000,     // รอ N ms หลังตายก่อนส่ง respawn (กันสแปม — ถ้า server lag)
+
+    // ---------- 🥷 STEALTH — anti-detection (Phase 1) ----------
+    //  default OFF — เปิดจาก sub-tab "🥷 Stealth" หรือ ASSIST.stealthIdleOn() / ASSIST.chatReplyOn()
+    //  จุดประสงค์: ให้ดูเป็นคนเล่นจริงมากขึ้น (ยืนนิ่งบ้าง + ตอบแชทบ้าง)
+    stealthIdleEnabled: false,               // ★ พักสุ่มระหว่างฟาร์ม — บล็อก combat + optionally นั่ง
+    stealthIdleMinIntervalMin: 20,           // ห่างจากรอบก่อนอย่างน้อย N นาที ก่อนเริ่มรอบใหม่
+    stealthIdleMaxIntervalMin: 60,           // ห่างจากรอบก่อนอย่างมาก N นาที
+    stealthIdleMinDurationSec: 30,           // ระยะเวลาพัก อย่างน้อย N วินาที
+    stealthIdleMaxDurationSec: 180,          // ระยะเวลาพัก อย่างมาก N วินาที
+    stealthIdleSit: true,                    // นั่งลงระหว่างพัก (ดูเป็นธรรมชาติ)
+
+    chatReplyEnabled: false,                 // ★ ตอบแชทอัตโนมัติ (nearby/shout) — ลดสัญญาณ "บอทเงียบ"
+    chatReplyOnMentionOnly: true,            // ตอบเฉพาะเมื่อมีชื่อเราในข้อความ (ปลอดภัยกว่า)
+    chatReplyMinDelayMs: 3000,               // หน่วงก่อนตอบ เร็วสุด N ms
+    chatReplyMaxDelayMs: 12000,              // หน่วงก่อนตอบ ช้าสุด N ms
+    chatReplyPerSenderCooldownSec: 300,      // ห้ามตอบคนเดิมซ้ำภายใน N วินาที (กัน spam)
+    chatReplyMessages: ['brb', 'sec', 'afk', 'hru', 'brb กินข้าว', 'sry lag', 'รอแป๊บ'],
 
     // ---------- TELEGRAM ALERT FILTERS ----------
     //   ★ ควบคุมว่าจะส่ง alert ประเภทไหนไป Telegram บ้าง
@@ -1174,6 +1193,8 @@
           if (chatType === 0 && CFG.telegramAlertNearby !== false) sendRelayAlert(alertMsg);
           else if (chatType === 2 && CFG.telegramAlertWhisper !== false) sendRelayAlert(alertMsg);
         }
+        // 🥷 stealth chat reply — ต้องอยู่หลัง telegram เพื่อไม่บล็อกกัน
+        try { stealthMaybeReply(name, message, chatType); } catch (_) {}
       } catch (e) {}
     }
     // 0x38 MAP_DATA: zone-enter data — ★ มี zeny ที่ offset 9 (u32LE)
@@ -2809,6 +2830,92 @@
   }, CFG.combatTickMs);
 
   // ============================================================
+  //  🥷 STEALTH — anti-detection helpers (Phase 1)
+  //   1) Idle break: สุ่มยืน/นั่งพักระหว่างฟาร์ม เพื่อดูเป็นคน AFK
+  //   2) Chat reply: ตอบแชท nearby/shout อัตโนมัติ (mention-only default)
+  //  ทั้งสองระบบ default OFF — เปิดเองผ่าน ASSIST commands
+  // ============================================================
+  const stealth = {
+    idleActive: false,
+    idleStartedAt: 0,
+    idleEndsAt: 0,
+    nextIdleAt: 0,               // 0 = ยังไม่ schedule (จะ schedule ใน tick แรก)
+    wasSitting: false,           // เราสั่งให้นั่งเองไหม (ไว้ลุกตอนจบ)
+    lastReplyBySender: new Map(),// senderName → timestamp ms
+    pendingReplyTimers: new Set(),
+  };
+  const stealthRand = (min, max) => min + Math.random() * (max - min);
+  function stealthScheduleNextIdle(now) {
+    const minMs = Math.max(1, CFG.stealthIdleMinIntervalMin) * 60 * 1000;
+    const maxMs = Math.max(minMs, CFG.stealthIdleMaxIntervalMin * 60 * 1000);
+    stealth.nextIdleAt = now + stealthRand(minMs, maxMs);
+  }
+  function stealthStartIdle(now, manual) {
+    if (stealth.idleActive) return false;
+    const minMs = Math.max(1000, CFG.stealthIdleMinDurationSec * 1000);
+    const maxMs = Math.max(minMs, CFG.stealthIdleMaxDurationSec * 1000);
+    const dur = stealthRand(minMs, maxMs);
+    stealth.idleActive = true;
+    stealth.idleStartedAt = now;
+    stealth.idleEndsAt = now + dur;
+    // block combat ตลอดช่วงพัก (ใช้ combatCooldownUntil ที่ combatLoop เช็คอยู่แล้ว)
+    combatCooldownUntil = Math.max(combatCooldownUntil, stealth.idleEndsAt + 500);
+    stealth.wasSitting = false;
+    if (CFG.stealthIdleSit && !isResting && hp.cur != null && hp.cur > 0) {
+      if (sendSit()) { stealth.wasSitting = true; isResting = true; }
+    }
+    log('🥷 stealth idle:', (manual ? '(manual) ' : '') + 'พัก ' + Math.round(dur / 1000) + 's' + (stealth.wasSitting ? ' (นั่ง)' : ''));
+    return true;
+  }
+  function stealthEndIdle(now) {
+    if (!stealth.idleActive) return;
+    if (stealth.wasSitting && isResting) {
+      if (sendStand()) { isResting = false; }
+      stealth.wasSitting = false;
+    }
+    stealth.idleActive = false;
+    stealthScheduleNextIdle(now);
+    log('🥷 stealth idle: จบ — รอบถัดไปอีก ~' + Math.round((stealth.nextIdleAt - now) / 60000) + ' นาที');
+  }
+  const stealthLoop = setInterval(() => {
+    if (!CFG.stealthIdleEnabled) return;
+    const now = nowMs();
+    if (stealth.idleActive) { if (now >= stealth.idleEndsAt) stealthEndIdle(now); return; }
+    if (stealth.nextIdleAt === 0) { stealthScheduleNextIdle(now); return; }
+    if (now < stealth.nextIdleAt) return;
+    // เงื่อนไขเริ่มพัก: ต้องไม่โดนรุม + ไม่ได้อยู่กลาง sell/storage
+    if (mobAttackers && mobAttackers.size > 0) return;
+    if (sellState !== 'IDLE') return;
+    if (storageState !== 'IDLE') return;
+    stealthStartIdle(now, false);
+  }, 5000);
+
+  // ---- Chat reply ----
+  function stealthMaybeReply(senderName, message, chatType) {
+    if (!CFG.chatReplyEnabled) return;
+    if (chatType !== 0 && chatType !== 1) return;              // nearby/shout only (whisper opcode ไม่แน่ใจ)
+    if (!senderName || !message) return;
+    if (playerName && senderName === playerName) return;       // ไม่ตอบตัวเอง
+    if (CFG.chatReplyOnMentionOnly) {
+      if (!playerName) return;
+      if (!message.toLowerCase().includes(playerName.toLowerCase())) return;
+    }
+    const now = nowMs();
+    const last = stealth.lastReplyBySender.get(senderName) || 0;
+    const cdMs = Math.max(10, CFG.chatReplyPerSenderCooldownSec) * 1000;
+    if (now - last < cdMs) return;
+    const msgs = Array.isArray(CFG.chatReplyMessages) && CFG.chatReplyMessages.length > 0 ? CFG.chatReplyMessages : ['brb'];
+    const reply = msgs[Math.floor(Math.random() * msgs.length)];
+    const delay = stealthRand(Math.max(500, CFG.chatReplyMinDelayMs), Math.max(CFG.chatReplyMinDelayMs + 500, CFG.chatReplyMaxDelayMs));
+    stealth.lastReplyBySender.set(senderName, now);            // reserve ทันทีกัน race
+    const t = setTimeout(() => {
+      stealth.pendingReplyTimers.delete(t);
+      if (sendChat(reply, chatType)) log('🥷 chat reply → ' + senderName + ': ' + reply + ' (หลัง ' + Math.round(delay) + 'ms)');
+    }, delay);
+    stealth.pendingReplyTimers.add(t);
+  }
+
+  // ============================================================
   //  NAVIGATION — บันทึกเส้นทางเดิน + สร้าง waypoint graph
   //    Trail (ตามเวลา) → merge nodes (ใกล้กัน) + edges (เชื่อมต่อกัน)
   //    localStorage per-map (roAssistNav_<map>) + export/import + sync GitHub
@@ -3311,6 +3418,19 @@
       console.log('  ASSIST.navRecordOn() / navRecordOff()   // บันทึกเส้นทางเดิน');
       console.log('  ASSIST.navGetAllStats()                  // ดูข้อมูลทุกแมป');
       console.log('  ASSIST.navExport() / navImport(json)     // export/import ไฟล์');
+      console.log(`%c 🥷 Stealth `, 'color:#ff9800;font-weight:bold');
+      console.log('  ASSIST.stealthIdleOn() / stealthIdleOff()          // พักสุ่มระหว่างฟาร์ม');
+      console.log('  ASSIST.stealthIdleNow()                             // สั่งพักทันที (ทดสอบ)');
+      console.log('  ASSIST.setStealthIdleInterval(20, 60)               // ทุก 20-60 นาที');
+      console.log('  ASSIST.setStealthIdleDuration(30, 180)              // พัก 30-180s');
+      console.log('  ASSIST.setStealthIdleSit(true)                      // นั่งลงระหว่างพัก');
+      console.log('  ASSIST.chatReplyOn() / chatReplyOff()               // ตอบแชท nearby อัตโนมัติ');
+      console.log('  ASSIST.setChatReplyMentionOnly(true)                // ตอบเฉพาะเมื่อมีชื่อเรา');
+      console.log('  ASSIST.setChatReplyMessages("brb","sec","hru")      // ข้อความสุ่มตอบ');
+      console.log('  ASSIST.setChatReplyDelay(3000, 12000)               // หน่วง 3-12s ก่อนตอบ');
+      console.log('  ASSIST.setChatReplyCooldown(300)                    // คนเดิม cooldown 300s');
+      console.log('  ASSIST.chatReplyTest("Foo","hey Novice")            // ทดสอบตอบ');
+      console.log('  ASSIST.stealthStatus()                              // ดูสถานะ stealth');
       console.log('  ASSIST.name(935,"Feather")        // ตั้งชื่อ item');
       console.log('  ASSIST.status()  ASSIST.config()  ASSIST.stopAll()');
     },
@@ -3479,6 +3599,38 @@
     setRestUntil(pct) { CFG.restUntilPercent = pct; log('🪑 ลุกยืนตอน HP ≥', pct + '%'); },
     setRestMaxSec(sec) { CFG.restMaxSec = sec; log('🪑 นั่งนานสุด', sec + 's'); },
     isResting() { return isResting; },
+
+    // ---------- 🥷 Stealth (Phase 1) ----------
+    stealthIdleOn()  { CFG.stealthIdleEnabled = true;  stealth.nextIdleAt = 0; log('🥷 Stealth Idle: ON (พัก ' + CFG.stealthIdleMinDurationSec + '-' + CFG.stealthIdleMaxDurationSec + 's ทุก ' + CFG.stealthIdleMinIntervalMin + '-' + CFG.stealthIdleMaxIntervalMin + ' นาที)'); saveConfig(); },
+    stealthIdleOff() { CFG.stealthIdleEnabled = false; if (stealth.idleActive) stealthEndIdle(nowMs()); log('🥷 Stealth Idle: OFF'); saveConfig(); },
+    stealthIdleNow() { if (stealthStartIdle(nowMs(), true)) return true; log('⚠️ ไม่สามารถเริ่มพักได้ตอนนี้ (กำลังพักอยู่/ระบบอื่นทำงาน)'); return false; },
+    setStealthIdleInterval(minMin, maxMin) { CFG.stealthIdleMinIntervalMin = Math.max(1, Number(minMin) || 20); CFG.stealthIdleMaxIntervalMin = Math.max(CFG.stealthIdleMinIntervalMin, Number(maxMin) || 60); stealth.nextIdleAt = 0; log('🥷 idle interval:', CFG.stealthIdleMinIntervalMin + '-' + CFG.stealthIdleMaxIntervalMin + ' นาที'); saveConfig(); },
+    setStealthIdleDuration(minSec, maxSec) { CFG.stealthIdleMinDurationSec = Math.max(5, Number(minSec) || 30); CFG.stealthIdleMaxDurationSec = Math.max(CFG.stealthIdleMinDurationSec, Number(maxSec) || 180); log('🥷 idle duration:', CFG.stealthIdleMinDurationSec + '-' + CFG.stealthIdleMaxDurationSec + 's'); saveConfig(); },
+    setStealthIdleSit(on) { CFG.stealthIdleSit = !!on; log('🥷 idle sit:', CFG.stealthIdleSit); saveConfig(); },
+    stealthStatus() {
+      const now = nowMs();
+      return {
+        enabled: CFG.stealthIdleEnabled,
+        active: stealth.idleActive,
+        endsInSec: stealth.idleActive ? Math.round((stealth.idleEndsAt - now) / 1000) : 0,
+        nextInMin: (!stealth.idleActive && stealth.nextIdleAt > 0) ? Math.round((stealth.nextIdleAt - now) / 60000) : null,
+        intervalMin: [CFG.stealthIdleMinIntervalMin, CFG.stealthIdleMaxIntervalMin],
+        durationSec: [CFG.stealthIdleMinDurationSec, CFG.stealthIdleMaxDurationSec],
+        chatReply: {
+          enabled: CFG.chatReplyEnabled,
+          mentionOnly: CFG.chatReplyOnMentionOnly,
+          messages: CFG.chatReplyMessages,
+          repliedTo: [...stealth.lastReplyBySender.keys()],
+        },
+      };
+    },
+    chatReplyOn()  { CFG.chatReplyEnabled = true;  log('🥷 Chat Reply: ON' + (CFG.chatReplyOnMentionOnly ? ' (mention-only)' : ' (ทุกข้อความ)')); saveConfig(); },
+    chatReplyOff() { CFG.chatReplyEnabled = false; log('🥷 Chat Reply: OFF'); saveConfig(); },
+    setChatReplyMentionOnly(on) { CFG.chatReplyOnMentionOnly = !!on; log('🥷 chat reply mention-only:', CFG.chatReplyOnMentionOnly); saveConfig(); },
+    setChatReplyMessages(...msgs) { CFG.chatReplyMessages = msgs.length > 0 ? msgs : ['brb']; log('🥷 chat reply messages:', CFG.chatReplyMessages.join(' | ')); saveConfig(); },
+    setChatReplyDelay(minMs, maxMs) { CFG.chatReplyMinDelayMs = Math.max(100, Number(minMs) || 3000); CFG.chatReplyMaxDelayMs = Math.max(CFG.chatReplyMinDelayMs + 500, Number(maxMs) || 12000); log('🥷 chat reply delay:', CFG.chatReplyMinDelayMs + '-' + CFG.chatReplyMaxDelayMs + 'ms'); saveConfig(); },
+    setChatReplyCooldown(sec) { CFG.chatReplyPerSenderCooldownSec = Math.max(10, Number(sec) || 300); log('🥷 chat reply per-sender cooldown:', CFG.chatReplyPerSenderCooldownSec + 's'); saveConfig(); },
+    chatReplyTest(name, msg, chatType) { stealthMaybeReply(name || 'TestPlayer', msg || (playerName ? ('hey ' + playerName) : 'hey'), chatType == null ? 0 : chatType); },
 
     // ---------- Auto-Sell ----------
     sellOn()  { CFG.sellEnabled = true;  log('💰 Auto-Sell: ON'); },
@@ -3731,7 +3883,8 @@
     getImportantLogs() { return importantLogBuf.slice(); },
     clearImportantLogs() { importantLogBuf.length = 0; log('🧹 ล้าง log สำคัญ'); },
     stopAll() {
-      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop); clearInterval(storageLoop); clearInterval(buffLoop); clearInterval(consoleClearLoop);
+      clearInterval(healLoop); clearInterval(lootLoop); clearInterval(warpLoop); clearInterval(combatLoop); clearInterval(sellLoop); clearInterval(storageLoop); clearInterval(buffLoop); clearInterval(consoleClearLoop); clearInterval(stealthLoop);
+      for (const t of stealth.pendingReplyTimers) clearTimeout(t); stealth.pendingReplyTimers.clear();
       if (typeof uiLoop !== 'undefined') clearInterval(uiLoop);
       log('⏹ หยุดระบบทั้งหมดแล้ว');
     },
