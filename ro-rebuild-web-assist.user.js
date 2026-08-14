@@ -300,8 +300,9 @@
 
     // ---------- AUTO-SKILL (ใช้สกิลตามเงื่อนไข — mirror bot.js autoSkill) ----------
     //  3 mode: targeted (Bash/Charge), AoE (Magnum Break), self-cast (Two-Hand Quicken)
-    //  แต่ละ skill: {name, skillId, level, targeted, selfCast, intervalMin, mobCountMin,
-    //                 maxUsesPerTarget, maxDistance, minDistance, spMin, cooldownMs}
+    //  แต่ละ skill: {name, skillId, level, targeted, selfCast, ground, intervalMin, mobCountMin,
+    //                 maxUsesPerTarget, maxDistance, minDistance, spMin, cooldownMs, hpBelow}
+    //  ★ hpBelow: ยิงเมื่อ HP% < N (เช่น First Aid hpBelow:50)
     skillEnabled: false,          // ★ default OFF
     skills: [],                   // รายการ skill config
     disabledSkillIds: [],         // skillId ที่ toggle ปิดชั่วคราว
@@ -2657,16 +2658,25 @@
 
     // === 2.8 Auto-Skill (ใช้สกิลตามเงื่อนไข — ก่อน attack) ===
     //   mirror bot.js _maybeSkill:3440-3538 — ทีละสกิลต่อ tick
-    //   mode: targeted (Bash/Charge), AoE (Magnum), self-cast (Quicken)
-    if (CFG.skillEnabled && CFG.skills && CFG.skills.length && target) {
+    //   mode: targeted (Bash/Charge), AoE (Magnum), self-cast (Quicken/First Aid)
+    //   ★ selfCast ไม่ต้องมี target → รัน loop ได้เสมอ (First Aid ยิงตอน HP ต่ำแม้ไม่มีมอน)
+    if (CFG.skillEnabled && CFG.skills && CFG.skills.length) {
       const mobCount = getMobAttackerCount();
       const curSP = sp.cur;
       const curSPmax = sp.max;
+      const curHpPct = hpPct();
       const disabled = Array.isArray(CFG.disabledSkillIds) ? CFG.disabledSkillIds : [];
       for (const skill of CFG.skills) {
         if (!skill || skill.skillId == null) continue;
         if (disabled.includes(skill.skillId)) continue;
+        // ★ non-selfCast ต้องมี target
+        if (!skill.selfCast && !target) continue;
         const lastUse = lastSkillUse.get(skill.skillId) || 0;
+        // ★ HP gate (First Aid: hpBelow=50 → ยิงเมื่อ HP% < 50 เท่านั้น)
+        const hpBelow = Number(skill.hpBelow) || 0;
+        if (hpBelow > 0) {
+          if (curHpPct == null || curHpPct >= hpBelow) continue;
+        }
         // ★ timer mode (intervalMin > 0) — self-cast buff
         const intervalMin = Number(skill.intervalMin) || 0;
         if (intervalMin > 0) {
@@ -3994,6 +4004,7 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
         level: Number(s.level) || 1,
         targeted: !!s.targeted,
         selfCast: !!s.selfCast,
+        ground: !!s.ground,
         intervalMin: Number(s.intervalMin) || 0,
         mobCountMin: Number(s.mobCountMin) || 0,
         maxUsesPerTarget: Number(s.maxUsesPerTarget) || 1,
@@ -4001,6 +4012,7 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
         minDistance: Number(s.minDistance) || 0,
         spMin: Number(s.spMin) || 0,
         cooldownMs: Number(s.cooldownMs) || 2000,
+        hpBelow: Number(s.hpBelow) || 0,
       }));
       log('✨ skills =', CFG.skills.length, 'รายการ');
     },
@@ -4567,6 +4579,8 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
     { name: 'Improve Concentration', skillId: 27, level: 10, selfCast: true, intervalMin: 4.3, spMin: 70, cooldownMs: 1, job: 'Archer/Hunter', desc: 'บัพ DEX+AGI' },
     { name: 'Charge Arrow', skillId: 25, level: 1, targeted: true, maxUsesPerTarget: 1, maxDistance: 10, spMin: 20, cooldownMs: 60000, job: 'Archer/Hunter', desc: 'ดันมอนออกไกล' },
     { name: 'Arrow Shower', skillId: 26, level: 5, ground: true, maxUsesPerTarget: 1, maxDistance: 10, mobCountMin: 2, spMin: 20, cooldownMs: 60000, job: 'Hunter', desc: 'AoE ธนู (เลือกพื้นที่)' },
+    // ---- Novice ----
+    { name: 'First Aid', skillId: 142, level: 1, selfCast: true, hpBelow: 50, spMin: 3, cooldownMs: 2000, job: 'Novice', desc: 'ฮีลตัวเอง +HP เมื่อ HP<50%' },
   ];
   function skillPresetGroups() {
     const groups = {};
@@ -4712,11 +4726,12 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
         const spStr = s.spMin ? ` SP≥${s.spMin}` : '';
         const cdStr = s.intervalMin > 0 ? ` ทุก${s.intervalMin}นาที` : (s.cooldownMs ? ` cd${(s.cooldownMs/1000).toFixed(0)}s` : '');
         const distStr = s.maxDistance ? ` ≤${s.maxDistance}ช่อง` : '';
+        const hpStr = s.hpBelow ? ` HP<${s.hpBelow}%` : '';
         let row = `<div style="padding:5px 6px;border-bottom:1px solid rgba(255,255,255,.04)">
           <div style="display:flex;align-items:center;gap:8px">
             <span style="flex:1;font-size:11px;color:#e8e8e8">${s.name || 'skill_'+s.skillId} <span style="color:#5f6368">(#${s.skillId} Lv${s.level})</span></span>
             <span style="font-size:10px;color:${modeColor};background:${modeColor}22;padding:1px 6px;border-radius:3px">${mode}</span>
-            <span style="font-size:10px;color:#9aa0a6">${spStr}${cdStr}${distStr}</span>
+            <span style="font-size:10px;color:#9aa0a6">${spStr}${cdStr}${distStr}${hpStr}</span>
             <button data-editskill="${i}" style="background:#2a3441;border:1px solid #3a3f4b;border-radius:4px;color:#8ab4f8;cursor:pointer;font-size:11px;padding:3px 8px">✎</button>
             <button class="rmbtn" data-rmskill="${i}" style="background:#4a2020;border:1px solid #6a3030;border-radius:4px;color:#e8e8e8;cursor:pointer;font-size:11px;padding:3px 8px">✕</button>
           </div>`;
@@ -4749,6 +4764,7 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
             <div style="display:flex;gap:6px;margin-bottom:6px">
               ${fld('ระยะเวลา (นาที) — self', `<input data-edit="intervalMin" type="number" step="0.5" value="${s.intervalMin||0}" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">`, 'สำหรับ self-cast: ร่ายใหม่ทุก N นาที (0=ใช้ cooldownMs แทน)')}
               ${fld('ระยะต่ำสุด (ช่อง)', `<input data-edit="minDistance" type="number" value="${s.minDistance||0}" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">`, 'ต้องอยู่ไกลอย่างน้อย N ช่อง (เช่น Charge Attack)')}
+              ${fld('HP% ต่ำกว่า (self)', `<input data-edit="hpBelow" type="number" value="${s.hpBelow||0}" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:4px 6px;font-size:10px;font-family:inherit">`, 'ยิงเมื่อ HP% < N (เช่น First Aid = 50). 0 = ปิด')}
             </div>
             <div style="display:flex;gap:4px">
               <button data-saveedit="${i}" style="flex:1;background:#1b5e20;border:1px solid #2e7d32;border-radius:4px;color:#a5d6a7;cursor:pointer;font-size:10px;padding:5px;font-family:inherit">✓ บันทึก</button>
@@ -4803,6 +4819,7 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
         <div style="display:flex;gap:4px;margin-bottom:6px">
           <input id="__assist_skill_interval" type="number" placeholder="intervalMin (self)" value="0" step="0.5" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit">
           <input id="__assist_skill_mindist" type="number" placeholder="minDist" value="0" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit">
+          <input id="__assist_skill_hpbelow" type="number" placeholder="hpBelow% (self)" value="0" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit">
         </div>
         <button id="__assist_skill_addbtn" style="width:100%;background:#1b5e20;border:1px solid #2e7d32;border-radius:5px;color:#a5d6a7;cursor:pointer;font-size:11px;padding:6px;font-family:inherit">+ เพิ่ม skill</button>
       </div>`;
@@ -4861,6 +4878,7 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
           s.mobCountMin = parseInt(getVal('mobCountMin'), 10) || 0;
           s.intervalMin = parseFloat(getVal('intervalMin')) || 0;
           s.minDistance = parseInt(getVal('minDistance'), 10) || 0;
+          s.hpBelow = parseInt(getVal('hpBelow'), 10) || 0;
           saveConfigDebounced();
           editingSkillIdx = -1;
           log('✎ แก้ไข skill', s.name);
@@ -4882,10 +4900,11 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
           const p = SKILL_PRESETS[idx];
           ASSIST.addSkill({
             name: p.name, skillId: p.skillId, level: p.level,
-            targeted: !!p.targeted, selfCast: !!p.selfCast,
+            targeted: !!p.targeted, selfCast: !!p.selfCast, ground: !!p.ground,
             intervalMin: p.intervalMin || 0, mobCountMin: p.mobCountMin || 0,
             maxUsesPerTarget: p.maxUsesPerTarget || 1, maxDistance: p.maxDistance || 0,
             minDistance: p.minDistance || 0, spMin: p.spMin || 0, cooldownMs: p.cooldownMs || 2000,
+            hpBelow: p.hpBelow || 0,
           });
           saveConfigDebounced();
           log('⚡ เพิ่ม preset:', p.name, '(#' + p.skillId + ')');
@@ -4905,13 +4924,14 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
           const mobCountMin = parseInt(bodyEl.querySelector('#__assist_skill_mobmin').value, 10) || 0;
           const intervalMin = parseFloat(bodyEl.querySelector('#__assist_skill_interval').value) || 0;
           const minDistance = parseInt(bodyEl.querySelector('#__assist_skill_mindist').value, 10) || 0;
+          const hpBelow = parseInt(bodyEl.querySelector('#__assist_skill_hpbelow').value, 10) || 0;
           if (isNaN(skillId)) { return; }
           ASSIST.addSkill({
             name, skillId, level,
             targeted: mode === 'targeted',
             ground: mode === 'ground',
             selfCast: mode === 'self',
-            intervalMin, mobCountMin, maxUsesPerTarget, maxDistance, minDistance, spMin, cooldownMs,
+            intervalMin, mobCountMin, maxUsesPerTarget, maxDistance, minDistance, spMin, cooldownMs, hpBelow,
           });
           saveConfigDebounced();
           refresh();
