@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.63.0
+// @version      4.63.1
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -2610,38 +2610,42 @@
     // ★ ยิง ATTACK ไม่นาน (server กำลัง auto-walk-and-attack) → อย่าส่ง MOVE ทับ
     if (target && target.lastAttackAt && (now - target.lastAttackAt) < 2500) return 'ATTACK_COOLDOWN';
     if (!target) return false;
-    // ★ ส่ง MOVE ครั้งเดียว ไปพิกัดมอน (server เดินให้ถึง)
-    //   re-issue เมื่อ: (a) ครั้งแรก, (b) มอนเคลื่อนที่ >3 ช่อง จากที่เคยส่ง, (c) MOVE เก่าเกิน 5s
-    const sentTo = target._walkSentTo;
-    const movedFromSent = sentTo ? Math.hypot(m.x - sentTo.x, m.y - sentTo.y) : 999;
-    const sentAge = target._walkSentAt ? (now - target._walkSentAt) : 999999;
-    if (target._walkSentAt === 0 || movedFromSent > 3 || sentAge > 5000) {
-      // ★ stuck detection: ตำแหน่ง player ไม่ขยับ 4s + MOVE ยิงแล้ว → ติดกำแพง
-      if (target._lastMovePos && sentAge > 4000) {
-        const playerMoved = Math.hypot(player.x - target._lastMovePos.x, player.y - target._lastMovePos.y);
-        if (playerMoved < 2) {
-          log('🚧 stuck: player ไม่ขยับ 4s+ dist=' + dist.toFixed(1));
-          return 'STUCK';
-        }
-      }
-      target._walkSentAt = now;
-      target._walkSentTo = { x: m.x, y: m.y };
+
+    // ★ track player movement (ทุก tick) — ใช้เช็ค stuck ที่แท้จริง (ไม่ใช่ send time)
+    if (!target._lastMovePos) {
       target._lastMovePos = { x: player.x, y: player.y };
       target._lastMovePosAt = now;
-      // send MOVE ไปตำแหน่งมอน (server pathfind + walk)
-      if (sendMove(m.x, m.y)) {
-        log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', Math.round(m.x), Math.round(m.y) + ') dist=' + dist.toFixed(1));
-        return 'WALKING';
-      }
-      return false;
-    }
-    // ★ กำลังเดินอยู่ — check ว่า player อัพเดต pos ไหม (ถ้าอัพเดต reset stuck timer)
-    if (target._lastMovePos) {
+    } else {
       const playerMoved = Math.hypot(player.x - target._lastMovePos.x, player.y - target._lastMovePos.y);
       if (playerMoved >= 2) {
         target._lastMovePos = { x: player.x, y: player.y };
         target._lastMovePosAt = now;
       }
+    }
+
+    // ★ stuck: player ไม่ขยับตำแหน่งจริงๆ นาน 6s (มี MOVE ยิงแล้ว) → server ไม่ทำ walk
+    //   ยาวกว่า 4s เพราะ RO Rebuild server บางที pathfind ช้า
+    if (target._walkSentAt > 0 && (now - target._lastMovePosAt) > 6000) {
+      log('🚧 stuck: player ไม่ขยับ ' + ((now - target._lastMovePosAt)/1000).toFixed(1) + 's dist=' + dist.toFixed(1));
+      return 'STUCK';
+    }
+
+    // ★ re-issue MOVE เมื่อ: (a) ครั้งแรก, (b) มอนเคลื่อน >3 ช่อง, (c) MOVE เก่าเกิน 4s + player หยุดขยับ 2s
+    const sentTo = target._walkSentTo;
+    const movedFromSent = sentTo ? Math.hypot(m.x - sentTo.x, m.y - sentTo.y) : 999;
+    const sentAge = target._walkSentAt ? (now - target._walkSentAt) : 999999;
+    const playerIdleMs = now - target._lastMovePosAt;
+    const shouldReissue = target._walkSentAt === 0
+                        || movedFromSent > 3
+                        || (sentAge > 4000 && playerIdleMs > 1500);   // เก่า + player นิ่ง = re-issue
+    if (shouldReissue) {
+      target._walkSentAt = now;
+      target._walkSentTo = { x: m.x, y: m.y };
+      if (sendMove(m.x, m.y)) {
+        log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', Math.round(m.x), Math.round(m.y) + ') dist=' + dist.toFixed(1));
+        return 'WALKING';
+      }
+      return false;
     }
     return 'WALKING';
     return false;
