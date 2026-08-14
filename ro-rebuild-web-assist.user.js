@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.70.0
+// @version      4.71.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -127,7 +127,7 @@
     'lootEnabled', 'lootDelayAfterDropMs', 'lootUseKillPos', 'pickRadiusKill', 'filter', 'sendThrottleMs',
     'warpLootEnabled',
     'combatEnabled', 'targetWhitelist', 'targetBlacklist', 'attackRange', 'rangedAttackRange',
-    'maxAcquireDistance', 'searchRadii', 'maxChaseDistance', 'antiKS', 'avoidOtherPlayers', 'targetLowestHpFirst',
+    'maxAcquireDistance', 'searchRadii', 'maxChaseDistance', 'antiKS', 'avoidOtherPlayers', 'targetLowestHpFirst', 'entityStaleSec',
     'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius', 'fleeMonsters', 'fleeMonsterRadius', 'maxEngageSecSlow', 'slowMonsterSubIds', 'mobPriorities', 'autoTuneHpGuard',
     'wanderEnabled', 'warpFindEnabled', 'warpToMonster', 'stuckWarpOnAbandon', 'stealthWarpMode', 'wanderRadius',
     'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs', 'autoRespawnEnabled', 'autoRespawnDelayMs', 'telegramAlertCard', 'telegramAlertFlee', 'telegramAlertBotMention', 'telegramAlertNearby', 'telegramAlertWhisper', 'telegramBotToken', 'telegramChatId',
@@ -163,6 +163,13 @@
       if (CFG.filter && Array.isArray(CFG.filter.exceptItems) && CFG.filter.exceptItems.includes(909)) {
         CFG.filter.exceptItems = CFG.filter.exceptItems.filter(x => x !== 909);
         log('💾 migration: เอา Jellopy(909) ออกจาก exceptItems (default block เก่า)');
+        saveConfigDebounced();
+      }
+      // ★ migration: maxAcquireDistance default 30 → 14 (RO view range). ปรับถ้ายังเป็นค่าเก่า
+      if (CFG.maxAcquireDistance === 30) {
+        CFG.maxAcquireDistance = 14;
+        CFG.searchRadii = [1, 3, 5, 8, 11, 14];
+        log('💾 migration: cap maxAcquireDistance 30 → 14 (RO view range)');
         saveConfigDebounced();
       }
       log('💾 โหลดค่าที่บันทึกไว้จากเครื่อง (' + PERSIST_KEYS.filter(k => k in saved).length + ' รายการ)');
@@ -477,8 +484,9 @@
     //   default true = พฤติกรรมเหมือน OpenKore/classic bot
     approachBeforeAttack: true,
     rangedAttackRange: 8,         // 0 = ใช้ attackRange; >0 = นักธนูตีไกลได้ N ช่อง
-    maxAcquireDistance: 30,       // ★ เลือกเป้า + ส่ง ATTACK ได้ในระยะนี้ (cap สูงสุด)
-    searchRadii: [1,3,5, 10, 15, 20, 30], // ★ progressive search — ค้นจากรัศมีเล็กก่อน ถ้าเจอใช้เลย (mirror bot.js:3944)
+    maxAcquireDistance: 14,       // ★ เลือกเป้า + ส่ง ATTACK ได้ในระยะนี้ — cap ที่ RO view range (~14 tile)
+    searchRadii: [1, 3, 5, 8, 11, 14],   // ★ progressive search — ไม่เกิน view range
+    entityStaleSec: 15,           // ★ _lastSeenAt เก่า >N s → ถือว่า ghost (มอนออกจากจอ) → skip
     maxChaseDistance: 40,         // ★ เดินไล่ตามมอนได้สูงสุด N ช่อง (ไกลกว่านี้ abandon หาตัวอื่น)
     walkStepDistance: 20,         // ★ สั่งเดินทีละ N ช่อง (game click-walk cap ~20)
     maxWalkDistance: 15,          // (legacy — ใช้น้อย เพราะ server walk-and-attack เอง)
@@ -2258,6 +2266,11 @@
       if (d > 12) return 'ghost (no sub, dist ' + d.toFixed(0) + '>12)';
     }
     if (m.sub != null && m.sub < 1000) return 'sub<1000 (player, not mob)';
+    // ★ entity aging: server ไม่ส่ง update > N s = มอนออกจากจอ (ghost)
+    const staleMs = (CFG.entityStaleSec || 15) * 1000;
+    if (m._lastSeenAt && (now - m._lastSeenAt) > staleMs) {
+      return 'ghost (stale ' + ((now - m._lastSeenAt)/1000).toFixed(0) + 's, ออกนอกจอ)';
+    }
     if (matchList(m, CFG.targetBlacklist)) return 'permanent blacklist';
     if (CFG.targetWhitelist.length && !matchList(m, CFG.targetWhitelist)) return 'not in whitelist';
     if (tempBlacklistHit(m, now)) return 'temp blacklist (ตีไม่เข้า)';
@@ -2293,6 +2306,9 @@
     // ★ RO Rebuild: monster sub ID ≥ 1000 (Poring=4000). sub < 1000 = player job class (Novice=4, Swordsman=1, etc)
     //   กัน bug entity ที่ SPAWN ยังไม่มา default kind=1 → บอทตีคน
     if (m.sub != null && m.sub < 1000) return false;
+    // ★ entity aging: มอนที่ server ไม่ส่ง update > entityStaleSec → ghost (นอกจอ)
+    const staleMs = (CFG.entityStaleSec || 15) * 1000;
+    if (m._lastSeenAt && (now - m._lastSeenAt) > staleMs) return false;
     if (matchList(m, CFG.targetBlacklist)) return false;
     if (CFG.targetWhitelist.length && !matchList(m, CFG.targetWhitelist)) return false;
     if (tempBlacklistHit(m, now)) return false;   // ★ ตีไม่เข้า → skip 60s (auto)
