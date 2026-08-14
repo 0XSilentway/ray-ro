@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.59.0
+// @version      4.59.1
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -2575,11 +2575,22 @@
     const mobCount = getMobAttackerCount();
 
     // === -1. AUTO-REST (priority สูงสุด — ก่อน flee) ===
-    //   ถ้า HP ต่ำ + ไม่โดนรุม + ไม่มี target ที่ยังไม่ตาย → นั่งพัก
+    //   ถ้า HP ต่ำ + ไม่โดนรุม + ไม่มี target + ไม่มีมอนใกล้ที่ตีได้ → นั่งพัก
     //   ★ target guard: มอนบางตัว (Poring/Egg) ไม่ตีกลับ → mobCount=0 ตลอด → ห้ามนั่งกลางตี
+    //   ★ nearby guard: มี Poring ยืนข้างๆ (ยังไม่ aggro) → ไปตีก่อน ค่อยนั่ง
     if (CFG.restEnabled && pct != null && hp.cur != null) {
       const activeTarget = target && (() => { const m = entities.get(target.id); return m && m.alive; })();
-      if (!isResting && pct < CFG.restHpPercent && mobCount === 0 && !activeTarget) {
+      const nowLocal = now;
+      let hasNearbyTargetable = false;
+      if (CFG.combatEnabled && player.x != null) {
+        const radius = Math.min(CFG.maxAcquireDistance || 30, 15);   // 15 ช่อง = ตัวใกล้จริงๆ
+        for (const e of entities.values()) {
+          if (e.kind !== 1 || !e.alive || e.x == null) continue;
+          if (Math.hypot(e.x - player.x, e.y - player.y) > radius) continue;
+          if (isTargetable(e, nowLocal)) { hasNearbyTargetable = true; break; }
+        }
+      }
+      if (!isResting && pct < CFG.restHpPercent && mobCount === 0 && !activeTarget && !hasNearbyTargetable) {
         // เริ่มนั่งพัก
         if (sendSit()) {
           isResting = true;
@@ -2589,9 +2600,10 @@
         return;
       }
       if (isResting) {
-        // โดนรุม/มี target ใหม่ระหว่างนั่ง → ลุกทันที (ไม่ return — ให้ flee/defensive ทำงานต่อ)
-        if (mobCount > 0 || activeTarget) {
-          if (sendStand()) { log('⚠️ ' + (activeTarget ? 'มี target' : 'โดนรุม') + 'ระหว่างนั่ง → ลุกทันที'); }
+        // โดนรุม/มี target/มอนใกล้ระหว่างนั่ง → ลุกทันที
+        if (mobCount > 0 || activeTarget || hasNearbyTargetable) {
+          const reason = activeTarget ? 'มี target' : (mobCount > 0 ? 'โดนรุม' : 'มีมอนใกล้');
+          if (sendStand()) { log('⚠️ ' + reason + 'ระหว่างนั่ง → ลุกทันที'); }
           isResting = false;
         }
         // ฟื้นถึง restUntilPercent หรือหมดเวลา → ลุก
