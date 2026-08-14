@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.59.1
+// @version      4.60.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -2041,10 +2041,15 @@
   let noMonsterSince = 0;        // timestamp ที่เริ่มไม่เจอมอน
   let lastWanderAt = 0;
   let lastNavLogTag = '';   // ★ track last nav log target (กัน spam log)
-  // ★ persistent wander heading — เดินทิศเดียวหลายก้าวก่อน reroll (กันเดินไปมาที่เดิม)
-  let wanderHeading = null;         // angle (radian) — null = reroll ทันที
-  let wanderStepsInHeading = 0;     // นับก้าวที่เดินทิศนี้แล้ว
-  let wanderAnchor = null;          // {x, y} จุดเริ่มต้น heading — reroll ถ้าเดินได้น้อย
+  // ★ destination-based wander (OpenKore route_randomWalk style)
+  //   เลือกจุดหมาย 1 จุด → ส่ง MOVE 1 ครั้ง → รอ arrival → เลือกใหม่
+  //   ไม่ reroll ระหว่างเดิน (ให้ server เดินให้ถึงจุดหมาย)
+  let wanderDest = null;            // {x, y, sentAt, lastPos: {x,y,t}} — จุดหมายปัจจุบัน
+  const WANDER_ARRIVE_TILES = 3;    // ถือว่าถึงเมื่อ dist ≤ N
+  const WANDER_TIMEOUT_MS = 20000;  // เดินนานเกิน = timeout → เลือกใหม่
+  const WANDER_STUCK_MS = 4000;     // ตำแหน่งไม่ขยับ N ms = ติดกำแพง → เลือกใหม่
+  const WANDER_STEP_MIN = 15;       // จุดหมายห่างขั้นต่ำ N ช่อง
+  const WANDER_STEP_MAX = 30;       // จุดหมายห่างสูงสุด N ช่อง
   let lastFleeAt = 0;
   let lastWarpFindAt = 0;        // throttle warpFind กัน spam
   let lastTargetSwitchAt = 0;    // throttle การสลับ target (กันสลับบ่อย)
@@ -2458,57 +2463,70 @@
       lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, firstAttackAt: 0,
       stuckCount: 0, warpCount: 0, lastDist: null,
       zeroDamageAttacks: 0,
+      _walkSentAt: 0, _walkSentTo: null, _lastMovePos: null, _lastMovePosAt: 0,
     };
+    wanderDest = null;   // ★ reset wander dest — จะเลือกใหม่หลังจบ combat
     lastTargetSwitchAt = now;
     skillUsesOnTarget.clear();   // ★ reset per-target skill uses (mirror bot.js:4083)
     return target;
   }
   // เดินไปหามอน — เดินเส้นตรงไปทางมอน + stuck detection ดูระยะลดลง
   let lastWalkToTargetAt = 0;
-  let lastDistToTarget = null;
+  let lastDistToTarget = null;      // legacy — ยังใช้ให้ approach fall-back
   let noProgressTicks = 0;
-  let walkToTargetTid = null;   // ★ track target id ที่ walkToTarget กำลังจัดการ — reset stuck เมื่อ target เปลี่ยน
-  const abandonCooldown = new Map();   // entityId → timestamp ที่ abandon (กันเลือกตัวเดิมซ้ำเลย)
+  let walkToTargetTid = null;
+  const abandonCooldown = new Map();
+  // ★ OpenKore-style: send MOVE to mob ONCE, wait for arrival within attack range
+  //   ไม่ spam MOVE ทุก 800ms — server จัดการเดินให้ถึงจุดหมาย
+  //   target._walkSentAt / _walkSentTo — เก็บใน target เอง (reset auto ตอนเปลี่ยน target)
   function walkToTarget(now, m) {
     if (player.x == null) return false;
     const dist = Math.hypot(m.x - player.x, m.y - player.y);
-    // ★ per-target stuck tracking — reset เมื่อ target เปลี่ยน
-    //   เดิมใช้ global lastDistToTarget → target ใหม่ inherit stuck จากเก่า → abandon ทันที
+    // reset ตอน target เปลี่ยน
     if (walkToTargetTid !== (target && target.id)) {
       walkToTargetTid = target && target.id;
-      lastDistToTarget = null;
-      noProgressTicks = 0;
-    }
-    if (lastDistToTarget != null) {
-      if (dist < lastDistToTarget - 0.5) {
-        noProgressTicks = 0;             // ใกล้ขึ้น → ไม่ stuck
-      } else {
-        noProgressTicks++;               // ไม่ใกล้ขึ้น → นับ stuck
+      if (target) {
+        target._walkSentAt = 0; target._walkSentTo = null;
+        target._lastMovePosAt = 0; target._lastMovePos = null;
       }
     }
-    lastDistToTarget = dist;
-
-    // ★ stuck จริงๆ (ระยะไม่ลด ≥10 tick ≈ 8s+) → return 'STUCK' ให้ caller ตัดสินใจ (warpToMonster/abandon)
-    //   ไม่ abandon เองที่นี่ เพื่อให้ caller ควบคุม (เช่น warpToMonster อาจช่วยได้)
-    if (noProgressTicks >= 10) {
-      log('🚧 stuck: ไม่เข้าใกล้ ' + noProgressTicks + ' tick @ dist ' + dist.toFixed(1));
-      return 'STUCK';
-    }
-
-    // ★ ถ้าเพิ่งส่ง ATTACK ไม่นาน (server กำลัง auto-walk-and-attack) → อย่าส่ง MOVE ทับ
-    //   ทับแล้ว server สับสน → player ยืนนิ่ง หรือเดินผิดที่
+    // ★ ยิง ATTACK ไม่นาน (server กำลัง auto-walk-and-attack) → อย่าส่ง MOVE ทับ
     if (target && target.lastAttackAt && (now - target.lastAttackAt) < 2500) return 'ATTACK_COOLDOWN';
-    if (now - lastWalkToTargetAt < 800) return false;
-    lastWalkToTargetAt = now;
-    // เดินเส้นตรงไปทางมอน (step = min(ระยะที่เหลือ, walkStepDistance) — สั่งทีละ ≤20 ช่อง)
-    let angle = Math.atan2(m.y - player.y, m.x - player.x);
-    // ถ้า stuck (ระยะไม่ลด) → เปลี่ยนทิศตั้งฉากบ้างเพื่อหาทางอ้อม
-    if (noProgressTicks >= 3) angle += (Math.random() < 0.5 ? 1 : -1) * (Math.PI / 2);
-    else angle += (Math.random() * 2 - 1) * (Math.PI / 12);   // ±15° jitter เล็กน้อย
-    const step = Math.min(dist, CFG.walkStepDistance);
-    const tx = player.x + Math.cos(angle) * step;
-    const ty = player.y + Math.sin(angle) * step;
-    if (sendMove(tx, ty)) { log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', Math.round(tx), Math.round(ty) + ') dist=' + dist.toFixed(1) + ' step=' + Math.round(step) + ' stuck=' + noProgressTicks); return 'WALKING'; }
+    if (!target) return false;
+    // ★ ส่ง MOVE ครั้งเดียว ไปพิกัดมอน (server เดินให้ถึง)
+    //   re-issue เมื่อ: (a) ครั้งแรก, (b) มอนเคลื่อนที่ >3 ช่อง จากที่เคยส่ง, (c) MOVE เก่าเกิน 5s
+    const sentTo = target._walkSentTo;
+    const movedFromSent = sentTo ? Math.hypot(m.x - sentTo.x, m.y - sentTo.y) : 999;
+    const sentAge = target._walkSentAt ? (now - target._walkSentAt) : 999999;
+    if (target._walkSentAt === 0 || movedFromSent > 3 || sentAge > 5000) {
+      // ★ stuck detection: ตำแหน่ง player ไม่ขยับ 4s + MOVE ยิงแล้ว → ติดกำแพง
+      if (target._lastMovePos && sentAge > 4000) {
+        const playerMoved = Math.hypot(player.x - target._lastMovePos.x, player.y - target._lastMovePos.y);
+        if (playerMoved < 2) {
+          log('🚧 stuck: player ไม่ขยับ 4s+ dist=' + dist.toFixed(1));
+          return 'STUCK';
+        }
+      }
+      target._walkSentAt = now;
+      target._walkSentTo = { x: m.x, y: m.y };
+      target._lastMovePos = { x: player.x, y: player.y };
+      target._lastMovePosAt = now;
+      // send MOVE ไปตำแหน่งมอน (server pathfind + walk)
+      if (sendMove(m.x, m.y)) {
+        log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', Math.round(m.x), Math.round(m.y) + ') dist=' + dist.toFixed(1));
+        return 'WALKING';
+      }
+      return false;
+    }
+    // ★ กำลังเดินอยู่ — check ว่า player อัพเดต pos ไหม (ถ้าอัพเดต reset stuck timer)
+    if (target._lastMovePos) {
+      const playerMoved = Math.hypot(player.x - target._lastMovePos.x, player.y - target._lastMovePos.y);
+      if (playerMoved >= 2) {
+        target._lastMovePos = { x: player.x, y: player.y };
+        target._lastMovePosAt = now;
+      }
+    }
+    return 'WALKING';
     return false;
   }
 
@@ -2890,8 +2908,9 @@
               target.lastAttackAt = now; target.pendingAttacks++;
               if (!target.firstAttackAt) { target.firstAttackAt = now; }   // ★ จดเวลาส่งครั้งแรก
               if (!target.engageAt) { target.engageAt = now; }
-              // ★ reset walk stuck counter — attack ยิงได้แปลว่าเข้าถึง (ป้องกัน false stuck ตอน server ย้าย pos)
+              // ★ reset walk state — attack ยิงได้แปลว่าเข้าถึง (กัน false stuck)
               noProgressTicks = 0; lastDistToTarget = null;
+              target._walkSentAt = 0; target._walkSentTo = null;   // ★ dest walk done
               log('⚔️ ตี', m.name || m.id.toString(16), target.id.toString(16), '@ dist', dist.toFixed(1), '(pending', target.pendingAttacks + ')');
             }
           }
@@ -2945,12 +2964,12 @@
         }
         return;
       }
-      // wander — สุ่มเดิน ≤ walkStepDistance ช่องจากตำแหน่งปัจจุบัน
-      //   ★ ถ้าเปิด navWanderUseNav และมีข้อมูลแมป → ใช้ waypoint graph (เดินต่อเนื่อง stateful)
-      //   ★ navWander เป็น stateful: track target + arrival → เดินต่อทันทีไม่รอ cooldown
-      //     ใช้ cooldown สั้น 1s แทน wanderCooldownMs (3s) เพื่อความต่อเนื่อง
-      const navCooldown = (CFG.navWanderUseNav && navHasData()) ? 1000 : CFG.wanderCooldownMs;
-      if (CFG.wanderEnabled && now - lastWanderAt > navCooldown && player.x != null) {
+      // wander — OpenKore-style destination-based
+      //   ★ navWander (waypoint graph) ใช้ cooldown 1s ถ้าเปิด navWanderUseNav
+      //   ★ destination-based ไม่ต้อง cooldown (check arrival ทุก tick, sendMove แค่ตอน dest ใหม่)
+      const useNav = CFG.navWanderUseNav && navHasData();
+      const navCooldown = useNav ? 1000 : 0;
+      if (CFG.wanderEnabled && now - lastWanderAt >= navCooldown && player.x != null) {
         lastWanderAt = now;
         let moved = false;
         if (CFG.navWanderUseNav) {
@@ -2969,31 +2988,58 @@
           }
         }
         if (!moved) {
-          // fallback: สุ่มเดินแบบมี heading (natural exploration — ทั้งแมป ไม่ orbit farm center)
-          //   ★ heading persistent 6 ก้าว, drift ±30° ต่อก้าว, reroll เมื่อ:
-          //     1. ยังไม่มี heading (fresh)
-          //     2. เดินครบ 6 ก้าว → เปลี่ยนทิศ (ดูธรรมชาติ)
-          //     3. progress < 8 ช่อง หลัง 3 ก้าว (ติดกำแพง)
-          //   ★ ทะลุ portal เข้าแมปอื่น → warpBackToFarm (ที่ MAP_NAME handler) ดึงกลับเอง
-          let needReroll = wanderHeading == null || wanderStepsInHeading >= 6;
-          if (!needReroll && wanderAnchor) {
-            const progress = Math.hypot(player.x - wanderAnchor.x, player.y - wanderAnchor.y);
-            if (wanderStepsInHeading >= 3 && progress < 8) needReroll = true;   // ติดกำแพง
-          }
-          if (needReroll) {
-            wanderHeading = Math.random() * Math.PI * 2;
-            wanderStepsInHeading = 0;
-            wanderAnchor = { x: player.x, y: player.y };
+          // ★ destination-based wander (OpenKore route_randomWalk style)
+          //   pick 1 dest → send MOVE 1 ครั้ง → รอ arrival/timeout/stuck → เลือกใหม่
+          //   ไม่ยิง MOVE ซ้ำระหว่างเดิน (server จัดการ walk ให้)
+          let needNewDest = false;
+          if (!wanderDest) {
+            needNewDest = true;
           } else {
-            wanderHeading += (Math.random() - 0.5) * (Math.PI / 3);   // ±30° drift
+            const distToDest = Math.hypot(wanderDest.x - player.x, wanderDest.y - player.y);
+            const age = now - wanderDest.sentAt;
+            if (distToDest <= WANDER_ARRIVE_TILES) {
+              needNewDest = true;   // ★ ถึงจุดหมาย
+            } else if (age > WANDER_TIMEOUT_MS) {
+              needNewDest = true;   // ★ timeout
+            } else if (wanderDest.lastPos) {
+              const posAge = now - wanderDest.lastPos.t;
+              const posMoved = Math.hypot(player.x - wanderDest.lastPos.x, player.y - wanderDest.lastPos.y);
+              if (posAge > WANDER_STUCK_MS && posMoved < 2) {
+                needNewDest = true;   // ★ ตำแหน่งไม่ขยับ = ติดกำแพง
+              } else if (posMoved >= 2) {
+                wanderDest.lastPos = { x: player.x, y: player.y, t: now };
+              }
+            } else {
+              wanderDest.lastPos = { x: player.x, y: player.y, t: now };
+            }
           }
-          const maxStep = Math.min(CFG.wanderMaxStep, CFG.walkStepDistance);
-          const step = 10 + Math.random() * Math.max(0, maxStep - 10);
-          const tx = player.x + Math.cos(wanderHeading) * step;
-          const ty = player.y + Math.sin(wanderHeading) * step;
-          if (sendMove(tx, ty)) {
-            wanderStepsInHeading++;
-            log('🚶 สุ่มเดิน @(', Math.round(tx), Math.round(ty) + ') heading=' + Math.round(wanderHeading * 180 / Math.PI) + '° step=' + Math.round(step) + ' (' + wanderStepsInHeading + '/6)');
+          if (needNewDest) {
+            // ★ pick random destination 15-30 ช่องจาก player (OpenKore ใช้ 9, เราใช้ใหญ่กว่าเพราะเดินไว)
+            //   retry 30 ครั้ง เผื่อจุดสุ่มไปทางกำแพง (heuristic: ให้จุดใหม่ไกลจากจุดเดิมพอสมควร)
+            let bestDest = null;
+            for (let i = 0; i < 30; i++) {
+              const angle = Math.random() * Math.PI * 2;
+              const step = WANDER_STEP_MIN + Math.random() * (WANDER_STEP_MAX - WANDER_STEP_MIN);
+              const tx = Math.round(player.x + Math.cos(angle) * step);
+              const ty = Math.round(player.y + Math.sin(angle) * step);
+              // ★ ไม่มี walkable check (ไม่มี tile data) — ใช้ retry ผ่าน stuck detection แทน
+              if (!wanderDest || Math.hypot(tx - wanderDest.x, ty - wanderDest.y) > 10) {
+                bestDest = { x: tx, y: ty };
+                break;
+              }
+            }
+            if (!bestDest) {
+              const angle = Math.random() * Math.PI * 2;
+              bestDest = {
+                x: Math.round(player.x + Math.cos(angle) * WANDER_STEP_MAX),
+                y: Math.round(player.y + Math.sin(angle) * WANDER_STEP_MAX),
+              };
+            }
+            wanderDest = { x: bestDest.x, y: bestDest.y, sentAt: now, lastPos: { x: player.x, y: player.y, t: now } };
+            if (sendMove(wanderDest.x, wanderDest.y)) {
+              const distToDest = Math.hypot(wanderDest.x - player.x, wanderDest.y - player.y);
+              log('🧭 wander → (' + wanderDest.x + ',' + wanderDest.y + ') dist=' + distToDest.toFixed(0));
+            }
           }
         }
       }
