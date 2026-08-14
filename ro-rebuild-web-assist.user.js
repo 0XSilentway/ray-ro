@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.71.1
+// @version      4.71.2
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -172,6 +172,12 @@
         log('💾 migration: cap maxAcquireDistance 30 → 14 (RO view range)');
         saveConfigDebounced();
       }
+      // ★ migration: expand default healItems (เดิมมี 501/502 → +503/504/apple/etc)
+      if (Array.isArray(CFG.healItems) && CFG.healItems.length <= 2 && CFG.healItems.every(id => id === 501 || id === 502)) {
+        CFG.healItems = [501, 502, 503, 504, 512, 513, 514, 515, 516, 517];
+        log('💾 migration: expand healItems (+Yellow/White Potion + fruits + Ygg Berry)');
+        saveConfigDebounced();
+      }
       log('💾 โหลดค่าที่บันทึกไว้จากเครื่อง (' + PERSIST_KEYS.filter(k => k in saved).length + ' รายการ)');
     } catch (e) { /* parse fail — ใช้ default */ }
   }
@@ -293,7 +299,9 @@
     //     เปิดใช้เองด้วย ASSIST.healOn() หรือ ASSIST.setHealItems(...) (จะเปิดให้อัตโนมัติ)
     healEnabled: false,           // เปิดใช้ตอนเริ่มหรือไม่
     healAtPercent: 60,            // HP% ที่จะเริ่มใช้ยา (เช่น 60 = ต่ำกว่า 60% ใช้ยา)
-    healItems: [501,502],                // ★ DEFAULT = ว่าง → จะไม่ส่ง packet heal ใด ๆ จนกว่าจะตั้ง item
+    // ★ Default heal items — Red/Orange/Yellow/White Potion + fruits + Yggdrasil
+    //   501=Red 502=Orange 503=Yellow 504=White 512=Apple 513=Banana 514=Grape 515=Carrot 516=SweetPotato 517=YggBerry
+    healItems: [501, 502, 503, 504, 512, 513, 514, 515, 516, 517],
     healMode: 'order',            // 'order' = ใช้ตัวเดิมจนหมดแล้วค่อยข้าม, 'random' = สุ่มทุกครั้ง
     healDelayMs: 200,             // ดีเลย์ขั้นต่ำระหว่างการใช้ item แต่ละครั้ง
     healCheckMs: 100,             // ความถี่ในการเช็ค HP
