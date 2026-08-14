@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.55.1
+// @version      4.56.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -129,7 +129,7 @@
     'combatEnabled', 'targetWhitelist', 'targetBlacklist', 'attackRange', 'rangedAttackRange',
     'maxAcquireDistance', 'searchRadii', 'maxChaseDistance', 'antiKS', 'avoidOtherPlayers', 'targetLowestHpFirst',
     'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius', 'fleeMonsters', 'fleeMonsterRadius', 'maxEngageSecSlow', 'slowMonsterSubIds',
-    'wanderEnabled', 'warpFindEnabled', 'warpToMonster', 'stuckWarpOnAbandon', 'stealthWarpMode',
+    'wanderEnabled', 'warpFindEnabled', 'warpToMonster', 'stuckWarpOnAbandon', 'stealthWarpMode', 'wanderRadius',
     'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs', 'autoRespawnEnabled', 'autoRespawnDelayMs', 'telegramAlertCard', 'telegramAlertFlee', 'telegramAlertBotMention', 'telegramAlertNearby', 'telegramAlertWhisper', 'telegramBotToken', 'telegramChatId',
     'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellNpcX', 'sellNpcY', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
     'storageEnabled', 'kafraName', 'kafraMap', 'kafraMapX', 'kafraMapY', 'kafraChoice', 'depositOnFull', 'depositAfterSell', 'depositItemIds',
@@ -477,6 +477,7 @@
     wanderCooldownMs: 3000,
     warpFindEnabled: false,       // ไม่เจอมอนนาน → วาร์ปสุ่ม (toggle, default OFF)
     noMonsterWarpSec: 30,
+    wanderRadius: 30,             // ★ wander ห่างจาก farmMap center ไม่เกิน N ช่อง — กันเดินทะลุ portal เข้าเมือง
 
     // ---------- STEALTH WARP MODE (★ anti-detection) ----------
     //  ON → บล็อก warp ทุกแบบยกเว้น emergency flee (fleeMonsters/fleeOnMobCount)
@@ -2877,30 +2878,47 @@
           }
         }
         if (!moved) {
-          // fallback: สุ่มเดินแบบมี heading — เดินทิศเดียวหลายก้าวก่อน reroll
-          //   กัน bug เดิม: ทุก tick สุ่ม angle ใหม่ → mean displacement ≈ 0 → อยู่ที่เดิม
-          //   ใหม่: จำ heading, drift ±30° ต่อก้าว, reroll เมื่อ:
+          // fallback: สุ่มเดินแบบมี heading + farm-center guard
+          //   ★ ถ้ามี farmMap + farmMapX/Y + อยู่ในแมปฟาร์ม → wander ห่างจาก farm center ไม่เกิน wanderRadius
+          //     กันเดินทะลุ portal เข้าเมือง (prt_fild08 → prontera)
+          //   ★ heading persistent 6 ก้าว, drift ±30° ต่อก้าว, reroll เมื่อ:
           //     1. ยังไม่มี heading
           //     2. เดินครบ 6 ก้าว
-          //     3. anchor → ตัวปัจจุบัน progress < 8 ช่อง (ติดกำแพง/ไปไม่ถึง)
-          let needReroll = wanderHeading == null || wanderStepsInHeading >= 6;
+          //     3. progress < 8 ช่อง หลัง 3 ก้าว (ติดกำแพง)
+          //     4. อยู่นอก wanderRadius จาก farm center → บังคับหันกลับเข้า
+          const inFarmMap = CFG.farmMap && currentMap === CFG.farmMap && CFG.farmMapX && CFG.farmMapY;
+          const anchorX = inFarmMap ? CFG.farmMapX : player.x;
+          const anchorY = inFarmMap ? CFG.farmMapY : player.y;
+          const distFromAnchor = Math.hypot(player.x - anchorX, player.y - anchorY);
+          const outOfRadius = inFarmMap && distFromAnchor > (CFG.wanderRadius || 30);
+          let needReroll = wanderHeading == null || wanderStepsInHeading >= 6 || outOfRadius;
           if (!needReroll && wanderAnchor) {
             const progress = Math.hypot(player.x - wanderAnchor.x, player.y - wanderAnchor.y);
-            if (wanderStepsInHeading >= 3 && progress < 8) needReroll = true;   // ติดที่ → เปลี่ยนทิศ
+            if (wanderStepsInHeading >= 3 && progress < 8) needReroll = true;
           }
           if (needReroll) {
-            wanderHeading = Math.random() * Math.PI * 2;
+            if (outOfRadius) {
+              // ★ นอกรัศมี → heading = ทิศกลับเข้า farm center + jitter ±30°
+              wanderHeading = Math.atan2(anchorY - player.y, anchorX - player.x)
+                            + (Math.random() - 0.5) * (Math.PI / 3);
+              log('🎯 wander ออกนอกรัศมี (' + distFromAnchor.toFixed(0) + '>' + (CFG.wanderRadius || 30) + ') → หันกลับเข้า farm center');
+            } else {
+              wanderHeading = Math.random() * Math.PI * 2;
+            }
             wanderStepsInHeading = 0;
             wanderAnchor = { x: player.x, y: player.y };
           } else {
-            wanderHeading += (Math.random() - 0.5) * (Math.PI / 3);   // ±30° drift
+            wanderHeading += (Math.random() - 0.5) * (Math.PI / 3);
           }
-          const step = 8 + Math.random() * (Math.min(CFG.wanderMaxStep, CFG.walkStepDistance) - 8);   // 8-20 ช่อง
+          // ★ ลด step ถ้าใกล้ขอบรัศมี (กันเดินทะลุ)
+          const remaining = inFarmMap ? Math.max(3, (CFG.wanderRadius || 30) - distFromAnchor + 5) : Infinity;
+          const maxStep = Math.min(CFG.wanderMaxStep, CFG.walkStepDistance, remaining);
+          const step = Math.max(4, 4 + Math.random() * (maxStep - 4));
           const tx = player.x + Math.cos(wanderHeading) * step;
           const ty = player.y + Math.sin(wanderHeading) * step;
           if (sendMove(tx, ty)) {
             wanderStepsInHeading++;
-            log('🚶 สุ่มเดิน @(', Math.round(tx), Math.round(ty) + ') heading=' + Math.round(wanderHeading * 180 / Math.PI) + '° step=' + Math.round(step) + ' (' + wanderStepsInHeading + '/6)');
+            log('🚶 สุ่มเดิน @(', Math.round(tx), Math.round(ty) + ') heading=' + Math.round(wanderHeading * 180 / Math.PI) + '° step=' + Math.round(step) + ' d=' + distFromAnchor.toFixed(0) + '/' + (CFG.wanderRadius || 30));
           }
         }
       }
