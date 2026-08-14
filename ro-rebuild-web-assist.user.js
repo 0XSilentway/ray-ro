@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.71.0
+// @version      4.71.1
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -3303,8 +3303,21 @@
                 if (now - wanderStuckLastAt < 30000) wanderStuckCount++;
                 else wanderStuckCount = 1;
                 wanderStuckLastAt = now;
-                if (wanderStuckCount >= 3 && !CFG.stealthWarpMode && currentMap) {
-                  log('🌀 wander stuck ' + wanderStuckCount + 'x → random warp escape');
+                // ★ smart warp: ไม่มีมอนใน 40 tile → warp ทันที (nearby(0) + stuck 1)
+                //   ถ้ามีมอน → รอครบ 3 stuck (มอนอาจเดินเข้ามาระหว่างรอ)
+                let nearbyMobCount = 0;
+                if (player.x != null) {
+                  for (const e of entities.values()) {
+                    if (e.kind !== 1 || !e.alive || e.x == null) continue;
+                    if (Math.hypot(e.x - player.x, e.y - player.y) > 40) continue;
+                    if (!isTargetable(e, now)) continue;
+                    nearbyMobCount++;
+                    if (nearbyMobCount >= 1) break;
+                  }
+                }
+                const warpThreshold = nearbyMobCount === 0 ? 1 : 3;
+                if (wanderStuckCount >= warpThreshold && !CFG.stealthWarpMode && currentMap) {
+                  log('🌀 wander stuck ' + wanderStuckCount + 'x + nearby=' + nearbyMobCount + ' → warp escape');
                   if (sendRandomWarp()) { wanderStuckCount = 0; wanderDest = null; wanderClearFailed(); return; }
                 }
               } else if (posMoved >= 2) {
