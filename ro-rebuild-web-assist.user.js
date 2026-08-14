@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.57.0
+// @version      4.57.1
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -2466,11 +2466,18 @@
   let lastWalkToTargetAt = 0;
   let lastDistToTarget = null;
   let noProgressTicks = 0;
+  let walkToTargetTid = null;   // ★ track target id ที่ walkToTarget กำลังจัดการ — reset stuck เมื่อ target เปลี่ยน
   const abandonCooldown = new Map();   // entityId → timestamp ที่ abandon (กันเลือกตัวเดิมซ้ำเลย)
   function walkToTarget(now, m) {
     if (player.x == null) return false;
     const dist = Math.hypot(m.x - player.x, m.y - player.y);
-    // stuck detection: ดูว่าระยะลดลงไหม (แม่นกว่าดูพิกัดคงที่)
+    // ★ per-target stuck tracking — reset เมื่อ target เปลี่ยน
+    //   เดิมใช้ global lastDistToTarget → target ใหม่ inherit stuck จากเก่า → abandon ทันที
+    if (walkToTargetTid !== (target && target.id)) {
+      walkToTargetTid = target && target.id;
+      lastDistToTarget = null;
+      noProgressTicks = 0;
+    }
     if (lastDistToTarget != null) {
       if (dist < lastDistToTarget - 0.5) {
         noProgressTicks = 0;             // ใกล้ขึ้น → ไม่ stuck
@@ -2487,6 +2494,9 @@
       return 'STUCK';
     }
 
+    // ★ ถ้าเพิ่งส่ง ATTACK ไม่นาน (server กำลัง auto-walk-and-attack) → อย่าส่ง MOVE ทับ
+    //   ทับแล้ว server สับสน → player ยืนนิ่ง หรือเดินผิดที่
+    if (target && target.lastAttackAt && (now - target.lastAttackAt) < 2500) return 'ATTACK_COOLDOWN';
     if (now - lastWalkToTargetAt < 800) return false;
     lastWalkToTargetAt = now;
     // เดินเส้นตรงไปทางมอน (step = min(ระยะที่เหลือ, walkStepDistance) — สั่งทีละ ≤20 ช่อง)
@@ -2841,7 +2851,8 @@
                 return;
               }
             }
-            abandonTarget('ติดกำแพง (approach)', true, 15000);
+            // stuck=false: approach fail อาจแค่ server sync ช้า, walkAway ทำให้บอทเดินสั่นๆ
+            abandonTarget('ติดกำแพง (approach)', false, 15000);
             target = null;
           }
           return;
@@ -2866,6 +2877,8 @@
               target.lastAttackAt = now; target.pendingAttacks++;
               if (!target.firstAttackAt) { target.firstAttackAt = now; }   // ★ จดเวลาส่งครั้งแรก
               if (!target.engageAt) { target.engageAt = now; }
+              // ★ reset walk stuck counter — attack ยิงได้แปลว่าเข้าถึง (ป้องกัน false stuck ตอน server ย้าย pos)
+              noProgressTicks = 0; lastDistToTarget = null;
               log('⚔️ ตี', m.name || m.id.toString(16), target.id.toString(16), '@ dist', dist.toFixed(1), '(pending', target.pendingAttacks + ')');
             }
           }
