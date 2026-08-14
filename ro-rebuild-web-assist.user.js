@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.60.0
+// @version      4.60.1
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -159,6 +159,12 @@
       if (!raw) return;
       const saved = JSON.parse(raw);
       for (const k of PERSIST_KEYS) if (k in saved) CFG[k] = saved[k];
+      // ★ migration: Jellopy (909) เคยถูก default block — บังคับเอาออกให้ user เก่า
+      if (CFG.filter && Array.isArray(CFG.filter.exceptItems) && CFG.filter.exceptItems.includes(909)) {
+        CFG.filter.exceptItems = CFG.filter.exceptItems.filter(x => x !== 909);
+        log('💾 migration: เอา Jellopy(909) ออกจาก exceptItems (default block เก่า)');
+        saveConfigDebounced();
+      }
       log('💾 โหลดค่าที่บันทึกไว้จากเครื่อง (' + PERSIST_KEYS.filter(k => k in saved).length + ' รายการ)');
     } catch (e) { /* parse fail — ใช้ default */ }
   }
@@ -2593,9 +2599,10 @@
     const mobCount = getMobAttackerCount();
 
     // === -1. AUTO-REST (priority สูงสุด — ก่อน flee) ===
-    //   ถ้า HP ต่ำ + ไม่โดนรุม + ไม่มี target + ไม่มีมอนใกล้ที่ตีได้ → นั่งพัก
+    //   ถ้า HP ต่ำ + ไม่โดนรุม + ไม่มี target + ไม่มีมอนใกล้ + ไม่มีของรอเก็บ → นั่งพัก
     //   ★ target guard: มอนบางตัว (Poring/Egg) ไม่ตีกลับ → mobCount=0 ตลอด → ห้ามนั่งกลางตี
     //   ★ nearby guard: มี Poring ยืนข้างๆ (ยังไม่ aggro) → ไปตีก่อน ค่อยนั่ง
+    //   ★ loot guard: มีของรอเก็บ → เก็บก่อน ค่อยนั่ง (mob ตายทิ้งของแล้วบอทจะนั่งทันที)
     if (CFG.restEnabled && pct != null && hp.cur != null) {
       const activeTarget = target && (() => { const m = entities.get(target.id); return m && m.alive; })();
       const nowLocal = now;
@@ -2608,7 +2615,8 @@
           if (isTargetable(e, nowLocal)) { hasNearbyTargetable = true; break; }
         }
       }
-      if (!isResting && pct < CFG.restHpPercent && mobCount === 0 && !activeTarget && !hasNearbyTargetable) {
+      const hasLootPending = CFG.lootEnabled && queue.size > 0;
+      if (!isResting && pct < CFG.restHpPercent && mobCount === 0 && !activeTarget && !hasNearbyTargetable && !hasLootPending) {
         // เริ่มนั่งพัก
         if (sendSit()) {
           isResting = true;
@@ -2618,9 +2626,9 @@
         return;
       }
       if (isResting) {
-        // โดนรุม/มี target/มอนใกล้ระหว่างนั่ง → ลุกทันที
-        if (mobCount > 0 || activeTarget || hasNearbyTargetable) {
-          const reason = activeTarget ? 'มี target' : (mobCount > 0 ? 'โดนรุม' : 'มีมอนใกล้');
+        // โดนรุม/มี target/มอนใกล้/มีของรอเก็บระหว่างนั่ง → ลุกทันที
+        if (mobCount > 0 || activeTarget || hasNearbyTargetable || hasLootPending) {
+          const reason = activeTarget ? 'มี target' : (mobCount > 0 ? 'โดนรุม' : (hasNearbyTargetable ? 'มีมอนใกล้' : 'มีของรอเก็บ'));
           if (sendStand()) { log('⚠️ ' + reason + 'ระหว่างนั่ง → ลุกทันที'); }
           isResting = false;
         }
