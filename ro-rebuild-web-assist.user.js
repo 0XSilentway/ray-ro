@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.55.0
+// @version      4.55.1
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -3355,7 +3355,12 @@ chan.onmessage = (e) => {
   if (m.logs && m.logs.length) {
     const box = document.getElementById('log');
     const wasBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
-    box.innerHTML = m.logs.slice(-20).map(l => '<div>' + esc(l) + '</div>').join('');
+    box.innerHTML = m.logs.slice(-20).map(l => {
+      // ★ logBuf entry = {t, msg} — extract msg (fallback = String(l) เผื่อ format เก่า)
+      const msg = (l && typeof l === 'object') ? (l.msg != null ? l.msg : JSON.stringify(l)) : String(l);
+      const ts = (l && l.t) ? new Date(l.t).toLocaleTimeString('en-GB', { hour12: false }) : '';
+      return '<div>' + (ts ? '<span style="color:#5f6368">[' + ts + ']</span> ' : '') + esc(msg) + '</div>';
+    }).join('');
     if (wasBottom) box.scrollTop = box.scrollHeight;
   }
 };
