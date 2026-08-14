@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.69.2
+// @version      4.70.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -1138,6 +1138,8 @@
           target = null;
           log('🧹 ล้าง entities แมปเก่า (เปลี่ยนแมป)');
           navWanderReset();   // ★ เปลี่ยนแมป → reset wander state (ล้าง target เก่า)
+          wanderClearFailed();  // ★ ล้าง failed-dest memory (แมปใหม่ = ทางใหม่)
+          wanderDest = null;
           navPatrolReset();   // ★ reset patrol state ด้วย
           // ★ warp-back-to-farm: ออกจากแมปฟาร์ม → วาร์ปกลับ
           //   เงื่อนไข: warpBackToFarm=on AND farmMap ไม่ว่าง AND ตอนนี้ไม่ใช่ farmMap
@@ -2141,8 +2143,27 @@
   //   เลือกจุดหมาย 1 จุด → ส่ง MOVE 1 ครั้ง → รอ arrival → เลือกใหม่
   //   ไม่ reroll ระหว่างเดิน (ให้ server เดินให้ถึงจุดหมาย)
   let wanderDest = null;            // {x, y, sentAt, lastPos: {x,y,t}} — จุดหมายปัจจุบัน
-  let wanderStuckCount = 0;         // ★ นับ stuck ต่อเนื่อง — 3 ครั้ง → warp escape (ถ้าไม่ NoWarp)
+  let wanderStuckCount = 0;         // ★ นับ stuck ต่อเนื่อง
   let wanderStuckLastAt = 0;
+  // ★ Failed-destination memory (learn walkability by trying)
+  //   bucket 3×3 tile, TTL 60s, clear on map change
+  const WANDER_BUCKET_SIZE = 3;
+  const WANDER_FAIL_TTL_MS = 60000;
+  const wanderFailed = new Map();   // key "bx,by" → expiresAt
+  // ★ Direction bias: weight new dest toward last-known-good direction (0.7 favor, 0.3 explore)
+  const WANDER_DIR_BIAS = 0.7;
+  let wanderLastGoodDir = null;     // radian angle of last successful movement
+  let wanderLastGoodDirAt = 0;
+  function wanderBucketKey(x, y) { return Math.floor(x / WANDER_BUCKET_SIZE) + ',' + Math.floor(y / WANDER_BUCKET_SIZE); }
+  function wanderBucketFailed(x, y, now) {
+    const key = wanderBucketKey(x, y);
+    const exp = wanderFailed.get(key);
+    if (!exp) return false;
+    if (now >= exp) { wanderFailed.delete(key); return false; }
+    return true;
+  }
+  function wanderMarkFailed(x, y, now) { wanderFailed.set(wanderBucketKey(x, y), now + WANDER_FAIL_TTL_MS); }
+  function wanderClearFailed() { wanderFailed.clear(); wanderLastGoodDir = null; }
   const WANDER_ARRIVE_TILES = 6;    // ถือว่าถึงเมื่อ dist ≤ N
   const WANDER_TIMEOUT_MS = 20000;  // เดินนานเกิน = timeout → เลือกใหม่
   const WANDER_STUCK_MS = 8000;     // ตำแหน่งไม่ขยับ N ms = ติดกำแพง (เพิ่มจาก 3 → 8 ให้ server เวลาเริ่มเดิน)
@@ -3260,37 +3281,66 @@
               if (posAge > WANDER_STUCK_MS && posMoved < 2) {
                 log('🚧 wander stuck ' + (posAge/1000).toFixed(1) + 's @ dist=' + distToDest.toFixed(0));
                 needNewDest = true;
-                // ★ escalate: stuck 3 ครั้งใน 30s → random warp escape (ถ้าไม่ NoWarp)
+                // ★ mark dest bucket ว่า failed → next pick จะ skip
+                wanderMarkFailed(wanderDest.x, wanderDest.y, now);
+                // ★ escalate: stuck ต่อเนื่อง
                 if (now - wanderStuckLastAt < 30000) wanderStuckCount++;
                 else wanderStuckCount = 1;
                 wanderStuckLastAt = now;
                 if (wanderStuckCount >= 3 && !CFG.stealthWarpMode && currentMap) {
                   log('🌀 wander stuck ' + wanderStuckCount + 'x → random warp escape');
-                  if (sendRandomWarp()) { wanderStuckCount = 0; wanderDest = null; return; }
+                  if (sendRandomWarp()) { wanderStuckCount = 0; wanderDest = null; wanderClearFailed(); return; }
                 }
               } else if (posMoved >= 2) {
+                // ★ เดินได้ → mark direction ว่า known-good + reset counter
+                const dx = player.x - wanderDest.lastPos.x;
+                const dy = player.y - wanderDest.lastPos.y;
+                wanderLastGoodDir = Math.atan2(dy, dx);
+                wanderLastGoodDirAt = now;
                 wanderDest.lastPos = { x: player.x, y: player.y, t: now };
-                wanderStuckCount = 0;   // ★ เดินได้ → reset counter
+                wanderStuckCount = 0;
               }
             } else if (!wanderDest.lastPos) {
               wanderDest.lastPos = { x: player.x, y: player.y, t: now };
             }
           }
           if (needNewDest) {
-            // ★ pick random destination 15-30 ช่องจาก player (OpenKore ใช้ 9, เราใช้ใหญ่กว่าเพราะเดินไว)
-            //   retry 30 ครั้ง เผื่อจุดสุ่มไปทางกำแพง (heuristic: ให้จุดใหม่ไกลจากจุดเดิมพอสมควร)
+            // ★ Smart pick: failed-dest skip + direction bias (0.7 favor last-good, 0.3 explore)
+            //   retry 30 times, ค่อยๆ ผ่อน constraint ถ้าไม่เจอ
             let bestDest = null;
+            const goodDir = wanderLastGoodDir;
+            const goodDirFresh = goodDir != null && (now - wanderLastGoodDirAt < 60000);
             for (let i = 0; i < 30; i++) {
-              const angle = Math.random() * Math.PI * 2;
+              let angle;
+              // direction bias: 70% pick angle within ±60° of last-good, 30% pure random
+              if (goodDirFresh && Math.random() < WANDER_DIR_BIAS) {
+                angle = goodDir + (Math.random() - 0.5) * (Math.PI * 2 / 3);   // ±60°
+              } else {
+                angle = Math.random() * Math.PI * 2;
+              }
               const step = WANDER_STEP_MIN + Math.random() * (WANDER_STEP_MAX - WANDER_STEP_MIN);
               const tx = Math.round(player.x + Math.cos(angle) * step);
               const ty = Math.round(player.y + Math.sin(angle) * step);
-              // ★ ไม่มี walkable check (ไม่มี tile data) — ใช้ retry ผ่าน stuck detection แทน
-              if (!wanderDest || Math.hypot(tx - wanderDest.x, ty - wanderDest.y) > 10) {
-                bestDest = { x: tx, y: ty };
-                break;
-              }
+              // skip failed bucket
+              if (wanderBucketFailed(tx, ty, now)) continue;
+              // avoid identical to prev dest
+              if (wanderDest && Math.hypot(tx - wanderDest.x, ty - wanderDest.y) < 10) continue;
+              bestDest = { x: tx, y: ty };
+              break;
             }
+            // ★ ถ้ายังไม่ได้ (ทุกทิศ failed) → ลอง opposite ของ last dest (anti-edge)
+            if (!bestDest && wanderDest) {
+              const dx = player.x - wanderDest.x;
+              const dy = player.y - wanderDest.y;
+              const oppositeAngle = Math.atan2(dy, dx);   // ทิศตรงข้าม dest เก่า
+              const step = WANDER_STEP_MAX;
+              bestDest = {
+                x: Math.round(player.x + Math.cos(oppositeAngle) * step),
+                y: Math.round(player.y + Math.sin(oppositeAngle) * step),
+              };
+              log('🔄 wander: ทุกทิศ failed → หันตรงข้าม');
+            }
+            // last resort: pure random ignoring failed
             if (!bestDest) {
               const angle = Math.random() * Math.PI * 2;
               bestDest = {
@@ -3301,7 +3351,9 @@
             wanderDest = { x: bestDest.x, y: bestDest.y, sentAt: now, lastPos: { x: player.x, y: player.y, t: now } };
             if (sendMove(wanderDest.x, wanderDest.y)) {
               const distToDest = Math.hypot(wanderDest.x - player.x, wanderDest.y - player.y);
-              log('🧭 wander → (' + wanderDest.x + ',' + wanderDest.y + ') dist=' + distToDest.toFixed(0));
+              const dirTag = goodDirFresh ? ' (bias)' : '';
+              const failCount = wanderFailed.size;
+              log('🧭 wander → (' + wanderDest.x + ',' + wanderDest.y + ') dist=' + distToDest.toFixed(0) + dirTag + (failCount ? ' failed=' + failCount : ''));
             }
           }
         }
