@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.60.1
+// @version      4.61.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -440,8 +440,22 @@
     combatEnabled: false,
     targetWhitelist: [],          // [] = ตีมอน kind=1 ทุกตัว; ['Poring', 4000] = เฉพาะ (รองรับชื่อ + sprite id)
     targetBlacklist: ['Pupa', 'Peco Peco Egg', 'Poring Egg', 'Chonchon Egg', 'Andre Egg', 'Ant Egg', 'Hunter Fly Egg'],   // ตีไม่เข้า/ตี = 0 damage (ชื่อหรือ sprite id) — user แก้เพิ่มได้
-    zeroDamageAbandonThreshold: 3,  // ★ ตี N ครั้งได้ 0 damage → abandon + temp blacklist
-    zeroDamageBlacklistMs: 60000,   // ★ temp blacklist นาน N ms (60s)
+    lowDamageAbandonThreshold: 3,   // ★ ตี N ครั้งได้ damage ≤ lowDamageValue → abandon + temp blacklist
+    lowDamageValue: 3,              // ★ damage ≤ N ถือว่า "ตีไม่เข้า" (0 = miss, 1-3 = ตีเบามาก)
+    lowDamageBlacklistMs: 60000,    // ★ temp blacklist นาน N ms (60s)
+    // ★ HP guards (OpenKore attackMinPlayerHP + custom abort)
+    attackMinHpPercent: 40,         // HP% < N → ไม่ acquire target ใหม่ (เก็บพลังก่อนสู้)
+    abortAttackHpPercent: 20,       // HP% ระหว่างสู้ ต่ำกว่า N → abandon + flee ทันที
+    // ★ Dynamic HP margin (upgrade over OpenKore)
+    //   คำนวณ avg damage taken → abort ที่ HP < avg_dmg * dynamicHpMarginMult
+    //   overrides abortAttackHpPercent เมื่อมี sample ≥ dynamicHpMarginMinHits
+    dynamicHpMarginEnabled: true,
+    dynamicHpMarginMult: 4,         // avg dmg × 4 = safety margin (ตี 3 hit ตายพอดี)
+    dynamicHpMarginMinHits: 3,
+    // ★ Death blacklist (persist across sessions)
+    deathBlacklistEnabled: true,
+    deathBlacklistMs: 600000,       // 10 นาที
+    fleeOnAbortAttack: true,        // abort attack เพราะ HP → ส่ง flee warp?
     attackRange: 2,               // ระยะโจมตี (ช่อง) — ใกล้กว่านี้สั่งตี, ไกลกว่าเดินไป
     // ★ approach-then-attack: server rayrag ไม่ทำ walk-and-attack เสมอ
     //   ถ้าเปิด true → dist > attackRange → ส่ง MOVE ก่อน แล้วค่อย ATTACK ตอนใกล้
@@ -622,6 +636,15 @@
       isDead = false;
       heal.clearExhausted();                            // ล้าง mark "หมด" ทั้งหมด เริ่มนับใหม่
       heal.allExhaustedLogged = false;
+    }
+    // ★ track damage taken: HP ลด + มี target ที่ engage อยู่ → เก็บเข้า target._damageTakenHits
+    //   (ใช้ทั้ง dynamic HP margin + potion cost estimate)
+    if (hp.cur != null && cur < hp.cur && target && mobAttackers.size > 0) {
+      const dmg = hp.cur - cur;
+      if (!target._damageTakenHits) target._damageTakenHits = [];
+      target._damageTakenHits.push({ t: now, dmg });
+      // เก็บแค่ 10 hit ล่าสุด
+      if (target._damageTakenHits.length > 10) target._damageTakenHits.shift();
     }
     hp.cur = cur;
     hp.max = m;
@@ -1029,6 +1052,14 @@
       isDead = true;
       hp.cur = 0;
       stats.deaths++;
+      // ★ death blacklist: จำ sprite id ของ target ตอนตาย → blacklist 10 นาที (persist)
+      if (CFG.deathBlacklistEnabled && target) {
+        const m = entities.get(target.id);
+        if (m && m.sub != null) {
+          deathBlacklistAdd(m.sub, m.name);
+          log('💀 death blacklist:', m.name || ('sub#' + m.sub), '→ skip ' + ((CFG.deathBlacklistMs || 600000)/60000) + ' นาที');
+        }
+      }
       // ★ ล้างเวลา buff — ตายแล้ว buff หายหมด → ใช้ใหม่ได้ทันทีหลัง respawn (mirror bot.js:743-746)
       if (lastBuffUse.size > 0) { lastBuffUse.clear(); saveBuffTimesDebounced(); }
       // ★ ล้างเวลา skill + per-target uses (mirror bot.js:744-747)
@@ -1556,19 +1587,18 @@
           // ★ เราตี — DPS/ASPD tracking + claim
           stats.attackWindow.push({ t: now });
           stats.sessionAttacks++;
+          const isLowDmg = damage <= (CFG.lowDamageValue || 3);
           if (damage > 0) {
             stats.dealtWindow.push({ t: now, damage });
             stats.sessionDamageDealt += damage;
             if (target && target.id === victimId) {
               target.lastAttackResultAt = now; target.pendingAttacks = 0; target.firstAttackAt = 0;
-              target.zeroDamageAttacks = 0;   // ★ reset — เข้าแล้ว
               stuckAbandonCount = 0; stuckAbandonHistory = [];
+              if (!isLowDmg) target.lowDamageAttacks = 0;   // ★ reset เฉพาะตอน "ตีเข้าจริง"
+              else target.lowDamageAttacks = (target.lowDamageAttacks || 0) + 1;   // ★ ตีเบา = นับด้วย
             }
-          } else {
-            // ★ damage=0 → ตีไม่เข้า (Pupa/มอน def สูง/miss)
-            if (target && target.id === victimId) {
-              target.zeroDamageAttacks = (target.zeroDamageAttacks || 0) + 1;
-            }
+          } else if (target && target.id === victimId) {
+            target.lowDamageAttacks = (target.lowDamageAttacks || 0) + 1;   // damage=0 (miss)
           }
           // ★ claim: ถ้าเราตีมอนตัวนี้ก่อนคนอื่น → claim (mirror world.js:825-836)
           if (!m._claimedByMe && !m._lastEngagedByOtherAt) {
@@ -2075,6 +2105,40 @@
   //   key: mob id | key: sub (sprite id) → expiry timestamp
   const tempBlacklistById = new Map();
   const tempBlacklistBySub = new Map();
+  // ★ death blacklist — persist ข้าม session (localStorage)
+  //   sprite id → { expiresAt, name } — ตายฟาร์มมอนนี้ → skip 10 นาที
+  const DEATH_BL_KEY = 'roAssistDeathBL_v1';
+  const deathBlacklist = new Map();
+  (function loadDeathBL() {
+    try {
+      const raw = localStorage.getItem(DEATH_BL_KEY);
+      if (!raw) return;
+      const obj = JSON.parse(raw);
+      const now = Date.now();
+      for (const [sub, entry] of Object.entries(obj)) {
+        if (entry && entry.expiresAt && entry.expiresAt > now) {
+          deathBlacklist.set(Number(sub), entry);
+        }
+      }
+    } catch (_) {}
+  })();
+  function deathBlacklistAdd(sub, name) {
+    if (sub == null) return;
+    const ttl = CFG.deathBlacklistMs || 600000;
+    deathBlacklist.set(Number(sub), { expiresAt: nowMs() + ttl, name: name || '' });
+    try {
+      const obj = {};
+      for (const [s, e] of deathBlacklist) obj[s] = e;
+      localStorage.setItem(DEATH_BL_KEY, JSON.stringify(obj));
+    } catch (_) {}
+  }
+  function deathBlacklistHit(m, now) {
+    if (m.sub == null) return false;
+    const e = deathBlacklist.get(m.sub);
+    if (!e) return false;
+    if (now >= e.expiresAt) { deathBlacklist.delete(m.sub); return false; }
+    return true;
+  }
   function tempBlacklistAdd(m, ms) {
     const exp = nowMs() + ms;
     if (m.id) tempBlacklistById.set(m.id, exp);
@@ -2117,6 +2181,7 @@
     if (matchList(m, CFG.targetBlacklist)) return false;
     if (CFG.targetWhitelist.length && !matchList(m, CFG.targetWhitelist)) return false;
     if (tempBlacklistHit(m, now)) return false;   // ★ ตีไม่เข้า → skip 60s (auto)
+    if (deathBlacklistHit(m, now)) return false;  // ★ เคยตายฟาร์มมอนนี้ → skip 10 min (persist)
     // anti-KS: ข้ามมอนที่คนอื่นตีอยู่ — ★ ยกเว้นถ้าเรา claim แล้ว (mirror world.js:1855 !e._claimedByMe)
     if (CFG.antiKS && !m._claimedByMe && m._lastEngagedByOtherAt && now - m._lastEngagedByOtherAt < CFG.antiKSCooldownMs) return false;
     // avoid players: ข้ามมอนที่อยู่ใกล้ผู้เล่นคนอื่น — ★ ยกเว้นถ้าเรา claim (mirror world.js:1851 !e._claimedByMe)
@@ -2399,6 +2464,31 @@
   }
   function clearCombatThreat() { monsterAggro.clear(); mobAttackers.clear(); }
 
+  // ★ HP abort decision: static % + dynamic margin (avg damage taken × N)
+  //   คืน true → ควร abandon target ทันที (HP วิกฤต)
+  function shouldAbortCombat(tgt, m, now) {
+    const pct = hpPct();
+    if (pct == null || hp.cur == null) return false;
+    // static abort — HP% ต่ำกว่า config
+    if (CFG.abortAttackHpPercent > 0 && pct < CFG.abortAttackHpPercent) {
+      tgt._abortReason = 'HP<' + CFG.abortAttackHpPercent + '%';
+      return true;
+    }
+    // dynamic abort — คำนวณจาก avg damage taken
+    if (CFG.dynamicHpMarginEnabled && Array.isArray(tgt._damageTakenHits)) {
+      const hits = tgt._damageTakenHits.filter(h => now - h.t < 15000);   // 15s window
+      if (hits.length >= (CFG.dynamicHpMarginMinHits || 3)) {
+        const avgDmg = hits.reduce((a, h) => a + h.dmg, 0) / hits.length;
+        const margin = avgDmg * (CFG.dynamicHpMarginMult || 4);
+        if (hp.cur < margin) {
+          tgt._abortReason = 'HP<margin (avg dmg ' + avgDmg.toFixed(1) + '×' + (CFG.dynamicHpMarginMult || 4) + '=' + margin.toFixed(0) + ')';
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   // ---------- combat state machine ----------
   // abandon target + (ถ้าเป็น stuck/ล้มเหลว) ตั้ง cooldown กันเลือกตัวเดิมซ้ำทันที
   //   cooldownMs: 0 = ไม่ตั้ง (เช่น ฆ่าได้/defensive ที่เป็นการเปลี่ยนเป้าปกติ)
@@ -2443,6 +2533,14 @@
   function acquireTarget(now) {
     // ★ cooldown: กันสลับ target บ่อยเกินไป (สลับได้ทุก 1.5s)
     if (now - lastTargetSwitchAt < 1500) return null;
+    // ★ HP guard — HP% ต่ำ → ไม่ engage มอนใหม่ (OpenKore attackMinPlayerHP)
+    //   ยกเว้นตอนโดนรุม (มอนตีเราอยู่ ต้องสู้กลับ ไม่ใช่ยืนนั่ง)
+    if (CFG.attackMinHpPercent > 0) {
+      const curHpPct = hpPct();
+      if (curHpPct != null && curHpPct < CFG.attackMinHpPercent && getMobAttackerCount() === 0) {
+        return null;
+      }
+    }
     // whitelist ว่าง = ตีทุกมอน kind=1 (ตามความหมายของ whitelist); ตั้งค่า = ตีเฉพาะที่ match
     const mobCount = getMobAttackerCount();
     const useLowestHp = CFG.targetLowestHpFirst && mobCount >= 2;
@@ -2468,8 +2566,10 @@
       id: m.id, x: m.x, y: m.y, acquiredAt: now, engageAt: 0,
       lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, firstAttackAt: 0,
       stuckCount: 0, warpCount: 0, lastDist: null,
-      zeroDamageAttacks: 0,
+      lowDamageAttacks: 0,
       _walkSentAt: 0, _walkSentTo: null, _lastMovePos: null, _lastMovePosAt: 0,
+      _damageTakenHits: [],   // ★ dynamic HP margin: [{t, dmg}] ล่าสุด — คำนวณ avg
+      _hpAtEngage: hp.cur,    // ★ HP ตอนเริ่ม engage (ไว้เช็ค drop rate)
     };
     wanderDest = null;   // ★ reset wander dest — จะเลือกใหม่หลังจบ combat
     lastTargetSwitchAt = now;
@@ -2727,7 +2827,7 @@
         }
         if (attacker) {
           if (target) abandonTarget('defensive → ตีตัวที่รุม', false);
-          target = { id: attacker.id, x: attacker.x, y: attacker.y, acquiredAt: now, engageAt: 0, lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, firstAttackAt: 0, stuckCount: 0, warpCount: 0, zeroDamageAttacks: 0 };
+          target = { id: attacker.id, x: attacker.x, y: attacker.y, acquiredAt: now, engageAt: 0, lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, firstAttackAt: 0, stuckCount: 0, warpCount: 0, lowDamageAttacks: 0, _damageTakenHits: [], _hpAtEngage: hp.cur };
           lastTargetSwitchAt = now;
           log('🛡️ สลับเป้า: ตีตัวที่กำลังตีเรา', attacker.name || attacker.id.toString(16));
           return;
@@ -2739,11 +2839,19 @@
     if (target) {
       const m = entities.get(target.id);
       if (!m || !m.alive) { abandonTarget('ตาย/หาย', false); target = null; }
-      else if ((target.zeroDamageAttacks || 0) >= (CFG.zeroDamageAbandonThreshold || 3)) {
-        // ★ ตี N ครั้งได้ 0 damage → Pupa/มอน def สูง → temp blacklist 60s (auto learn)
-        const ttl = CFG.zeroDamageBlacklistMs || 60000;
+      else if (shouldAbortCombat(target, m, now)) {
+        // ★ HP guard: HP วิกฤต → abandon + flee (ก่อนตาย)
+        const reason = target._abortReason || 'HP critical';
+        log('🚨 abort combat: ' + reason + ' HP=' + hpPct().toFixed(0) + '%');
+        abandonTarget(reason, false, 5000);
+        target = null;
+        if (CFG.fleeOnAbortAttack && !CFG.stealthWarpMode) doFlee(reason);
+      }
+      else if ((target.lowDamageAttacks || 0) >= (CFG.lowDamageAbandonThreshold || 3)) {
+        // ★ ตี N ครั้งได้ damage ≤ lowDamageValue → มอน def สูง / weak weapon → temp blacklist 60s
+        const ttl = CFG.lowDamageBlacklistMs || 60000;
         tempBlacklistAdd(m, ttl);
-        log('🚫 ตีไม่เข้า', m.name || m.id.toString(16), '(0 dmg x' + target.zeroDamageAttacks + ') → skip ' + (ttl/1000) + 's');
+        log('🚫 ตีไม่เข้า', m.name || m.id.toString(16), '(low dmg x' + target.lowDamageAttacks + ') → skip ' + (ttl/1000) + 's');
         abandonTarget('ตีไม่เข้า', false, ttl);
         target = null;
       }
@@ -4596,6 +4704,20 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
     setTargetBlacklist(...namesOrIds) { CFG.targetBlacklist = namesOrIds; log('⚔️ blacklist =', namesOrIds.join(', ')); },
     addTargetBlacklist(...x) { for (const e of x) if (!CFG.targetBlacklist.includes(e)) CFG.targetBlacklist.push(e); log('⚔️ blacklist =', CFG.targetBlacklist.join(', ')); },
     clearTargetBlacklist() { CFG.targetBlacklist = []; log('⚔️ ล้าง blacklist'); },
+    // ---------- Death Blacklist (persist) ----------
+    getDeathBlacklist() {
+      const now = nowMs();
+      const out = {};
+      for (const [sub, e] of deathBlacklist) {
+        if (e.expiresAt > now) out[sub] = { name: e.name, remainingMin: Math.round((e.expiresAt - now) / 60000) };
+      }
+      return out;
+    },
+    clearDeathBlacklist() {
+      deathBlacklist.clear();
+      try { localStorage.removeItem(DEATH_BL_KEY); } catch (_) {}
+      log('💀 ล้าง death blacklist');
+    },
     setFleeMob(n) { CFG.fleeOnMobCount = n; log('🏃 flee รุม', n, 'ตัว' + (n ? '' : ' (off)')); },
     setFleeAggro(n) { CFG.fleeOnAggroCount = n; log('🏃 flee aggro', n, 'ตัว' + (n ? '' : ' (off)')); },
     setFleeProximity(n, radius) { CFG.fleeOnProximityCount = n; if (radius != null) CFG.fleeOnProximityRadius = radius; log('🏃 flee มอนรอบ', n, 'ตัวในระยะ', CFG.fleeOnProximityRadius); },
