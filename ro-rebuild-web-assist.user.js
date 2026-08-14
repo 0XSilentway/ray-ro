@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.63.1
+// @version      4.64.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -128,7 +128,7 @@
     'warpLootEnabled',
     'combatEnabled', 'targetWhitelist', 'targetBlacklist', 'attackRange', 'rangedAttackRange',
     'maxAcquireDistance', 'searchRadii', 'maxChaseDistance', 'antiKS', 'avoidOtherPlayers', 'targetLowestHpFirst',
-    'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius', 'fleeMonsters', 'fleeMonsterRadius', 'maxEngageSecSlow', 'slowMonsterSubIds',
+    'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius', 'fleeMonsters', 'fleeMonsterRadius', 'maxEngageSecSlow', 'slowMonsterSubIds', 'mobPriorities', 'autoTuneHpGuard',
     'wanderEnabled', 'warpFindEnabled', 'warpToMonster', 'stuckWarpOnAbandon', 'stealthWarpMode', 'wanderRadius',
     'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs', 'autoRespawnEnabled', 'autoRespawnDelayMs', 'telegramAlertCard', 'telegramAlertFlee', 'telegramAlertBotMention', 'telegramAlertNearby', 'telegramAlertWhisper', 'telegramBotToken', 'telegramChatId',
     'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellNpcX', 'sellNpcY', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
@@ -440,12 +440,18 @@
     combatEnabled: false,
     targetWhitelist: [],          // [] = ตีมอน kind=1 ทุกตัว; ['Poring', 4000] = เฉพาะ (รองรับชื่อ + sprite id)
     targetBlacklist: ['Pupa', 'Peco Peco Egg', 'Poring Egg', 'Chonchon Egg', 'Andre Egg', 'Ant Egg', 'Hunter Fly Egg'],   // ตีไม่เข้า/ตี = 0 damage (ชื่อหรือ sprite id) — user แก้เพิ่มได้
+    // ★ mobPriorities: {name หรือ sub → number}. สูง = preferred. 0 = default. ลบ (ค่าเป็น -) = deprioritize
+    //   ตัวอย่าง: { 'Lunatic': 10, 4000: 5 } → Lunatic > Poring
+    mobPriorities: {},
     lowDamageAbandonThreshold: 3,   // ★ ตี N ครั้งได้ damage ≤ lowDamageValue → abandon + temp blacklist
     lowDamageValue: 3,              // ★ damage ≤ N ถือว่า "ตีไม่เข้า" (0 = miss, 1-3 = ตีเบามาก)
     lowDamageBlacklistMs: 60000,    // ★ temp blacklist นาน N ms (60s)
     // ★ HP guards (OpenKore attackMinPlayerHP + custom abort)
     attackMinHpPercent: 40,         // HP% < N → ไม่ acquire target ใหม่ (เก็บพลังก่อนสู้)
     abortAttackHpPercent: 20,       // HP% ระหว่างสู้ ต่ำกว่า N → abandon + flee ทันที
+    // ★ auto-tune: ปรับ HP guard จาก HP.max อัตโนมัติ (Novice conservative, Knight aggressive)
+    //   ตั้ง false → ไม่ auto-tune. หรือตั้ง _userHpGuardOverride=true → lock
+    autoTuneHpGuard: true,
     // ★ Dynamic HP margin (upgrade over OpenKore)
     //   คำนวณ avg damage taken → abort ที่ HP < avg_dmg * dynamicHpMarginMult
     //   overrides abortAttackHpPercent เมื่อมี sample ≥ dynamicHpMarginMinHits
@@ -636,6 +642,22 @@
       isDead = false;
       heal.clearExhausted();                            // ล้าง mark "หมด" ทั้งหมด เริ่มนับใหม่
       heal.allExhaustedLogged = false;
+    }
+    // ★ character auto-tune: HP.max เปลี่ยน → ปรับ HP guard อัตโนมัติ
+    //   Novice HP<200 = conservative 50/30, Kn HP>2000 = aggressive 30/15
+    //   ทำครั้งเดียวต่อการเปลี่ยน max (ไม่ทับ user override หลัง saveConfig)
+    if (m > 0 && m !== hp.max && CFG.autoTuneHpGuard !== false && !CFG._userHpGuardOverride) {
+      let minP = 40, abortP = 20;
+      if (m < 200) { minP = 50; abortP = 30; }
+      else if (m < 500) { minP = 45; abortP = 25; }
+      else if (m < 1000) { minP = 40; abortP = 20; }
+      else if (m < 2000) { minP = 35; abortP = 18; }
+      else { minP = 30; abortP = 15; }
+      if (CFG.attackMinHpPercent !== minP || CFG.abortAttackHpPercent !== abortP) {
+        CFG.attackMinHpPercent = minP;
+        CFG.abortAttackHpPercent = abortP;
+        log('🎯 auto-tune: HPmax=' + m + ' → minEngage=' + minP + '%, abort=' + abortP + '%');
+      }
     }
     // ★ track damage taken: HP ลด + มี target ที่ engage อยู่ → เก็บเข้า target._damageTakenHits
     //   (ใช้ทั้ง dynamic HP margin + potion cost estimate)
@@ -2259,16 +2281,27 @@
   // คำนวณ HP% (default 1.0 ถ้าไม่รู้)
   function monsterHpPct(m) { return (m.hpMax && m.hpMax > 0 && m.hp != null) ? m.hp / m.hpMax : 1.0; }
   // เลือกมอนใกล้สุด ในรัศมีที่กำหนด (default = maxAcquireDistance)
+  // ★ mob priority helper — read from CFG.mobPriorities (name/sub → number). default 0.
+  function mobPriority(m) {
+    if (!CFG.mobPriorities || typeof CFG.mobPriorities !== 'object') return 0;
+    if (m.sub != null && CFG.mobPriorities[m.sub] != null) return Number(CFG.mobPriorities[m.sub]) || 0;
+    if (m.name && CFG.mobPriorities[m.name] != null) return Number(CFG.mobPriorities[m.name]) || 0;
+    return 0;
+  }
   function findNearestMonster(now, radius) {
     if (player.x == null) return null;
     const cap = (radius != null) ? radius : CFG.maxAcquireDistance;
-    let best = null, bestD = Infinity;
+    let best = null, bestScore = -Infinity;
     for (const m of getMonsters(now)) {
       const d = Math.hypot(m.x - player.x, m.y - player.y);
-      if (d > cap) continue;   // ★ เกินรัศมีที่กำหนด → ข้าม
-      if (d < bestD) { bestD = d; best = m; }
+      if (d > cap) continue;
+      // ★ score = priority - dist/100  (priority มาก่อน, ใกล้เป็น tiebreaker)
+      const score = mobPriority(m) - d / 100;
+      if (score > bestScore) { bestScore = score; best = m; }
     }
-    return best ? { m: best, dist: bestD } : null;
+    if (!best) return null;
+    const bestD = Math.hypot(best.x - player.x, best.y - player.y);
+    return { m: best, dist: bestD };
   }
   // เลือกมอน HP% ต่ำสุด (tiebreak = ระยะ) ในรัศมีที่กำหนด
   function findLowestHpMonster(now, radius) {
@@ -2623,26 +2656,77 @@
       }
     }
 
-    // ★ stuck: player ไม่ขยับตำแหน่งจริงๆ นาน 6s (มี MOVE ยิงแล้ว) → server ไม่ทำ walk
-    //   ยาวกว่า 4s เพราะ RO Rebuild server บางที pathfind ช้า
+    // ★ stuck: player ไม่ขยับ >6s → ลอง offset ก่อน abandon
+    //   3 tries: offset perpendicular ±90° → offset ตรงข้าม → abandon
     if (target._walkSentAt > 0 && (now - target._lastMovePosAt) > 6000) {
-      log('🚧 stuck: player ไม่ขยับ ' + ((now - target._lastMovePosAt)/1000).toFixed(1) + 's dist=' + dist.toFixed(1));
+      target._stuckTries = (target._stuckTries || 0) + 1;
+      if (target._stuckTries <= 3) {
+        // ลอง offset — เดินไป side/back ของมอน แล้วลองใหม่
+        const dx = m.x - player.x, dy = m.y - player.y;
+        const angle = Math.atan2(dy, dx);
+        const offsets = [
+          angle + Math.PI / 2,   // ตั้งฉากซ้าย
+          angle - Math.PI / 2,   // ตั้งฉากขวา
+          angle + Math.PI,       // ตรงข้าม (เดินหนีสั้นๆ แล้วเข้าใหม่)
+        ];
+        const off = offsets[(target._stuckTries - 1) % offsets.length];
+        const step = 6 + Math.random() * 4;
+        const ox = Math.round(player.x + Math.cos(off) * step);
+        const oy = Math.round(player.y + Math.sin(off) * step);
+        target._walkSentAt = now;
+        target._walkSentTo = { x: ox, y: oy };
+        target._lastMovePos = { x: player.x, y: player.y };
+        target._lastMovePosAt = now;   // reset stuck timer
+        if (sendMove(ox, oy)) {
+          log('🚧 stuck ลอง offset ' + target._stuckTries + '/3 → (' + ox + ',' + oy + ')');
+        }
+        return 'WALKING';
+      }
+      log('🚧 stuck: player ไม่ขยับ ' + ((now - target._lastMovePosAt)/1000).toFixed(1) + 's + offset ล้ม ' + target._stuckTries + ' ครั้ง');
       return 'STUCK';
     }
 
-    // ★ re-issue MOVE เมื่อ: (a) ครั้งแรก, (b) มอนเคลื่อน >3 ช่อง, (c) MOVE เก่าเกิน 4s + player หยุดขยับ 2s
+    // ★ track mob position history — คำนวณ velocity (meeting position prediction)
+    if (!target._mobPosHist) target._mobPosHist = [];
+    const lastPos = target._mobPosHist[target._mobPosHist.length - 1];
+    if (!lastPos || Math.hypot(m.x - lastPos.x, m.y - lastPos.y) >= 1 || (now - lastPos.t) > 500) {
+      target._mobPosHist.push({ x: m.x, y: m.y, t: now });
+      if (target._mobPosHist.length > 4) target._mobPosHist.shift();
+    }
+
+    // ★ meeting position: predict where mob will be — walk to intercept ไม่ไปตำแหน่งเก่า
+    let destX = m.x, destY = m.y;
+    if (target._mobPosHist.length >= 2) {
+      const first = target._mobPosHist[0];
+      const last = target._mobPosHist[target._mobPosHist.length - 1];
+      const dt = (last.t - first.t) / 1000;
+      if (dt > 0.3) {
+        const vx = (last.x - first.x) / dt;
+        const vy = (last.y - first.y) / dt;
+        const speed = Math.hypot(vx, vy);
+        if (speed > 0.5 && speed < 10) {   // มอนกำลังเดินจริง (ไม่ใช่ jitter)
+          // walk time = dist / player_speed (สมมติ 5 ช่อง/s)
+          const walkTime = Math.min(dist / 5, 3);
+          destX = m.x + vx * walkTime;
+          destY = m.y + vy * walkTime;
+        }
+      }
+    }
+
+    // ★ re-issue MOVE เมื่อ: (a) ครั้งแรก, (b) meeting point ต่างจากเดิม >3, (c) MOVE เก่าเกิน 4s + player นิ่ง
     const sentTo = target._walkSentTo;
-    const movedFromSent = sentTo ? Math.hypot(m.x - sentTo.x, m.y - sentTo.y) : 999;
+    const movedFromSent = sentTo ? Math.hypot(destX - sentTo.x, destY - sentTo.y) : 999;
     const sentAge = target._walkSentAt ? (now - target._walkSentAt) : 999999;
     const playerIdleMs = now - target._lastMovePosAt;
     const shouldReissue = target._walkSentAt === 0
                         || movedFromSent > 3
-                        || (sentAge > 4000 && playerIdleMs > 1500);   // เก่า + player นิ่ง = re-issue
+                        || (sentAge > 4000 && playerIdleMs > 1500);
     if (shouldReissue) {
       target._walkSentAt = now;
-      target._walkSentTo = { x: m.x, y: m.y };
-      if (sendMove(m.x, m.y)) {
-        log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', Math.round(m.x), Math.round(m.y) + ') dist=' + dist.toFixed(1));
+      target._walkSentTo = { x: destX, y: destY };
+      if (sendMove(destX, destY)) {
+        const predicted = (Math.abs(destX - m.x) > 0.5 || Math.abs(destY - m.y) > 0.5) ? ' (predict)' : '';
+        log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', Math.round(destX), Math.round(destY) + ') dist=' + dist.toFixed(1) + predicted);
         return 'WALKING';
       }
       return false;
@@ -3047,7 +3131,8 @@
               if (!target.engageAt) { target.engageAt = now; }
               // ★ reset walk state — attack ยิงได้แปลว่าเข้าถึง (กัน false stuck)
               noProgressTicks = 0; lastDistToTarget = null;
-              target._walkSentAt = 0; target._walkSentTo = null;   // ★ dest walk done
+              target._walkSentAt = 0; target._walkSentTo = null;
+              target._stuckTries = 0;   // ★ reset offset counter
               log('⚔️ ตี', m.name || m.id.toString(16), target.id.toString(16), '@ dist', dist.toFixed(1), '(pending', target.pendingAttacks + ')');
             }
           }
