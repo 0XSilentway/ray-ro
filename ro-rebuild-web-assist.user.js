@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.57.1
+// @version      4.58.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -492,7 +492,8 @@
     stealthWarpMode: false,
 
     // โหมดกรองของ: 'all' = เก็บหมด, 'only' = เก็บเฉพาะ, 'except' = ยกเว้น
-    filter: { mode: 'except', onlyItems: [], exceptItems: [909,916,1302,1602,2302] },
+    // ★ default except: bird feather + weapons; Jellopy (909) เอาออก (user ส่วนใหญ่อยากเก็บขาย)
+    filter: { mode: 'except', onlyItems: [], exceptItems: [916,1302,1602,2302] },
 
     // ---------- ทั่วไป ----------
     verbose: true,
@@ -2968,7 +2969,17 @@
           const anchorX = inFarmMap ? CFG.farmMapX : player.x;
           const anchorY = inFarmMap ? CFG.farmMapY : player.y;
           const distFromAnchor = Math.hypot(player.x - anchorX, player.y - anchorY);
-          const outOfRadius = inFarmMap && distFromAnchor > (CFG.wanderRadius || 30);
+          const wanderR = CFG.wanderRadius || 60;
+          const outOfRadius = inFarmMap && distFromAnchor > wanderR;
+          // ★ ไกลมาก (>2x radius) → warp กลับ farm center (เร็วกว่าเดิน 300 ช่อง 5 นาที)
+          //   respect stealthWarpMode + throttle 30s กัน spam
+          if (inFarmMap && distFromAnchor > wanderR * 2 && !CFG.stealthWarpMode
+              && now - (lastFarmWarpBackAt || 0) > 30000) {
+            log('🎯 ไกลเกิน 2×radius (' + distFromAnchor.toFixed(0) + '>' + (wanderR*2) + ') → วาร์ปกลับ farm center');
+            sendTeleport(currentMap, CFG.farmMapX, CFG.farmMapY);
+            lastFarmWarpBackAt = now;
+            return;
+          }
           let needReroll = wanderHeading == null || wanderStepsInHeading >= 6 || outOfRadius;
           if (!needReroll && wanderAnchor) {
             const progress = Math.hypot(player.x - wanderAnchor.x, player.y - wanderAnchor.y);
