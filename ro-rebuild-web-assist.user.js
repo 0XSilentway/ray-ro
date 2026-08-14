@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.69.1
+// @version      4.69.2
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -2141,6 +2141,8 @@
   //   เลือกจุดหมาย 1 จุด → ส่ง MOVE 1 ครั้ง → รอ arrival → เลือกใหม่
   //   ไม่ reroll ระหว่างเดิน (ให้ server เดินให้ถึงจุดหมาย)
   let wanderDest = null;            // {x, y, sentAt, lastPos: {x,y,t}} — จุดหมายปัจจุบัน
+  let wanderStuckCount = 0;         // ★ นับ stuck ต่อเนื่อง — 3 ครั้ง → warp escape (ถ้าไม่ NoWarp)
+  let wanderStuckLastAt = 0;
   const WANDER_ARRIVE_TILES = 6;    // ถือว่าถึงเมื่อ dist ≤ N
   const WANDER_TIMEOUT_MS = 20000;  // เดินนานเกิน = timeout → เลือกใหม่
   const WANDER_STUCK_MS = 8000;     // ตำแหน่งไม่ขยับ N ms = ติดกำแพง (เพิ่มจาก 3 → 8 ให้ server เวลาเริ่มเดิน)
@@ -3258,8 +3260,17 @@
               if (posAge > WANDER_STUCK_MS && posMoved < 2) {
                 log('🚧 wander stuck ' + (posAge/1000).toFixed(1) + 's @ dist=' + distToDest.toFixed(0));
                 needNewDest = true;
+                // ★ escalate: stuck 3 ครั้งใน 30s → random warp escape (ถ้าไม่ NoWarp)
+                if (now - wanderStuckLastAt < 30000) wanderStuckCount++;
+                else wanderStuckCount = 1;
+                wanderStuckLastAt = now;
+                if (wanderStuckCount >= 3 && !CFG.stealthWarpMode && currentMap) {
+                  log('🌀 wander stuck ' + wanderStuckCount + 'x → random warp escape');
+                  if (sendRandomWarp()) { wanderStuckCount = 0; wanderDest = null; return; }
+                }
               } else if (posMoved >= 2) {
                 wanderDest.lastPos = { x: player.x, y: player.y, t: now };
+                wanderStuckCount = 0;   // ★ เดินได้ → reset counter
               }
             } else if (!wanderDest.lastPos) {
               wanderDest.lastPos = { x: player.x, y: player.y, t: now };
