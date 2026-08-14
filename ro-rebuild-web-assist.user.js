@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.56.0
+// @version      4.57.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -433,8 +433,14 @@
     //  ⚠️ ว่าง = ตีทุกมอน รวม MVP/มอนแรง → แนะนำให้ตั้ง whitelist หรือใช้ blacklist กันตาย
     combatEnabled: false,
     targetWhitelist: [],          // [] = ตีมอน kind=1 ทุกตัว; ['Poring', 4000] = เฉพาะ (รองรับชื่อ + sprite id)
-    targetBlacklist: [],          // ไม่ตีมอนเหล่านี้ (ชื่อหรือ sprite id)
+    targetBlacklist: ['Pupa', 'Peco Peco Egg', 'Poring Egg', 'Chonchon Egg', 'Andre Egg', 'Ant Egg', 'Hunter Fly Egg'],   // ตีไม่เข้า/ตี = 0 damage (ชื่อหรือ sprite id) — user แก้เพิ่มได้
+    zeroDamageAbandonThreshold: 3,  // ★ ตี N ครั้งได้ 0 damage → abandon + temp blacklist
+    zeroDamageBlacklistMs: 60000,   // ★ temp blacklist นาน N ms (60s)
     attackRange: 2,               // ระยะโจมตี (ช่อง) — ใกล้กว่านี้สั่งตี, ไกลกว่าเดินไป
+    // ★ approach-then-attack: server rayrag ไม่ทำ walk-and-attack เสมอ
+    //   ถ้าเปิด true → dist > attackRange → ส่ง MOVE ก่อน แล้วค่อย ATTACK ตอนใกล้
+    //   default true = พฤติกรรมเหมือน OpenKore/classic bot
+    approachBeforeAttack: true,
     rangedAttackRange: 8,         // 0 = ใช้ attackRange; >0 = นักธนูตีไกลได้ N ช่อง
     maxAcquireDistance: 30,       // ★ เลือกเป้า + ส่ง ATTACK ได้ในระยะนี้ (cap สูงสุด)
     searchRadii: [1,3,5, 10, 15, 20, 30], // ★ progressive search — ค้นจากรัศมีเล็กก่อน ถ้าเจอใช้เลย (mirror bot.js:3944)
@@ -477,7 +483,7 @@
     wanderCooldownMs: 3000,
     warpFindEnabled: false,       // ไม่เจอมอนนาน → วาร์ปสุ่ม (toggle, default OFF)
     noMonsterWarpSec: 30,
-    wanderRadius: 30,             // ★ wander ห่างจาก farmMap center ไม่เกิน N ช่อง — กันเดินทะลุ portal เข้าเมือง
+    wanderRadius: 60,             // ★ wander ห่างจาก farmMap center ไม่เกิน N ช่อง — กันเดินทะลุ portal เข้าเมือง
 
     // ---------- STEALTH WARP MODE (★ anti-detection) ----------
     //  ON → บล็อก warp ทุกแบบยกเว้น emergency flee (fleeMonsters/fleeOnMobCount)
@@ -1548,7 +1554,13 @@
             stats.sessionDamageDealt += damage;
             if (target && target.id === victimId) {
               target.lastAttackResultAt = now; target.pendingAttacks = 0; target.firstAttackAt = 0;
+              target.zeroDamageAttacks = 0;   // ★ reset — เข้าแล้ว
               stuckAbandonCount = 0; stuckAbandonHistory = [];
+            }
+          } else {
+            // ★ damage=0 → ตีไม่เข้า (Pupa/มอน def สูง/miss)
+            if (target && target.id === victimId) {
+              target.zeroDamageAttacks = (target.zeroDamageAttacks || 0) + 1;
             }
           }
           // ★ claim: ถ้าเราตีมอนตัวนี้ก่อนคนอื่น → claim (mirror world.js:825-836)
@@ -2047,6 +2059,25 @@
   // ---------- combat helpers ----------
   function nowMs() { return Date.now(); }
 
+  // ★ temp blacklist — มอนที่ตีไม่เข้า (damage=0 หลายครั้ง) → skip ชั่วคราว
+  //   key: mob id | key: sub (sprite id) → expiry timestamp
+  const tempBlacklistById = new Map();
+  const tempBlacklistBySub = new Map();
+  function tempBlacklistAdd(m, ms) {
+    const exp = nowMs() + ms;
+    if (m.id) tempBlacklistById.set(m.id, exp);
+    if (m.sub != null) tempBlacklistBySub.set(m.sub, exp);
+  }
+  function tempBlacklistHit(m, now) {
+    const byId = tempBlacklistById.get(m.id);
+    if (byId) { if (now >= byId) tempBlacklistById.delete(m.id); else return true; }
+    if (m.sub != null) {
+      const bySub = tempBlacklistBySub.get(m.sub);
+      if (bySub) { if (now >= bySub) tempBlacklistBySub.delete(m.sub); else return true; }
+    }
+    return false;
+  }
+
   // whitelist/blacklist matching (รองรับทั้งชื่อ + sprite id แบบ number)
   function matchList(entity, list) {
     if (!list || !list.length) return false;
@@ -2073,6 +2104,7 @@
     }
     if (matchList(m, CFG.targetBlacklist)) return false;
     if (CFG.targetWhitelist.length && !matchList(m, CFG.targetWhitelist)) return false;
+    if (tempBlacklistHit(m, now)) return false;   // ★ ตีไม่เข้า → skip 60s (auto)
     // anti-KS: ข้ามมอนที่คนอื่นตีอยู่ — ★ ยกเว้นถ้าเรา claim แล้ว (mirror world.js:1855 !e._claimedByMe)
     if (CFG.antiKS && !m._claimedByMe && m._lastEngagedByOtherAt && now - m._lastEngagedByOtherAt < CFG.antiKSCooldownMs) return false;
     // avoid players: ข้ามมอนที่อยู่ใกล้ผู้เล่นคนอื่น — ★ ยกเว้นถ้าเรา claim (mirror world.js:1851 !e._claimedByMe)
@@ -2424,6 +2456,7 @@
       id: m.id, x: m.x, y: m.y, acquiredAt: now, engageAt: 0,
       lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, firstAttackAt: 0,
       stuckCount: 0, warpCount: 0, lastDist: null,
+      zeroDamageAttacks: 0,
     };
     lastTargetSwitchAt = now;
     skillUsesOnTarget.clear();   // ★ reset per-target skill uses (mirror bot.js:4083)
@@ -2645,7 +2678,7 @@
         }
         if (attacker) {
           if (target) abandonTarget('defensive → ตีตัวที่รุม', false);
-          target = { id: attacker.id, x: attacker.x, y: attacker.y, acquiredAt: now, engageAt: 0, lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, firstAttackAt: 0, stuckCount: 0, warpCount: 0 };
+          target = { id: attacker.id, x: attacker.x, y: attacker.y, acquiredAt: now, engageAt: 0, lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, firstAttackAt: 0, stuckCount: 0, warpCount: 0, zeroDamageAttacks: 0 };
           lastTargetSwitchAt = now;
           log('🛡️ สลับเป้า: ตีตัวที่กำลังตีเรา', attacker.name || attacker.id.toString(16));
           return;
@@ -2657,6 +2690,14 @@
     if (target) {
       const m = entities.get(target.id);
       if (!m || !m.alive) { abandonTarget('ตาย/หาย', false); target = null; }
+      else if ((target.zeroDamageAttacks || 0) >= (CFG.zeroDamageAbandonThreshold || 3)) {
+        // ★ ตี N ครั้งได้ 0 damage → Pupa/มอน def สูง → temp blacklist 60s (auto learn)
+        const ttl = CFG.zeroDamageBlacklistMs || 60000;
+        tempBlacklistAdd(m, ttl);
+        log('🚫 ตีไม่เข้า', m.name || m.id.toString(16), '(0 dmg x' + target.zeroDamageAttacks + ') → skip ' + (ttl/1000) + 's');
+        abandonTarget('ตีไม่เข้า', false, ttl);
+        target = null;
+      }
       else {
         target.x = m.x; target.y = m.y;
         // ★ ถ้ากำลังเข้าใกล้ขึ้น (dist ลด) → อย่า abandon (กำลังทำงานถูกต้อง)
@@ -2682,14 +2723,16 @@
         const isSlowMonster = m.sub != null && Array.isArray(CFG.slowMonsterSubIds) && CFG.slowMonsterSubIds.includes(m.sub);
         const engageLimit = isSlowMonster ? (CFG.maxEngageSecSlow || 180) : CFG.maxEngageSec;
         if (target.engageAt && engageAge > engageLimit && !isTargetStillEngaged) {
-          abandonTarget('engage นาน ' + engageAge.toFixed(0) + 's' + (isSlowMonster ? ' (slow)' : ''), true, 10000); target = null;
+          // stuck=false: engage-timeout ไม่ใช่ติดกำแพง (walkAway ไม่จำเป็น)
+          abandonTarget('engage นาน ' + engageAge.toFixed(0) + 's' + (isSlowMonster ? ' (slow)' : ''), false, 10000); target = null;
         }
         else if (!target.engageAt && acquireAge > engageLimit && !isTargetStillEngaged) {
-          abandonTarget('ไม่ได้ตี ' + acquireAge.toFixed(0) + 's', true, 10000); target = null;
+          abandonTarget('ไม่ได้ตี ' + acquireAge.toFixed(0) + 's', false, 10000); target = null;
         }
         // ★ pending ≥ attackPendingMax abandon ถ้า server ไม่ตอบนานเกินไป — แต่ถ้ามอนยัง aggro เรา ข้าม (ยังสู้อยู่)
         else if (target.pendingAttacks >= CFG.attackPendingMax && target.firstAttackAt && (now - target.firstAttackAt > CFG.attackAbandonMs) && !isTargetStillEngaged) {
-          abandonTarget('pending ' + target.pendingAttacks + ' (server เงียบ)', true, 10000); target = null;
+          // ★ stuck=false: pending abandon ≠ ติดกำแพง (walkAway ทำให้บอทเดิน-หยุด-เดิน-หยุด ไม่มีจุดหมาย)
+          abandonTarget('pending ' + target.pendingAttacks + ' (server เงียบ)', false, 10000); target = null;
         }
       }
       // stuck warp escalation
@@ -2774,13 +2817,35 @@
     }
 
     // === 3. Attack ===
-    //   ★ server ทำ walk-and-attack เอง: ส่ง ATTACK ในระยะ maxAcquireDistance → server เดินตัวละครเข้าไปตี
-    //     dist > maxAcquireDistance → บอทเดินเข้าไปเอง (MOVE) จนถึง ≤maxAcquireDistance แล้วค่อยส่ง ATTACK
+    //   ★ approach-then-attack (mirror OpenKore/classic bot):
+    //     dist > attackRange → ส่ง MOVE ไปใกล้มอนก่อน (server walk-and-attack ไม่เชื่อถือได้)
+    //     dist ≤ attackRange → ส่ง ATTACK
+    //     ปิด approachBeforeAttack = พึ่ง server walk-and-attack (เก่า)
     if (target) {
       const m = entities.get(target.id);
       if (m && player.x != null && m.x != null && m.y != null) {
         const dist = Math.hypot(m.x - player.x, m.y - player.y);
         target.lastDist = dist;
+        // ★ approach: ถ้าไกลกว่า attackRange → เดินเข้าไปก่อน (ไม่ส่ง ATTACK ระยะไกล)
+        const inAttackRange = dist <= CFG.attackRange + 0.5;
+        if (CFG.approachBeforeAttack && !inAttackRange && dist <= CFG.maxAcquireDistance) {
+          // เดินไปหามอน (walkToTarget จัดการ stuck detection)
+          const stuck = walkToTarget(now, m);
+          if (stuck === 'STUCK') {
+            if (CFG.warpToMonster && !CFG.stealthWarpMode && (warpToMonsterCount.get(target.id) || 0) < CFG.warpToMonsterMaxPerEntity) {
+              const wc = warpToMonsterCount.get(target.id) || 0;
+              if (now - (target._lastWarpAt || 0) > CFG.warpToMonsterCooldownMs) {
+                if (sendTeleport(currentMap, m.x, m.y)) {
+                  target._lastWarpAt = now; warpToMonsterCount.set(target.id, wc + 1);
+                }
+                return;
+              }
+            }
+            abandonTarget('ติดกำแพง (approach)', true, 15000);
+            target = null;
+          }
+          return;
+        }
         // ในระยะ acquire → ส่ง ATTACK ตรงๆ (server เดินเข้าไปตีเอง)
         if (dist <= CFG.maxAcquireDistance) {
           // (ลบ fallback เดินเข้า — server walk-and-attack ทำงานจริง แค่ reset ไม่ทำงานชั่วคราว)
@@ -2910,10 +2975,10 @@
           } else {
             wanderHeading += (Math.random() - 0.5) * (Math.PI / 3);
           }
-          // ★ ลด step ถ้าใกล้ขอบรัศมี (กันเดินทะลุ)
-          const remaining = inFarmMap ? Math.max(3, (CFG.wanderRadius || 30) - distFromAnchor + 5) : Infinity;
+          // ★ ลด step ถ้าใกล้ขอบรัศมี (กันเดินทะลุ) — แต่คง min 10 ช่อง (กันเดินสั้นๆ ดูโง่)
+          const remaining = inFarmMap ? Math.max(10, (CFG.wanderRadius || 60) - distFromAnchor + 10) : Infinity;
           const maxStep = Math.min(CFG.wanderMaxStep, CFG.walkStepDistance, remaining);
-          const step = Math.max(4, 4 + Math.random() * (maxStep - 4));
+          const step = Math.max(10, 10 + Math.random() * Math.max(0, maxStep - 10));
           const tx = player.x + Math.cos(wanderHeading) * step;
           const ty = player.y + Math.sin(wanderHeading) * step;
           if (sendMove(tx, ty)) {
