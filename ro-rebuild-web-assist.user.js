@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.67.0
+// @version      4.68.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -455,6 +455,9 @@
     // ★ Panic mode: item heal หมด → abandon + warp + auto-STOP combat (กันตาย)
     autoStopOnNoHealItems: true,
     autoResumeCombatOnHealAvail: true,   // มียากลับมา → เปิด combat อัตโนมัติ
+    // ★ v5 opt-in — Phase A/M0 scaffolding (Task queue + ai queue). Behavior unchanged when false.
+    useV5: false,
+    v5LogPerTick: false,   // debug: log v5 tick heartbeat
     // ★ Dynamic HP margin (upgrade over OpenKore)
     //   คำนวณ avg damage taken → abort ที่ HP < avg_dmg * dynamicHpMarginMult
     //   overrides abortAttackHpPercent เมื่อมี sample ≥ dynamicHpMarginMinHits
@@ -7238,4 +7241,112 @@ setInterval(()=>{if(last&&Date.now()-last.t>5000){document.getElementById('dot')
 
   log('✅ ติดตั้งแล้ว — เล่นเกมตามปกติ ระบบจะเก็บของและใช้ยาให้เอง');
   log('   พิมพ์ ASSIST.help() เพื่อดูคำสั่งทั้งหมด, ASSIST.status() เพื่อดูสถานะ');
+
+  // ============================================================
+  //  v5 SCAFFOLDING (M0) — task queue + ai queue + ticker
+  //    Opt-in via CFG.useV5 = true. No behavior change when off.
+  //    Blueprint: ARCHITECTURE.md
+  // ============================================================
+
+  // ---- Task base class (mirror OpenKore Task.pm) ----
+  const TaskStatus = Object.freeze({ INACTIVE: 0, RUNNING: 1, INTERRUPTED: 2, STOPPED: 3, DONE: 4 });
+  const TaskPriority = Object.freeze({ LOW: 100, NORMAL: 500, HIGH: 1000, USER: 5000 });
+
+  class V5Task {
+    constructor({ name, priority = TaskPriority.NORMAL, mutexes = [] } = {}) {
+      this.name = name || this.constructor.name;
+      this.priority = priority;
+      this.mutexes = mutexes;
+      this.status = TaskStatus.INACTIVE;
+      this.error = null;
+      this._on = { mutex: [], stop: [] };
+    }
+    activate() { if (this.status !== TaskStatus.INACTIVE) throw new Error(this.name + ': activate from ' + this.status); this.status = TaskStatus.RUNNING; }
+    iterate() { /* subclass override */ }
+    interrupt() { if (this.status === TaskStatus.RUNNING) this.status = TaskStatus.INTERRUPTED; }
+    resume() { if (this.status === TaskStatus.INTERRUPTED) this.status = TaskStatus.RUNNING; }
+    stop() { this.status = TaskStatus.STOPPED; this._on.stop.forEach(cb => cb(this)); }
+    done(err = null) { this.error = err; this.status = TaskStatus.DONE; }
+    setMutexes(...m) { this.mutexes = m; this._on.mutex.forEach(cb => cb(this)); }
+    on(evt, cb) { if (this._on[evt]) this._on[evt].push(cb); }
+  }
+
+  class V5TaskManager {
+    constructor() { this.tasks = []; }
+    add(t) {
+      this.tasks.push(t);
+      this.tasks.sort((a, b) => b.priority - a.priority);
+    }
+    remove(t) { this.tasks = this.tasks.filter(x => x !== t); }
+    tick() {
+      for (const t of [...this.tasks]) {
+        try {
+          if (t.status === TaskStatus.INACTIVE) t.activate();
+          if (t.status === TaskStatus.RUNNING && this._canRun(t)) t.iterate();
+          if (t.status === TaskStatus.DONE || t.status === TaskStatus.STOPPED) this.remove(t);
+        } catch (e) {
+          log('⚠️ v5 task error [' + t.name + ']:', e && e.message);
+          t.done(e);
+          this.remove(t);
+        }
+      }
+    }
+    _canRun(task) {
+      if (!task.mutexes.length) return true;
+      return this.tasks.every(o =>
+        o === task ||
+        o.status !== TaskStatus.RUNNING ||
+        task.mutexes.every(m => !o.mutexes.includes(m))
+      );
+    }
+  }
+
+  // ---- AI queue (mirror OpenKore @ai_seq / @ai_seq_args) ----
+  const v5Ai = {
+    seq: [], args: [],
+    suspended: 0,
+    mode: 'AUTO',   // OFF | MANUAL | AUTO
+    queue(name, argsObj = {}) { this.seq.push(name); this.args.push(argsObj); },
+    dequeue() { this.seq.pop(); this.args.pop(); },
+    action() { return this.seq[this.seq.length - 1]; },
+    argsRef() { return this.args[this.args.length - 1]; },
+    clear(...names) {
+      for (let i = this.seq.length - 1; i >= 0; i--) {
+        if (!names.length || names.includes(this.seq[i])) {
+          this.seq.splice(i, 1); this.args.splice(i, 1);
+        }
+      }
+    },
+    inQueue(...names) { return names.some(n => this.seq.includes(n)); },
+  };
+
+  // ---- Dispatcher stub (will replace v4 combatLoop in M2+) ----
+  //   For M0: does nothing except log heartbeat when v5LogPerTick=true
+  function v5Dispatch() {
+    if (!CFG.useV5) return;
+    if (CFG.v5LogPerTick) log('🟢 v5 tick — ai.seq=[' + v5Ai.seq.join(',') + '] tasks=' + v5TaskManager.tasks.length);
+    // Future: MANUAL block (attack/route/take/heal), then AUTO block (acquire/storage/sell/etc)
+    v5TaskManager.tick();
+  }
+
+  // ---- Ticker ----
+  const v5TaskManager = new V5TaskManager();
+  const v5Ticker = setInterval(v5Dispatch, 200);
+
+  // ---- Debug ASSIST hooks ----
+  ASSIST.v5 = {
+    on() { CFG.useV5 = true; log('🟢 v5: ON (M0 scaffolding — behavior unchanged)'); },
+    off() { CFG.useV5 = false; log('⚫ v5: OFF'); },
+    status() {
+      return {
+        enabled: !!CFG.useV5,
+        aiSeq: [...v5Ai.seq],
+        tasks: v5TaskManager.tasks.map(t => ({ name: t.name, status: t.status, priority: t.priority, mutexes: t.mutexes })),
+      };
+    },
+    logPerTick(on) { CFG.v5LogPerTick = !!on; log('v5 tick log:', CFG.v5LogPerTick ? 'ON' : 'OFF'); },
+    Task: V5Task, TaskStatus, TaskPriority,
+    ai: v5Ai, taskMgr: v5TaskManager,
+  };
+  log('🧪 v5 scaffolding loaded (M0). ทดสอบ: ASSIST.v5.on() / ASSIST.v5.status()');
 })();
