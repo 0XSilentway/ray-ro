@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.53.0
+// @version      4.54.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -1533,10 +1533,11 @@
           m.hp = Math.max(0, m.hp - damage);
         }
         // ★★ heuristic: เราเป็นคนตีหรือคนอื่น?
-        //   0x17 ไม่มี attacker field → ใช้ "เราส่ง ATTACK ใส่มอนตัวนี้ภายใน 2 วินาทีไหม?" เป็นตัววัด
-        //   ถ้าใช่ = เราตี (DPS/claim/reset pending)
-        //   ถ้าไม่ใช่ = คนอื่นตี → stamp _lastEngagedByOtherAt (anti-KS)
-        const weAttackedThis = (lastAttackSentTarget === victimId && (now - lastAttackSentAt) < 2000);
+        //   0x17 ไม่มี attacker field → ใช้ per-target "เราส่ง ATTACK ใส่มอนตัวนี้ภายใน 8s ไหม?"
+        //   window 8s ครอบคลุม attackReIssueMs*2 (2s*2) + server auto-attack lag
+        //   เดิมใช้ global 2s → server auto-attack packets หลัง 2s → misattributed as KS
+        const lastSentToVictim = lastAttackPerTarget.get(victimId) || 0;
+        const weAttackedThis = lastSentToVictim > 0 && (now - lastSentToVictim) < ATTACK_ATTRIBUTION_WINDOW_MS;
         if (weAttackedThis) {
           // ★ เราตี — DPS/ASPD tracking + claim
           stats.attackWindow.push({ t: now });
@@ -2160,8 +2161,12 @@
 
   // ---------- combat encoders ----------
   // ATTACK OUT: [0b][target_id:4]
-  let lastAttackSentAt = 0;        // ★ timestamp ที่เราส่ง ATTACK ล่าสุด
-  let lastAttackSentTarget = null; // ★ targetId ที่เราส่ง ATTACK ใส่
+  let lastAttackSentAt = 0;        // ★ timestamp ที่เราส่ง ATTACK ล่าสุด (global — legacy)
+  let lastAttackSentTarget = null; // ★ targetId ที่เราส่ง ATTACK ใส่ (global — legacy)
+  // ★ per-target attack tracking — server auto-attack ยิง damage packets ต่อเนื่องหลัง ATTACK
+  //   ต้องรู้ว่าเราตีมอนตัวนี้ล่าสุดเมื่อไหร่ ต่อตัว (ไม่ใช่ global) เพื่อ attribute damage ถูก
+  const lastAttackPerTarget = new Map();   // targetId → timestamp
+  const ATTACK_ATTRIBUTION_WINDOW_MS = 8000;   // 8s: ครอบคลุม attackReIssueMs*2 + server auto-attack lag
   function sendAttack(targetId) {
     if (!activeWS || activeWS.readyState !== 1) return false;
     const b = new Uint8Array(5);
@@ -2169,8 +2174,16 @@
     b[1] = targetId & 0xff; b[2] = (targetId >> 8) & 0xff;
     b[3] = (targetId >> 16) & 0xff; b[4] = (targetId >>> 24) & 0xff;
     activeWS.send(b);
-    lastAttackSentAt = nowMs();    // ★ track เพื่อ heuristic anti-KS ใน 0x17
+    const _now = nowMs();
+    lastAttackSentAt = _now;
     lastAttackSentTarget = targetId;
+    lastAttackPerTarget.set(targetId, _now);
+    // ★ prune old entries — เก็บเฉพาะที่ยังอยู่ใน window (เผื่อ target หลายตัว)
+    if (lastAttackPerTarget.size > 50) {
+      for (const [id, t] of lastAttackPerTarget) {
+        if (_now - t > ATTACK_ATTRIBUTION_WINDOW_MS * 2) lastAttackPerTarget.delete(id);
+      }
+    }
     return true;
   }
   // ★ SKILL OUT (mirror protocol.js:223-248):
