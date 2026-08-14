@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.69.0
+// @version      4.69.1
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -3594,6 +3594,7 @@
           stealthIdle: !!CFG.stealthIdleEnabled, chatReply: !!CFG.chatReplyEnabled,
           disguise: !!disguise.active, warpBack: !!CFG.warpBackToFarm,
           stealthWarp: !!CFG.stealthWarpMode,
+          verboseCombat: !!CFG.verboseCombat,
         },
         farm: {
           map: CFG.farmMap || '', mapX: CFG.farmMapX, mapY: CFG.farmMapY,
@@ -3727,6 +3728,16 @@ button.large { font-size:14px; padding:12px 10px; }
   </div>
 </div>
 
+<h3>🔍 Diagnostic</h3>
+<div class="btns">
+  <button data-toggle="verboseCombat" data-on="verboseCombatOn" data-off="verboseCombatOff">🔍 Verbose: ?</button>
+  <button id="btn-list-nearby">📋 ดูมอนใกล้ (พร้อมเหตุผลที่ skip)</button>
+</div>
+<div id="nearby-panel" class="card" style="display:none;margin-top:6px">
+  <div class="tiny" style="margin-bottom:4px;color:#8ab4f8">มอนใกล้ (dist ≤ 50) — <span id="nearby-count">0</span> ตัว</div>
+  <div id="nearby-list"></div>
+</div>
+
 <h3>📋 Log</h3>
 <div class="log" id="log"><div class="tiny">รอ log จาก game tab...</div></div>
 <div class="tiny" style="margin-top:8px;">v<span id="ver">?</span> · sync ทุก 2s · BroadcastChannel 'ray-ro-control'</div>
@@ -3856,6 +3867,38 @@ function renderBlacklist(bl) {
   };
   if (addInput) addInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addBtn.click(); });
 }
+// ★ Diagnostic: list nearby mobs on click (IPC → result rendered in nearby-panel)
+(function wireNearby() {
+  const btn = document.getElementById('btn-list-nearby');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const rid = 'nearby-' + Date.now() + Math.random();
+    const listener = (e) => {
+      const m = e.data;
+      if (!m || m.type !== 'result' || m.requestId !== rid) return;
+      chan.removeEventListener('message', listener);
+      const arr = Array.isArray(m.value) ? m.value : (m.value && m.value.error ? [] : []);
+      const panel = document.getElementById('nearby-panel');
+      const list = document.getElementById('nearby-list');
+      document.getElementById('nearby-count').textContent = arr.length;
+      panel.style.display = 'block';
+      list.innerHTML = arr.length ? arr.map(x => {
+        const ok = !x.why;
+        const color = ok ? '#a5d6a7' : '#e67e22';
+        const bg = ok ? '#1b5e20' : '#4a2020';
+        return '<div style="display:flex;align-items:center;gap:6px;padding:3px 6px;margin-bottom:2px;background:' + bg + ';border-radius:3px;font-size:11px">'
+          + '<span style="flex:1;color:#e8e8e8">' + esc(x.name) + ' <span class="tiny">#' + (x.sub != null ? x.sub : '?') + '</span></span>'
+          + '<span class="tiny" style="color:#9aa0a6">d=' + x.dist + '</span>'
+          + '<span style="color:' + color + ';font-size:10px;padding:1px 5px;border-radius:2px;background:rgba(0,0,0,.3)">' + (ok ? '✓ ตีได้' : x.why) + '</span>'
+          + '</div>';
+      }).join('') : '<div class="tiny">(ไม่เจอมอนใน 50 ช่อง)</div>';
+      if (m.error) list.innerHTML = '<div class="tiny" style="color:#e67e22">error: ' + esc(m.error) + '</div>';
+    };
+    chan.addEventListener('message', listener);
+    chan.postMessage({ type: 'call', method: 'listNearbyMobs', args: [], requestId: rid });
+    setTimeout(() => chan.removeEventListener('message', listener), 3000);
+  });
+})();
 setInterval(() => {
   if (Date.now() - lastAt > 6000) {
     document.getElementById('conn').textContent = '⚠ ไม่ได้รับข้อมูล 6s+';
