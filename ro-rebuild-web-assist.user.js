@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.71.2
+// @version      4.72.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -501,8 +501,8 @@
     combatTickMs: 200,            // tick loop (มี jitter ±25% เหมือนบอทหลัก)
     postCombatDelayMs: 800,      // ★ รอ N ms หลังสู้เสร็จ/เก็บของเสร็จ ก่อนทำอย่างอื่น (ดูเป็นธรรมชาติ)
     attackReIssueMs: 2000,        // ส่ง attack ซ้ำถ้า server เงียบนานกว่านี้ (เพิ่มจาก 2500 → pending เพิ่มช้าลง)
-    attackAbandonMs: 5000,       // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (เพิ่มจาก 8s → 20s รองรับ reset ล่าช้า)
-    attackPendingMax: 3,          // ★ abandon ถ้า pending ≥ N (ลดจาก 8 → 4 ใกล้บอทหลัก ตัดมอนตีไม่ได้เร็วขึ้น)
+    attackAbandonMs: 10000,      // ★ ส่ง attack แล้ว server ไม่ตอบ N ms → abandon (OpenKore ai_attack_giveup ~6-10s)
+    attackPendingMax: 5,          // ★ abandon ถ้า pending ≥ N (เพิ่มจาก 3 → 5 กัน abandon ก่อน Thief low DPS ฆ่าได้)
     aggroKeepAliveMs: 15000,      // ★ มอน aggro เรา → ถือว่ายังสู้อยู่ N ms (กัน abandon ตอนมอนเดินมาหา)
     maxEngageSec: 30,             // abandon target ถ้า engage นานกว่านี้
     maxEngageSecSlow: 180,        // ★ abandon มอน "ตีช้า/เจาะไม่เข้า" (เห็ด/พืช) ถ้านานกว่านี้ (3 นาที)
@@ -2978,46 +2978,49 @@
       lastWarpPlayerPos = null;
     }
 
-    // === 1b. Defensive retarget (OpenKore attackChangeTarget style) ===
-    //   สลับ target แค่ 2 กรณี:
-    //   (A) target ปัจจุบัน passive (ไม่ตีเรากลับ นานเกิน 3s ตั้งแต่ engage) + มีมอน aggressive ใหม่
-    //   (B) target ปัจจุบัน aggressive อยู่ แต่ยังไม่มี target หรือ target หายไป
-    //   ★ ถ้ากำลังตี target ที่ aggressive อยู่ → **ไม่สลับเด็ดขาด** (finish first — OpenKore behavior)
-    if (player.x != null) {
-      let skipRetarget = false;
-      let targetIsAggressive = false;
-      if (target) {
-        const tm = entities.get(target.id);
-        if (tm && tm.alive) {
-          // aggressive = ตีเราภายใน 5s ล่าสุด
-          const attackTime = mobAttackers.get(target.id) || 0;
-          if (attackTime && (now - attackTime) < 5000) targetIsAggressive = true;
-          // หรือ engage ยังไม่นาน (< 3s) — ให้เวลาดูว่ามอนจะตีเราไหม
-          const engageAge = target.engageAt ? (now - target.engageAt) : (now - target.acquiredAt);
-          if (engageAge < 3000) targetIsAggressive = true;   // ให้เวลาก่อนตัดสินใจ
-          // เราตีเข้าแล้ว (มี damage dealt) → keep target (OpenKore: valid engagement)
-          if (target.lastAttackResultAt) skipRetarget = true;
-          // aggressive + ไม่หมด → ไม่สลับ
-          if (targetIsAggressive) skipRetarget = true;
-        }
-      }
-      if (!skipRetarget) {
-        let attacker = null, attackerDist = Infinity;
+    // === 1b. attackChangeTarget (STRICT OpenKore port) ===
+    //   ดู Attack.pm:
+    //     switch_to_aggressive = !current_target_is_aggressive
+    //     switch_to_higher_priority = current_aggressive && new_priority > current_priority
+    //     if (switch_to_aggressive || switch_to_higher_priority) → switch
+    //   ★ "aggressive" = มอนตีเราจริง (ai_getAggressives). engageAge ไม่นับ.
+    //   ★ ไม่มี aggressive attacker ในลิสต์ → NO switch (บอทตี target เดิมต่อ)
+    if (target && player.x != null) {
+      const tm = entities.get(target.id);
+      if (tm && tm.alive) {
+        // build aggressives list — มอนที่ตีเราภายใน aggroKeepAliveMs
+        const keepMs = CFG.aggroKeepAliveMs || 15000;
+        const aggressives = [];
         for (const [aid, at] of mobAttackers) {
-          if (now - at > CFG.fleeMobWindowMs) { mobAttackers.delete(aid); continue; }
-          if (target && aid === target.id) continue;
+          if (now - at > keepMs) continue;
+          if (aid === target.id) continue;   // ตัว target เดิม → ไม่นับเป็น candidate
           const am = entities.get(aid);
           if (!am || !am.alive || am.x == null) continue;
           if (!isTargetable(am, now)) continue;
-          const d = Math.hypot(am.x - player.x, am.y - player.y);
-          if (d < attackerDist) { attackerDist = d; attacker = am; }
+          aggressives.push(am);
         }
-        if (attacker) {
-          if (target) abandonTarget('defensive → target passive, สลับไปตัวที่รุม', false);
-          target = { id: attacker.id, x: attacker.x, y: attacker.y, acquiredAt: now, engageAt: 0, lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, firstAttackAt: 0, stuckCount: 0, warpCount: 0, lowDamageAttacks: 0, _damageTakenHits: [], _hpAtEngage: hp.cur };
-          lastTargetSwitchAt = now;
-          log('🛡️ สลับเป้า:', attacker.name || attacker.id.toString(16), '(target เก่า passive)');
-          return;
+        if (aggressives.length > 0) {
+          // pick best new target: priority desc, then distance asc
+          let bestNew = null, bestP = -Infinity, bestD = Infinity;
+          for (const am of aggressives) {
+            const p = mobPriority(am);
+            const d = Math.hypot(am.x - player.x, am.y - player.y);
+            if (p > bestP || (p === bestP && d < bestD)) { bestNew = am; bestP = p; bestD = d; }
+          }
+          // current target aggressive?
+          const curAttackTime = mobAttackers.get(target.id) || 0;
+          const currentAggressive = curAttackTime > 0 && (now - curAttackTime) < keepMs;
+          const currentPriority = mobPriority(tm);
+          const switchToAggressive = !currentAggressive;
+          const switchToHigherPri = currentAggressive && bestP > currentPriority;
+          if (switchToAggressive || switchToHigherPri) {
+            const reason = switchToAggressive ? 'passive → aggressor' : ('priority ' + bestP + '>' + currentPriority);
+            abandonTarget('attackChangeTarget: ' + reason, false);
+            target = { id: bestNew.id, x: bestNew.x, y: bestNew.y, acquiredAt: now, engageAt: 0, lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, firstAttackAt: 0, stuckCount: 0, warpCount: 0, lowDamageAttacks: 0, _damageTakenHits: [], _hpAtEngage: hp.cur };
+            lastTargetSwitchAt = now;
+            log('🛡️ attackChangeTarget:', bestNew.name || bestNew.id.toString(16), '(' + reason + ')');
+            return;
+          }
         }
       }
     }
