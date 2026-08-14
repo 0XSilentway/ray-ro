@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.62.3
+// @version      4.63.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -2808,39 +2808,45 @@
       lastWarpPlayerPos = null;
     }
 
-    // === 1b. Defensive retarget === ถ้าโดนมอนตี (ที่ไม่ใช่ target ปัจจุบัน) → สลับมาตีตัวนั้น
-    //   สำคัญ: ถ้ามอน aggro เรา ต้องสู้กลับ ไม่ใช่เดินหาตัวอื่น
-    //   ★ finish-first guard: target ปัจจุบันเหลือ HP น้อย/กำลังยิงอยู่ → ตีให้ตายก่อน (กันสลับกลางแอ็ค)
+    // === 1b. Defensive retarget (OpenKore attackChangeTarget style) ===
+    //   สลับ target แค่ 2 กรณี:
+    //   (A) target ปัจจุบัน passive (ไม่ตีเรากลับ นานเกิน 3s ตั้งแต่ engage) + มีมอน aggressive ใหม่
+    //   (B) target ปัจจุบัน aggressive อยู่ แต่ยังไม่มี target หรือ target หายไป
+    //   ★ ถ้ากำลังตี target ที่ aggressive อยู่ → **ไม่สลับเด็ดขาด** (finish first — OpenKore behavior)
     if (player.x != null) {
-      // ★ ถ้า target ปัจจุบันใกล้ตาย/กำลังตีอยู่ → ข้าม retarget
       let skipRetarget = false;
+      let targetIsAggressive = false;
       if (target) {
         const tm = entities.get(target.id);
         if (tm && tm.alive) {
-          const tHpPct = (tm.hpMax > 0 && tm.hp != null) ? (tm.hp / tm.hpMax) : 1.0;
-          const hasPendingHit = target.pendingAttacks > 0;
-          const inAcquireRange = tm.x != null && player.x != null
-            && Math.hypot(tm.x - player.x, tm.y - player.y) <= CFG.maxAcquireDistance;
-          // HP ≤ 30% (จะตายอีก 1-2 ตี) หรือ pending hit + อยู่ในระยะ → finish ก่อน
-          if (tHpPct <= 0.30 || (hasPendingHit && inAcquireRange)) skipRetarget = true;
+          // aggressive = ตีเราภายใน 5s ล่าสุด
+          const attackTime = mobAttackers.get(target.id) || 0;
+          if (attackTime && (now - attackTime) < 5000) targetIsAggressive = true;
+          // หรือ engage ยังไม่นาน (< 3s) — ให้เวลาดูว่ามอนจะตีเราไหม
+          const engageAge = target.engageAt ? (now - target.engageAt) : (now - target.acquiredAt);
+          if (engageAge < 3000) targetIsAggressive = true;   // ให้เวลาก่อนตัดสินใจ
+          // เราตีเข้าแล้ว (มี damage dealt) → keep target (OpenKore: valid engagement)
+          if (target.lastAttackResultAt) skipRetarget = true;
+          // aggressive + ไม่หมด → ไม่สลับ
+          if (targetIsAggressive) skipRetarget = true;
         }
       }
       if (!skipRetarget) {
         let attacker = null, attackerDist = Infinity;
         for (const [aid, at] of mobAttackers) {
           if (now - at > CFG.fleeMobWindowMs) { mobAttackers.delete(aid); continue; }
-          if (target && aid === target.id) continue;   // ตัวที่กำลังตีอยู่แล้ว → ข้าม
+          if (target && aid === target.id) continue;
           const am = entities.get(aid);
           if (!am || !am.alive || am.x == null) continue;
-          if (!isTargetable(am, now)) continue;         // ตัวที่ตีเราต้อง targetable ด้วย
+          if (!isTargetable(am, now)) continue;
           const d = Math.hypot(am.x - player.x, am.y - player.y);
           if (d < attackerDist) { attackerDist = d; attacker = am; }
         }
         if (attacker) {
-          if (target) abandonTarget('defensive → ตีตัวที่รุม', false);
+          if (target) abandonTarget('defensive → target passive, สลับไปตัวที่รุม', false);
           target = { id: attacker.id, x: attacker.x, y: attacker.y, acquiredAt: now, engageAt: 0, lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, firstAttackAt: 0, stuckCount: 0, warpCount: 0, lowDamageAttacks: 0, _damageTakenHits: [], _hpAtEngage: hp.cur };
           lastTargetSwitchAt = now;
-          log('🛡️ สลับเป้า: ตีตัวที่กำลังตีเรา', attacker.name || attacker.id.toString(16));
+          log('🛡️ สลับเป้า:', attacker.name || attacker.id.toString(16), '(target เก่า passive)');
           return;
         }
       }
