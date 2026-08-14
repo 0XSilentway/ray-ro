@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.66.0
+// @version      4.67.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -3052,36 +3052,15 @@
     }
 
     // === 3. Attack ===
-    //   ★ approach-then-attack (mirror OpenKore/classic bot):
-    //     dist > attackRange → ส่ง MOVE ไปใกล้มอนก่อน (server walk-and-attack ไม่เชื่อถือได้)
-    //     dist ≤ attackRange → ส่ง ATTACK
-    //     ปิด approachBeforeAttack = พึ่ง server walk-and-attack (เก่า)
+    //   ★ RO client behavior: click มอน = server walk-and-attack (ATTACK packet เดียว)
+    //   ★ OpenKore attackSendAttackWithMove: ส่ง ATTACK ทันที + fallback MOVE ถ้า server ไม่ตอบ
+    //     1. ส่ง ATTACK เสมอในระยะ maxAcquireDistance (server จัดการ walk)
+    //     2. ถ้า pending สะสม 3+ ครั้ง 4s+ + player ไม่ขยับ → fallback ส่ง MOVE (helper)
     if (target) {
       const m = entities.get(target.id);
       if (m && player.x != null && m.x != null && m.y != null) {
         const dist = Math.hypot(m.x - player.x, m.y - player.y);
         target.lastDist = dist;
-        // ★ approach: ถ้าไกลกว่า attackRange → เดินเข้าไปก่อน (ไม่ส่ง ATTACK ระยะไกล)
-        const inAttackRange = dist <= CFG.attackRange + 0.5;
-        if (CFG.approachBeforeAttack && !inAttackRange && dist <= CFG.maxAcquireDistance) {
-          // เดินไปหามอน (walkToTarget จัดการ stuck detection)
-          const stuck = walkToTarget(now, m);
-          if (stuck === 'STUCK') {
-            if (CFG.warpToMonster && !CFG.stealthWarpMode && (warpToMonsterCount.get(target.id) || 0) < CFG.warpToMonsterMaxPerEntity) {
-              const wc = warpToMonsterCount.get(target.id) || 0;
-              if (now - (target._lastWarpAt || 0) > CFG.warpToMonsterCooldownMs) {
-                if (sendTeleport(currentMap, m.x, m.y)) {
-                  target._lastWarpAt = now; warpToMonsterCount.set(target.id, wc + 1);
-                }
-                return;
-              }
-            }
-            // stuck=false: approach fail อาจแค่ server sync ช้า, walkAway ทำให้บอทเดินสั่นๆ
-            abandonTarget('ติดกำแพง (approach)', false, 15000);
-            target = null;
-          }
-          return;
-        }
         // ในระยะ acquire → ส่ง ATTACK ตรงๆ (server เดินเข้าไปตีเอง)
         if (dist <= CFG.maxAcquireDistance) {
           // (ลบ fallback เดินเข้า — server walk-and-attack ทำงานจริง แค่ reset ไม่ทำงานชั่วคราว)
@@ -3103,9 +3082,23 @@
               if (!target.firstAttackAt) { target.firstAttackAt = now; }   // ★ จดเวลาส่งครั้งแรก
               if (!target.engageAt) { target.engageAt = now; }
               // ★ reset walk state — attack ยิงได้แปลว่าเข้าถึง (กัน false stuck)
-              noProgressTicks = 0; lastDistToTarget = null;
-              target._walkSentAt = 0; target._walkSentTo = null;
-              target._stuckTries = 0;   // ★ reset offset counter
+              if (target.lastAttackResultAt) { noProgressTicks = 0; lastDistToTarget = null; target._walkSentAt = 0; target._walkSentTo = null; }
+              // ★ OpenKore attackSendAttackWithMove: dist ไกล + ยังไม่มี damage response → pipeline MOVE
+              //   (server บางที walk-and-attack ไม่ทำ ถ้ามอนไกลมาก → ช่วยเดินให้)
+              const notInAttackRange = dist > CFG.attackRange + 1;
+              const noProgress = !target.lastAttackResultAt && target.pendingAttacks >= 2;
+              if (notInAttackRange && (noProgress || target.pendingAttacks === 1)) {
+                // ส่ง MOVE พร้อม ATTACK — เดินไปหามอน (แค่ครั้งเดียวต่อ target movement)
+                const sentTo = target._walkSentTo;
+                const movedFromSent = sentTo ? Math.hypot(m.x - sentTo.x, m.y - sentTo.y) : 999;
+                if (target._walkSentAt === 0 || movedFromSent > 3) {
+                  target._walkSentAt = now;
+                  target._walkSentTo = { x: m.x, y: m.y };
+                  target._lastMovePos = { x: player.x, y: player.y };
+                  target._lastMovePosAt = now;
+                  sendMove(m.x, m.y);
+                }
+              }
               log('⚔️ ตี', m.name || m.id.toString(16), target.id.toString(16), '@ dist', dist.toFixed(1), '(pending', target.pendingAttacks + ')');
             }
           }
