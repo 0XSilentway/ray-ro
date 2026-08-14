@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.62.2
+// @version      4.62.3
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -678,13 +678,22 @@
     pendingItemId: null,          // item ที่รอเช็คผลอยู่
     pendingHpBefore: null,        // HP ก่อนใช้ item ล่าสุด
 
-    // item นี้ "ใช้ได้" ไหม (ไม่ได้ถูก mark ว่าเพิ่งหมด)
+    // item นี้ "ใช้ได้" ไหม
+    //   ★ inventory-first: ถ้ามีของใน bag > 0 → ใช้ได้เสมอ (ignore exhausted flag)
+    //   fallback: ถ้าไม่รู้ inventory (Map ว่าง) → ใช้ exhausted heuristic
     isAvailable(id, now) {
-      const t = this.exhaustedUntil.get(id) || 0;
-      return now >= t;
+      const invCount = inventory.get(Number(id)) || 0;
+      if (invCount > 0) return true;                 // มีของ → ใช้ได้แน่นอน
+      if (inventory.size === 0) {                    // ยังไม่รู้ inventory → fallback
+        const t = this.exhaustedUntil.get(id) || 0;
+        return now >= t;
+      }
+      return false;                                  // inventory รู้แล้ว + count=0 = หมดจริง
     },
     // mark ว่า item หมด → รอ healExhaustedMs แล้วค่อยลองใหม่
+    //   ★ ไม่ mark ถ้า inventory ยัง > 0 (heal ไม่ขึ้นเพราะโดนตี ไม่ใช่ potion หมด)
     markExhausted(id, now) {
+      if ((inventory.get(Number(id)) || 0) > 0) return;   // มี potion แต่ heal ไม่ขึ้น = ถูกโจมตี → ไม่ mark
       this.exhaustedUntil.set(id, now + CFG.healExhaustedMs);
     },
     // เลือก item ถัดไปที่จะใช้ (ตามโหมด)
@@ -692,13 +701,12 @@
       const ids = CFG.healItems;
       if (!ids.length) return null;
       const avail = ids.filter(id => this.isAvailable(id, now));
-      if (!avail.length) return null;                // ทุกตัว mark ว่าหมดอยู่
+      if (!avail.length) return null;
       if (CFG.healMode === 'random') {
         return avail[Math.floor(Math.random() * avail.length)];
       }
-      return avail[0];                               // 'order' = ตัวแรกที่ใช้ได้
+      return avail[0];
     },
-    // ล้าง mark "หมด" ทั้งหมด (ใช้ตอน respawn / reset)
     clearExhausted() { this.exhaustedUntil.clear(); },
   };
 
