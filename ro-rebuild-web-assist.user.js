@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.68.1
+// @version      4.69.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -458,6 +458,9 @@
     // ★ v5 opt-in — Phase A/M0 scaffolding (Task queue + ai queue). Behavior unchanged when false.
     useV5: false,
     v5LogPerTick: false,   // debug: log v5 tick heartbeat
+    // ★ verbose combat diagnostics — log why acquireTarget/wander made each decision
+    verboseCombat: false,
+    verboseCombatIntervalMs: 3000,   // rate limit: log ทุก N ms อย่างมาก
     // ★ Dynamic HP margin (upgrade over OpenKore)
     //   คำนวณ avg damage taken → abort ที่ HP < avg_dmg * dynamicHpMarginMult
     //   overrides abortAttackHpPercent เมื่อมี sample ≥ dynamicHpMarginMinHits
@@ -2220,6 +2223,34 @@
       return entity.name && entity.name.toLowerCase() === String(e).toLowerCase();
     });
   }
+  // ★ verbose helper — คืน reason ทำไม skip (สำหรับ debug); null = targetable
+  function whyNotTargetable(m, now) {
+    if (!m) return 'null';
+    if (!m.alive) return 'dead';
+    if (m.kind !== 1) return 'kind=' + m.kind + '(not monster)';
+    if (m.x == null || m.y == null) return 'no pos';
+    if (m.sub == null) {
+      if (player.x == null) return 'no player pos';
+      const d = Math.hypot(m.x - player.x, m.y - player.y);
+      if (d > 12) return 'ghost (no sub, dist ' + d.toFixed(0) + '>12)';
+    }
+    if (m.sub != null && m.sub < 1000) return 'sub<1000 (player, not mob)';
+    if (matchList(m, CFG.targetBlacklist)) return 'permanent blacklist';
+    if (CFG.targetWhitelist.length && !matchList(m, CFG.targetWhitelist)) return 'not in whitelist';
+    if (tempBlacklistHit(m, now)) return 'temp blacklist (ตีไม่เข้า)';
+    if (deathBlacklistHit(m, now)) return 'death blacklist';
+    const ab = abandonCooldown.get(m.id);
+    if (ab && now < ab) return 'abandon cooldown (' + Math.round((ab - now)/1000) + 's left)';
+    if (CFG.antiKS && !m._claimedByMe && m._lastEngagedByOtherAt && now - m._lastEngagedByOtherAt < CFG.antiKSCooldownMs) return 'antiKS';
+    if (CFG.avoidOtherPlayers && !m._claimedByMe) {
+      for (const e of entities.values()) {
+        if (e.kind === 0 && e.alive && e.id !== playerId && e.x != null && e.name && !isStaleId(e.id, now)) {
+          if (Math.hypot(e.x - m.x, e.y - m.y) <= CFG.playerProximityRadius) return 'avoidOtherPlayers (player ' + (e.name || 'x') + ' ใกล้)';
+        }
+      }
+    }
+    return null;
+  }
   function isTargetable(m, now) {
     if (!m || !m.alive) return false;
     if (m.kind !== 1) return false;                       // ตีเฉพาะ monster
@@ -2602,14 +2633,38 @@
     }
     return false;
   }
+  // ★ verbose acquire log — rate-limited dump ของ candidates + reason
+  let _lastVerboseAcquireAt = 0;
+  function verboseAcquireLog(now, reasonSummary) {
+    if (!CFG.verboseCombat) return;
+    if (now - _lastVerboseAcquireAt < (CFG.verboseCombatIntervalMs || 3000)) return;
+    _lastVerboseAcquireAt = now;
+    if (player.x == null) { log('🔍 acquire skip:', reasonSummary, '(no player pos)'); return; }
+    // list mobs ใกล้สุด 10 ตัว + reason
+    const arr = [];
+    for (const e of entities.values()) {
+      if (e.kind !== 1 || e.x == null) continue;
+      const d = Math.hypot(e.x - player.x, e.y - player.y);
+      if (d > 40) continue;
+      const why = whyNotTargetable(e, now);
+      arr.push({ e, d, why });
+    }
+    arr.sort((a, b) => a.d - b.d);
+    const summary = arr.slice(0, 10).map(x => `${x.e.name || 'x'}#${x.e.sub != null ? x.e.sub : '?'}@${x.d.toFixed(0)}${x.why ? '[' + x.why + ']' : '[OK]'}`).join(' ');
+    log('🔍 acquire skip: ' + reasonSummary + ' | nearby(' + arr.length + '): ' + (summary || 'none'));
+  }
   function acquireTarget(now) {
     // ★ cooldown: กันสลับ target บ่อยเกินไป (สลับได้ทุก 1.5s)
-    if (now - lastTargetSwitchAt < 1500) return null;
+    if (now - lastTargetSwitchAt < 1500) {
+      verboseAcquireLog(now, 'cooldown ' + Math.round(1500 - (now - lastTargetSwitchAt)) + 'ms');
+      return null;
+    }
     // ★ HP guard — HP% ต่ำ → ไม่ engage มอนใหม่ (OpenKore attackMinPlayerHP)
     //   ยกเว้นตอนโดนรุม (มอนตีเราอยู่ ต้องสู้กลับ ไม่ใช่ยืนนั่ง)
     if (CFG.attackMinHpPercent > 0) {
       const curHpPct = hpPct();
       if (curHpPct != null && curHpPct < CFG.attackMinHpPercent && getMobAttackerCount() === 0) {
+        verboseAcquireLog(now, 'HP guard: ' + curHpPct.toFixed(0) + '% < ' + CFG.attackMinHpPercent + '%');
         return null;
       }
     }
@@ -2627,7 +2682,10 @@
       found = useLowestHp ? findLowestHpMonster(now, r) : findNearestMonster(now, r);
       if (found) { usedRadius = r; break; }   // ★ เจอแล้วใช้เลย ไม่ขยายรัศมี
     }
-    if (!found) return null;
+    if (!found) {
+      verboseAcquireLog(now, 'no candidate');
+      return null;
+    }
     if (useLowestHp) {
       log('🎯 เลือกเป้า HP ต่ำสุด (รุม', mobCount, 'ตัว):', found.m.name, (found.hpPct * 100).toFixed(0) + '%', '@', found.dist.toFixed(1), '(r≤' + usedRadius + ')');
     } else {
@@ -4883,6 +4941,22 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
     setTargetBlacklist(...namesOrIds) { CFG.targetBlacklist = namesOrIds; log('⚔️ blacklist =', namesOrIds.join(', ')); },
     addTargetBlacklist(...x) { for (const e of x) if (!CFG.targetBlacklist.includes(e)) CFG.targetBlacklist.push(e); log('⚔️ blacklist =', CFG.targetBlacklist.join(', ')); },
     clearTargetBlacklist() { CFG.targetBlacklist = []; log('⚔️ ล้าง blacklist'); },
+    // ★ diagnostic
+    verboseCombatOn() { CFG.verboseCombat = true; log('🔍 verboseCombat: ON — log ทุก ' + (CFG.verboseCombatIntervalMs/1000) + 's'); },
+    verboseCombatOff() { CFG.verboseCombat = false; log('🔍 verboseCombat: OFF'); },
+    listNearbyMobs() {
+      if (player.x == null) return { error: 'no player pos' };
+      const now = nowMs();
+      const arr = [];
+      for (const e of entities.values()) {
+        if (e.kind !== 1 || e.x == null) continue;
+        const d = Math.hypot(e.x - player.x, e.y - player.y);
+        if (d > 50) continue;
+        arr.push({ name: e.name || '?', sub: e.sub, id: e.id.toString(16), dist: +d.toFixed(1), alive: !!e.alive, why: whyNotTargetable(e, now) });
+      }
+      arr.sort((a, b) => a.dist - b.dist);
+      return arr;
+    },
     // ★ toggle blacklist โดยส่ง value (สำหรับ monitor UI). rawIsNum=true → parse เป็น number
     toggleTargetBlacklist(val, rawIsNum) {
       const cast = rawIsNum ? Number(val) : val;
