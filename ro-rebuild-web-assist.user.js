@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.65.0
+// @version      4.66.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -452,6 +452,9 @@
     // ★ auto-tune: ปรับ HP guard จาก HP.max อัตโนมัติ (Novice conservative, Knight aggressive)
     //   ตั้ง false → ไม่ auto-tune. หรือตั้ง _userHpGuardOverride=true → lock
     autoTuneHpGuard: true,
+    // ★ Panic mode: item heal หมด → abandon + warp + auto-STOP combat (กันตาย)
+    autoStopOnNoHealItems: true,
+    autoResumeCombatOnHealAvail: true,   // มียากลับมา → เปิด combat อัตโนมัติ
     // ★ Dynamic HP margin (upgrade over OpenKore)
     //   คำนวณ avg damage taken → abort ที่ HP < avg_dmg * dynamicHpMarginMult
     //   overrides abortAttackHpPercent เมื่อมี sample ≥ dynamicHpMarginMinHits
@@ -778,10 +781,21 @@
 
     const id = heal.pickNext(now);
     if (id == null) {
-      // ทุกตัว mark ว่าหมดอยู่ → log ครั้งเดียวเมื่อเริ่มหมด (กัน spam)
+      // ★ ทุก item หมด → panic mode: หยุด combat + flee + กลับเมือง (กันตาย)
       if (!heal.allExhaustedLogged) {
-        log('⚠️ item heal ทุกตัวหมด/ไม่ได้ผล — รอเก็บ/ซื้อเพิ่ม');
+        log('⚠️ item heal ทุกตัวหมด — PANIC: หยุด combat + warp กลับเมือง');
         heal.allExhaustedLogged = true;
+        // 1. abandon target ปัจจุบัน
+        if (target) { abandonTarget('ยาหมด — panic', false); target = null; }
+        // 2. flee ถ้าไม่ stealth + มี fleeMonsters/emergency warp
+        if (!CFG.stealthWarpMode) {
+          if (sendRandomWarp()) logImportant('flee', '🚨 ยาหมด → warp หนี');
+        }
+        // 3. หยุด combat ชั่วคราว (auto-STOP)
+        if (CFG.autoStopOnNoHealItems !== false && CFG.combatEnabled) {
+          CFG.combatEnabled = false;
+          log('⛔ Auto-Combat: OFF (ยาหมด — เปิดใหม่หลังเก็บยา)');
+        }
       }
       return;
     }
@@ -1191,6 +1205,16 @@
         const count = countEnc >>> 1;
         if (itemId > 0 && itemId < 50000) {
           inventory.set(itemId, count);   // SET ตรงจาก server (แม่นยำเสมอ)
+          // ★ auto-resume: มี heal item กลับมา → clear panic flag + resume combat
+          if (count > 0 && CFG.healItems && CFG.healItems.includes(itemId) && heal.allExhaustedLogged) {
+            heal.allExhaustedLogged = false;
+            heal.clearExhausted();
+            log('💊 ' + nameOf(itemId) + ' กลับมา ' + count + ' ชิ้น → resume heal');
+            if (CFG.autoStopOnNoHealItems !== false && !CFG.combatEnabled && CFG.autoResumeCombatOnHealAvail !== false) {
+              CFG.combatEnabled = true;
+              log('⚔️ Auto-Combat: ON (มียากลับมาแล้ว)');
+            }
+          }
         }
       } else if (sub === 5 && u.length >= 15) {
         // ★ equipment add (sub=5): itemId @ offset 12 (2B LE) bit-packed >>> 1
