@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.68.0
+// @version      4.68.1
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -2138,9 +2138,10 @@
   //   เลือกจุดหมาย 1 จุด → ส่ง MOVE 1 ครั้ง → รอ arrival → เลือกใหม่
   //   ไม่ reroll ระหว่างเดิน (ให้ server เดินให้ถึงจุดหมาย)
   let wanderDest = null;            // {x, y, sentAt, lastPos: {x,y,t}} — จุดหมายปัจจุบัน
-  const WANDER_ARRIVE_TILES = 6;    // ถือว่าถึงเมื่อ dist ≤ N (relaxed จาก 3 — server บาง มาไม่ถึง)
-  const WANDER_TIMEOUT_MS = 15000;  // เดินนานเกิน = timeout → เลือกใหม่ (ลดจาก 20)
-  const WANDER_STUCK_MS = 3000;     // ตำแหน่งไม่ขยับ N ms = ติดกำแพง → เลือกใหม่ (ลดจาก 4)
+  const WANDER_ARRIVE_TILES = 6;    // ถือว่าถึงเมื่อ dist ≤ N
+  const WANDER_TIMEOUT_MS = 20000;  // เดินนานเกิน = timeout → เลือกใหม่
+  const WANDER_STUCK_MS = 8000;     // ตำแหน่งไม่ขยับ N ms = ติดกำแพง (เพิ่มจาก 3 → 8 ให้ server เวลาเริ่มเดิน)
+  const WANDER_START_GRACE_MS = 2000;  // ★ หลังส่ง MOVE รอ N ms ก่อนเริ่มนับ stuck (server pathfind delay)
   const WANDER_STEP_MIN = 15;       // จุดหมายห่างขั้นต่ำ N ช่อง
   const WANDER_STEP_MAX = 30;       // จุดหมายห่างสูงสุด N ช่อง
   let lastFleeAt = 0;
@@ -3192,15 +3193,17 @@
               needNewDest = true;   // ★ ถึงจุดหมาย
             } else if (age > WANDER_TIMEOUT_MS) {
               needNewDest = true;   // ★ timeout
-            } else if (wanderDest.lastPos) {
+            } else if (age > WANDER_START_GRACE_MS && wanderDest.lastPos) {
+              // ★ grace period หลังส่ง MOVE — ให้ server เริ่มเดินก่อน
               const posAge = now - wanderDest.lastPos.t;
               const posMoved = Math.hypot(player.x - wanderDest.lastPos.x, player.y - wanderDest.lastPos.y);
               if (posAge > WANDER_STUCK_MS && posMoved < 2) {
-                needNewDest = true;   // ★ ตำแหน่งไม่ขยับ = ติดกำแพง
+                log('🚧 wander stuck ' + (posAge/1000).toFixed(1) + 's @ dist=' + distToDest.toFixed(0));
+                needNewDest = true;
               } else if (posMoved >= 2) {
                 wanderDest.lastPos = { x: player.x, y: player.y, t: now };
               }
-            } else {
+            } else if (!wanderDest.lastPos) {
               wanderDest.lastPos = { x: player.x, y: player.y, t: now };
             }
           }
