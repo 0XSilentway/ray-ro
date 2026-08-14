@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.62.0
+// @version      4.62.1
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -3466,6 +3466,27 @@
         },
         isDead: !!isDead, isResting: !!isResting,
         logs: (typeof logBuf !== 'undefined' && logBuf) ? logBuf.slice(-20) : [],
+        blacklist: {
+          perm: Array.isArray(CFG.targetBlacklist) ? [...CFG.targetBlacklist] : [],
+          death: (() => {
+            const out = [];
+            const now = nowMs();
+            for (const [sub, e] of deathBlacklist) {
+              if (e.expiresAt > now) out.push({ sub, name: e.name || '', remainingMin: Math.round((e.expiresAt - now) / 60000) });
+            }
+            return out;
+          })(),
+          seen: (() => {
+            const seen = new Map();
+            for (const e of entities.values()) {
+              if (e.kind !== 1 || !e.name) continue;
+              const key = e.sub != null ? String(e.sub) : e.name;
+              if (!seen.has(key)) seen.set(key, { sub: e.sub, name: e.name, count: 0 });
+              seen.get(key).count++;
+            }
+            return [...seen.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+          })(),
+        },
       });
     } catch (_) {}
   }
@@ -3556,6 +3577,20 @@ button.large { font-size:14px; padding:12px 10px; }
   <button data-toggle="storage" data-on="storageOn" data-off="storageOff">🏦 Kafra: ?</button>
 </div>
 
+<h3>🚫 มอนที่ไม่ตี — Blacklist</h3>
+<div class="card" id="blsection">
+  <div class="tiny" style="margin-bottom:6px;color:#e67e22">Permanent (<span id="blperm-count">0</span>)</div>
+  <div id="blperm-list" style="margin-bottom:8px"></div>
+  <div class="tiny" style="margin-bottom:6px;color:#c0392b">💀 Death auto (<span id="bldeath-count">0</span>) — ตายฟาร์มมอนนี้ = skip 10 นาที</div>
+  <div id="bldeath-list" style="margin-bottom:8px"></div>
+  <div class="tiny" style="margin-bottom:6px;color:#27ae60">🔍 มอนบนจอ (<span id="blseen-count">0</span>) — คลิก + เพื่อบล็อค</div>
+  <div id="blseen-list" style="margin-bottom:8px"></div>
+  <div style="display:flex;gap:6px">
+    <input id="bladd" placeholder="เพิ่มเอง: ชื่อ หรือ sprite ID" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:4px;color:#e8e8e8;padding:5px 7px;font-size:12px;font-family:inherit">
+    <button id="bladdbtn">+ เพิ่ม</button>
+  </div>
+</div>
+
 <h3>📋 Log</h3>
 <div class="log" id="log"><div class="tiny">รอ log จาก game tab...</div></div>
 <div class="tiny" style="margin-top:8px;">v<span id="ver">?</span> · sync ทุก 2s · BroadcastChannel 'ray-ro-control'</div>
@@ -3618,7 +3653,73 @@ chan.onmessage = (e) => {
     }).join('');
     if (wasBottom) box.scrollTop = box.scrollHeight;
   }
+  // ★ blacklist section
+  if (m.blacklist) renderBlacklist(m.blacklist);
 };
+function renderBlacklist(bl) {
+  const perm = bl.perm || [];
+  const death = bl.death || [];
+  const seen = bl.seen || [];
+  document.getElementById('blperm-count').textContent = perm.length;
+  document.getElementById('bldeath-count').textContent = death.length;
+  document.getElementById('blseen-count').textContent = seen.length;
+  const permList = document.getElementById('blperm-list');
+  permList.innerHTML = perm.length ? perm.map((x, i) =>
+    '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px">'
+    + '<span style="flex:1">' + esc(x) + '</span>'
+    + '<button data-rmperm="' + i + '" style="background:#4a2020;color:#ef9a9a;border:1px solid #6a3030;border-radius:3px;padding:2px 8px;font-size:11px;cursor:pointer">✕</button>'
+    + '</div>'
+  ).join('') : '<div class="tiny">(ว่าง)</div>';
+  const deathList = document.getElementById('bldeath-list');
+  deathList.innerHTML = death.length ? death.map(d =>
+    '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px">'
+    + '<span style="flex:1">' + esc(d.name || ('sub#' + d.sub)) + ' <span class="tiny">(#' + d.sub + ')</span></span>'
+    + '<span class="tiny" style="color:#e67e22">' + d.remainingMin + ' นาที</span>'
+    + '<button data-rmdeath="' + d.sub + '" style="background:#4a2020;color:#ef9a9a;border:1px solid #6a3030;border-radius:3px;padding:2px 8px;font-size:11px;cursor:pointer">✕</button>'
+    + '</div>'
+  ).join('') : '<div class="tiny">(ว่าง)</div>';
+  const seenList = document.getElementById('blseen-list');
+  const isBlocked = (mob) => {
+    if (mob.sub != null && perm.some(x => (typeof x === 'number' && x === mob.sub) || String(x) === String(mob.sub))) return true;
+    return perm.some(x => String(x).toLowerCase() === String(mob.name || '').toLowerCase());
+  };
+  seenList.innerHTML = seen.length ? seen.map(mob => {
+    const blocked = isBlocked(mob);
+    const val = mob.sub != null ? mob.sub : mob.name;
+    const isNum = mob.sub != null;
+    return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px;'
+      + (blocked ? 'opacity:0.6' : '') + '">'
+      + '<span style="flex:1">' + esc(mob.name) + (mob.sub != null ? ' <span class="tiny">(#' + mob.sub + ')</span>' : '') + '</span>'
+      + '<span class="tiny">× ' + mob.count + '</span>'
+      + '<button data-toggleperm="' + encodeURIComponent(String(val)) + '" data-isnum="' + (isNum ? '1' : '0') + '" style="background:'
+      + (blocked ? '#6a3030' : '#1b5e20') + ';color:'
+      + (blocked ? '#ef9a9a' : '#a5d6a7') + ';border:1px solid '
+      + (blocked ? '#8a4040' : '#2e7d32') + ';border-radius:3px;padding:2px 8px;font-size:11px;cursor:pointer">'
+      + (blocked ? '✓ blocked' : '+ block') + '</button>'
+      + '</div>';
+  }).join('') : '<div class="tiny">(ไม่เห็นมอน — ยืนใกล้มอน แล้วรอ 2s)</div>';
+  // wire buttons
+  permList.querySelectorAll('[data-rmperm]').forEach(b => b.onclick = () => call('removeTargetBlacklistAt', parseInt(b.getAttribute('data-rmperm'), 10)));
+  deathList.querySelectorAll('[data-rmdeath]').forEach(b => b.onclick = () => call('removeDeathBlacklistSub', parseInt(b.getAttribute('data-rmdeath'), 10)));
+  seenList.querySelectorAll('[data-toggleperm]').forEach(b => b.onclick = () => {
+    const raw = decodeURIComponent(b.getAttribute('data-toggleperm'));
+    const isNum = b.getAttribute('data-isnum') === '1';
+    call('toggleTargetBlacklist', isNum ? Number(raw) : raw, isNum);
+  });
+}
+{
+  const addInput = document.getElementById('bladd');
+  const addBtn = document.getElementById('bladdbtn');
+  if (addBtn) addBtn.onclick = () => {
+    const v = (addInput.value || '').trim();
+    if (!v) return;
+    const asNum = Number(v);
+    const isNum = !isNaN(asNum) && String(asNum) === v;
+    call('toggleTargetBlacklist', isNum ? asNum : v, isNum);
+    addInput.value = '';
+  };
+  if (addInput) addInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addBtn.click(); });
+}
 setInterval(() => {
   if (Date.now() - lastAt > 6000) {
     document.getElementById('conn').textContent = '⚠ ไม่ได้รับข้อมูล 6s+';
@@ -4704,6 +4805,21 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
     setTargetBlacklist(...namesOrIds) { CFG.targetBlacklist = namesOrIds; log('⚔️ blacklist =', namesOrIds.join(', ')); },
     addTargetBlacklist(...x) { for (const e of x) if (!CFG.targetBlacklist.includes(e)) CFG.targetBlacklist.push(e); log('⚔️ blacklist =', CFG.targetBlacklist.join(', ')); },
     clearTargetBlacklist() { CFG.targetBlacklist = []; log('⚔️ ล้าง blacklist'); },
+    // ★ toggle blacklist โดยส่ง value (สำหรับ monitor UI). rawIsNum=true → parse เป็น number
+    toggleTargetBlacklist(val, rawIsNum) {
+      const cast = rawIsNum ? Number(val) : val;
+      const idx = CFG.targetBlacklist.findIndex(x => (typeof x === 'number' && typeof cast === 'number' && x === cast) || (String(x).toLowerCase() === String(cast).toLowerCase()));
+      if (idx >= 0) { CFG.targetBlacklist.splice(idx, 1); log('⚔️ blacklist ลบ:', cast); }
+      else { CFG.targetBlacklist.push(cast); log('⚔️ blacklist เพิ่ม:', cast); }
+      saveConfigDebounced();
+    },
+    removeTargetBlacklistAt(idx) {
+      if (idx >= 0 && idx < CFG.targetBlacklist.length) {
+        CFG.targetBlacklist.splice(idx, 1);
+        saveConfigDebounced();
+        log('⚔️ blacklist ลบ index', idx);
+      }
+    },
     // ---------- Death Blacklist (persist) ----------
     getDeathBlacklist() {
       const now = nowMs();
@@ -4717,6 +4833,17 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
       deathBlacklist.clear();
       try { localStorage.removeItem(DEATH_BL_KEY); } catch (_) {}
       log('💀 ล้าง death blacklist');
+    },
+    removeDeathBlacklistSub(sub) {
+      const n = Number(sub);
+      if (deathBlacklist.delete(n)) {
+        try {
+          const obj = {};
+          for (const [s, e] of deathBlacklist) obj[s] = e;
+          localStorage.setItem(DEATH_BL_KEY, JSON.stringify(obj));
+        } catch (_) {}
+        log('💀 death blacklist ลบ sub#' + n);
+      }
     },
     setFleeMob(n) { CFG.fleeOnMobCount = n; log('🏃 flee รุม', n, 'ตัว' + (n ? '' : ' (off)')); },
     setFleeAggro(n) { CFG.fleeOnAggroCount = n; log('🏃 flee aggro', n, 'ตัว' + (n ? '' : ' (off)')); },
