@@ -129,7 +129,7 @@
     'combatEnabled', 'targetWhitelist', 'targetBlacklist', 'attackRange', 'rangedAttackRange',
     'maxAcquireDistance', 'searchRadii', 'maxChaseDistance', 'antiKS', 'avoidOtherPlayers', 'targetLowestHpFirst',
     'fleeOnMobCount', 'fleeOnAggroCount', 'fleeOnProximityCount', 'fleeOnProximityRadius', 'fleeMonsters', 'fleeMonsterRadius', 'maxEngageSecSlow', 'slowMonsterSubIds',
-    'wanderEnabled', 'warpFindEnabled', 'warpToMonster', 'stuckWarpOnAbandon',
+    'wanderEnabled', 'warpFindEnabled', 'warpToMonster', 'stuckWarpOnAbandon', 'stealthWarpMode',
     'restEnabled', 'restHpPercent', 'restUntilPercent', 'restMaxSec', 'postCombatDelayMs', 'autoRespawnEnabled', 'autoRespawnDelayMs', 'telegramAlertCard', 'telegramAlertFlee', 'telegramAlertBotMention', 'telegramAlertNearby', 'telegramAlertWhisper', 'telegramBotToken', 'telegramChatId',
     'sellEnabled', 'sellNpcName', 'sellNpcMap', 'sellNpcX', 'sellNpcY', 'sellIntervalMin', 'sellOnFull', 'sellItemIds',
     'storageEnabled', 'kafraName', 'kafraMap', 'kafraMapX', 'kafraMapY', 'kafraChoice', 'depositOnFull', 'depositAfterSell', 'depositItemIds',
@@ -477,6 +477,12 @@
     wanderCooldownMs: 3000,
     warpFindEnabled: false,       // ไม่เจอมอนนาน → วาร์ปสุ่ม (toggle, default OFF)
     noMonsterWarpSec: 30,
+
+    // ---------- STEALTH WARP MODE (★ anti-detection) ----------
+    //  ON → บล็อก warp ทุกแบบยกเว้น emergency flee (fleeMonsters/fleeOnMobCount)
+    //  ปิด: warpLoot, warpToMonster, warpFindEnabled, stuckWarpOnAbandon
+    //  เพราะ server log detect วาร์ปถี่ๆ ได้ง่าย (คนจริงทำไม่ได้)
+    stealthWarpMode: false,
 
     // โหมดกรองของ: 'all' = เก็บหมด, 'only' = เก็บเฉพาะ, 'except' = ยกเว้น
     filter: { mode: 'except', onlyItems: [], exceptItems: [909,916,1302,1602,2302] },
@@ -1672,6 +1678,7 @@
   const WARP_OFFSETS = [[0,0,'กลาง'], [0,-3,'เหนือ3'], [3,0,'ตอ3'], [0,3,'ใต้3'], [-3,0,'ตต3']];
   const warpLoop = setInterval(() => {
     if (!CFG.warpLootEnabled) return;
+    if (CFG.stealthWarpMode) return;                  // ★ stealth: block warp-to-loot
     if (!currentMap) return;                          // ไม่รู้แมป → ไม่วาร์ป (กัน packet ผิด)
     const now = Date.now();
 
@@ -2506,9 +2513,11 @@
     const mobCount = getMobAttackerCount();
 
     // === -1. AUTO-REST (priority สูงสุด — ก่อน flee) ===
-    //   ถ้า HP ต่ำ + ไม่โดนรุม → นั่งพัก; ถ้ากำลังนั่งอยู่ → จัดการลุก/นั่งต่อ
+    //   ถ้า HP ต่ำ + ไม่โดนรุม + ไม่มี target ที่ยังไม่ตาย → นั่งพัก
+    //   ★ target guard: มอนบางตัว (Poring/Egg) ไม่ตีกลับ → mobCount=0 ตลอด → ห้ามนั่งกลางตี
     if (CFG.restEnabled && pct != null && hp.cur != null) {
-      if (!isResting && pct < CFG.restHpPercent && mobCount === 0) {
+      const activeTarget = target && (() => { const m = entities.get(target.id); return m && m.alive; })();
+      if (!isResting && pct < CFG.restHpPercent && mobCount === 0 && !activeTarget) {
         // เริ่มนั่งพัก
         if (sendSit()) {
           isResting = true;
@@ -2518,9 +2527,9 @@
         return;
       }
       if (isResting) {
-        // โดนรุมระหว่างนั่ง → ลุกทันทีเพื่อตีตอบ (ไม่ return — ให้ flee/defensive ทำงานต่อ)
-        if (mobCount > 0) {
-          if (sendStand()) { log('⚠️ โดนรุมระหว่างนั่ง → ลุกทันที'); }
+        // โดนรุม/มี target ใหม่ระหว่างนั่ง → ลุกทันที (ไม่ return — ให้ flee/defensive ทำงานต่อ)
+        if (mobCount > 0 || activeTarget) {
+          if (sendStand()) { log('⚠️ ' + (activeTarget ? 'มี target' : 'โดนรุม') + 'ระหว่างนั่ง → ลุกทันที'); }
           isResting = false;
         }
         // ฟื้นถึง restUntilPercent หรือหมดเวลา → ลุก
@@ -2590,23 +2599,39 @@
 
     // === 1b. Defensive retarget === ถ้าโดนมอนตี (ที่ไม่ใช่ target ปัจจุบัน) → สลับมาตีตัวนั้น
     //   สำคัญ: ถ้ามอน aggro เรา ต้องสู้กลับ ไม่ใช่เดินหาตัวอื่น
+    //   ★ finish-first guard: target ปัจจุบันเหลือ HP น้อย/กำลังยิงอยู่ → ตีให้ตายก่อน (กันสลับกลางแอ็ค)
     if (player.x != null) {
-      let attacker = null, attackerDist = Infinity;
-      for (const [aid, at] of mobAttackers) {
-        if (now - at > CFG.fleeMobWindowMs) { mobAttackers.delete(aid); continue; }
-        if (target && aid === target.id) continue;   // ตัวที่กำลังตีอยู่แล้ว → ข้าม
-        const am = entities.get(aid);
-        if (!am || !am.alive || am.x == null) continue;
-        if (!isTargetable(am, now)) continue;         // ตัวที่ตีเราต้อง targetable ด้วย
-        const d = Math.hypot(am.x - player.x, am.y - player.y);
-        if (d < attackerDist) { attackerDist = d; attacker = am; }
+      // ★ ถ้า target ปัจจุบันใกล้ตาย/กำลังตีอยู่ → ข้าม retarget
+      let skipRetarget = false;
+      if (target) {
+        const tm = entities.get(target.id);
+        if (tm && tm.alive) {
+          const tHpPct = (tm.hpMax > 0 && tm.hp != null) ? (tm.hp / tm.hpMax) : 1.0;
+          const hasPendingHit = target.pendingAttacks > 0;
+          const inAcquireRange = tm.x != null && player.x != null
+            && Math.hypot(tm.x - player.x, tm.y - player.y) <= CFG.maxAcquireDistance;
+          // HP ≤ 30% (จะตายอีก 1-2 ตี) หรือ pending hit + อยู่ในระยะ → finish ก่อน
+          if (tHpPct <= 0.30 || (hasPendingHit && inAcquireRange)) skipRetarget = true;
+        }
       }
-      if (attacker) {
-        if (target) abandonTarget('defensive → ตีตัวที่รุม', false);
-        target = { id: attacker.id, x: attacker.x, y: attacker.y, acquiredAt: now, engageAt: 0, lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, firstAttackAt: 0, stuckCount: 0, warpCount: 0 };
-        lastTargetSwitchAt = now;
-        log('🛡️ สลับเป้า: ตีตัวที่กำลังตีเรา', attacker.name || attacker.id.toString(16));
-        return;
+      if (!skipRetarget) {
+        let attacker = null, attackerDist = Infinity;
+        for (const [aid, at] of mobAttackers) {
+          if (now - at > CFG.fleeMobWindowMs) { mobAttackers.delete(aid); continue; }
+          if (target && aid === target.id) continue;   // ตัวที่กำลังตีอยู่แล้ว → ข้าม
+          const am = entities.get(aid);
+          if (!am || !am.alive || am.x == null) continue;
+          if (!isTargetable(am, now)) continue;         // ตัวที่ตีเราต้อง targetable ด้วย
+          const d = Math.hypot(am.x - player.x, am.y - player.y);
+          if (d < attackerDist) { attackerDist = d; attacker = am; }
+        }
+        if (attacker) {
+          if (target) abandonTarget('defensive → ตีตัวที่รุม', false);
+          target = { id: attacker.id, x: attacker.x, y: attacker.y, acquiredAt: now, engageAt: 0, lastAttackAt: 0, lastAttackResultAt: 0, pendingAttacks: 0, firstAttackAt: 0, stuckCount: 0, warpCount: 0 };
+          lastTargetSwitchAt = now;
+          log('🛡️ สลับเป้า: ตีตัวที่กำลังตีเรา', attacker.name || attacker.id.toString(16));
+          return;
+        }
       }
     }
 
@@ -2650,7 +2675,7 @@
         }
       }
       // stuck warp escalation
-      if (!target && CFG.stuckWarpOnAbandon > 0 && stuckAbandonCount >= CFG.stuckWarpOnAbandon) {
+      if (!target && CFG.stuckWarpOnAbandon > 0 && !CFG.stealthWarpMode && stuckAbandonCount >= CFG.stuckWarpOnAbandon) {
         log('🌀 stuck abandon', stuckAbandonCount, 'ครั้ง → วาร์ปสุ่ม');
         sendRandomWarp(); stuckAbandonCount = 0; stuckAbandonHistory = [];
       }
@@ -2742,7 +2767,7 @@
         if (dist <= CFG.maxAcquireDistance) {
           // (ลบ fallback เดินเข้า — server walk-and-attack ทำงานจริง แค่ reset ไม่ทำงานชั่วคราว)
           // ★ ถ้า pending สูง + server เงียบนาน + เปิด warpToMonster → วาร์ปไปหามอน (แทน abandon)
-          if (CFG.warpToMonster && target.pendingAttacks >= 4 && target.firstAttackAt && (now - target.firstAttackAt > 8000)
+          if (CFG.warpToMonster && !CFG.stealthWarpMode && target.pendingAttacks >= 4 && target.firstAttackAt && (now - target.firstAttackAt > 8000)
               && (warpToMonsterCount.get(target.id) || 0) < CFG.warpToMonsterMaxPerEntity
               && now - (target._lastWarpAt || 0) > CFG.warpToMonsterCooldownMs) {
             const wc = warpToMonsterCount.get(target.id) || 0;
@@ -2774,7 +2799,7 @@
         //   สั่งเดินทีละ walkStepDistance ช่อง (≤20) ถ้าติดกำแพงนาน → warpToMonster/abandon
         const stuck = walkToTarget(now, m);
         if (stuck === 'STUCK') {
-          if (CFG.warpToMonster && (warpToMonsterCount.get(target.id) || 0) < CFG.warpToMonsterMaxPerEntity) {
+          if (CFG.warpToMonster && !CFG.stealthWarpMode && (warpToMonsterCount.get(target.id) || 0) < CFG.warpToMonsterMaxPerEntity) {
             const wc = warpToMonsterCount.get(target.id) || 0;
             if (now - (target._lastWarpAt || 0) > CFG.warpToMonsterCooldownMs) {
               if (sendTeleport(currentMap, m.x, m.y)) {
@@ -2800,7 +2825,7 @@
       if (!noMonsterSince) noMonsterSince = now;
       const noMonSec = (now - noMonsterSince) / 1000;
       // warp-find — มี cooldown กัน spam (วาร์ป fail ก็ต้องรอ ไม่ยิงทุก tick)
-      if (CFG.warpFindEnabled && noMonSec >= CFG.noMonsterWarpSec && now - lastWarpFindAt > 3000) {
+      if (CFG.warpFindEnabled && !CFG.stealthWarpMode && noMonSec >= CFG.noMonsterWarpSec && now - lastWarpFindAt > 3000) {
         lastWarpFindAt = now;
         if (currentMap) {
           log('🌀 ไม่เจอมอน', noMonSec.toFixed(0) + 's → วาร์ปสุ่ม');
@@ -3141,6 +3166,7 @@
           sell: !!CFG.sellEnabled, storage: !!CFG.storageEnabled,
           stealthIdle: !!CFG.stealthIdleEnabled, chatReply: !!CFG.chatReplyEnabled,
           disguise: !!disguise.active, warpBack: !!CFG.warpBackToFarm,
+          stealthWarp: !!CFG.stealthWarpMode,
         },
         farm: {
           map: CFG.farmMap || '', mapX: CFG.farmMapX, mapY: CFG.farmMapY,
@@ -3224,6 +3250,7 @@ button.large { font-size:14px; padding:12px 10px; }
   <button data-toggle="stealthIdle" data-on="stealthIdleOn" data-off="stealthIdleOff">💤 Idle: ?</button>
   <button data-toggle="chatReply" data-on="chatReplyOn" data-off="chatReplyOff">💬 Reply: ?</button>
   <button data-toggle="disguise" data-on="disguiseOn" data-off="disguiseOff">🎭 Disguise: ?</button>
+  <button data-toggle="stealthWarp" data-on="stealthWarpOn" data-off="stealthWarpOff">🌀 NoWarp: ?</button>
 </div>
 
 <h3>⚙️ ระบบ</h3>
@@ -4337,6 +4364,16 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
     },
     warpLootQueue() {
       return [...warpQueue.values()].map(w => ({ item: nameOf(w.itemId), x: w.x, y: w.y, offsetIdx: w.offsetIdx }));
+    },
+    // ---------- Stealth Warp Mode (★ anti-detection) ----------
+    stealthWarpOn()  {
+      CFG.stealthWarpMode = true;
+      warpQueue.clear();   // ล้าง queue ค้างของ warpLoot
+      log('🥷 Stealth Warp Mode: ON (บล็อก warpLoot / warpToMonster / warpFind / stuckWarp — เก็บ emergency flee ไว้)');
+    },
+    stealthWarpOff() {
+      CFG.stealthWarpMode = false;
+      log('🥷 Stealth Warp Mode: OFF (warp กลับมาปกติ)');
     },
     addLootOnly(...ids) {
       for (const id of ids) if (!CFG.filter.onlyItems.includes(id)) CFG.filter.onlyItems.push(id);
