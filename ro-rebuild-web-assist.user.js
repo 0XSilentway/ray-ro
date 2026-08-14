@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.62.1
+// @version      4.62.2
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -2178,6 +2178,9 @@
       const d = Math.hypot(m.x - player.x, m.y - player.y);
       if (d > 12) return false;                           // ghost ไกล → ข้าม (รอ SPAWN)
     }
+    // ★ RO Rebuild: monster sub ID ≥ 1000 (Poring=4000). sub < 1000 = player job class (Novice=4, Swordsman=1, etc)
+    //   กัน bug entity ที่ SPAWN ยังไม่มา default kind=1 → บอทตีคน
+    if (m.sub != null && m.sub < 1000) return false;
     if (matchList(m, CFG.targetBlacklist)) return false;
     if (CFG.targetWhitelist.length && !matchList(m, CFG.targetWhitelist)) return false;
     if (tempBlacklistHit(m, now)) return false;   // ★ ตีไม่เข้า → skip 60s (auto)
