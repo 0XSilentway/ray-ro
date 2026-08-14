@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.64.0
+// @version      4.65.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -2111,9 +2111,9 @@
   //   เลือกจุดหมาย 1 จุด → ส่ง MOVE 1 ครั้ง → รอ arrival → เลือกใหม่
   //   ไม่ reroll ระหว่างเดิน (ให้ server เดินให้ถึงจุดหมาย)
   let wanderDest = null;            // {x, y, sentAt, lastPos: {x,y,t}} — จุดหมายปัจจุบัน
-  const WANDER_ARRIVE_TILES = 3;    // ถือว่าถึงเมื่อ dist ≤ N
-  const WANDER_TIMEOUT_MS = 20000;  // เดินนานเกิน = timeout → เลือกใหม่
-  const WANDER_STUCK_MS = 4000;     // ตำแหน่งไม่ขยับ N ms = ติดกำแพง → เลือกใหม่
+  const WANDER_ARRIVE_TILES = 6;    // ถือว่าถึงเมื่อ dist ≤ N (relaxed จาก 3 — server บาง มาไม่ถึง)
+  const WANDER_TIMEOUT_MS = 15000;  // เดินนานเกิน = timeout → เลือกใหม่ (ลดจาก 20)
+  const WANDER_STUCK_MS = 3000;     // ตำแหน่งไม่ขยับ N ms = ติดกำแพง → เลือกใหม่ (ลดจาก 4)
   const WANDER_STEP_MIN = 15;       // จุดหมายห่างขั้นต่ำ N ช่อง
   const WANDER_STEP_MAX = 30;       // จุดหมายห่างสูงสุด N ช่อง
   let lastFleeAt = 0;
@@ -2656,66 +2656,16 @@
       }
     }
 
-    // ★ stuck: player ไม่ขยับ >6s → ลอง offset ก่อน abandon
-    //   3 tries: offset perpendicular ±90° → offset ตรงข้าม → abandon
+    // ★ stuck: player ไม่ขยับ >6s → return STUCK (caller ตัดสินใจ warp/abandon)
     if (target._walkSentAt > 0 && (now - target._lastMovePosAt) > 6000) {
-      target._stuckTries = (target._stuckTries || 0) + 1;
-      if (target._stuckTries <= 3) {
-        // ลอง offset — เดินไป side/back ของมอน แล้วลองใหม่
-        const dx = m.x - player.x, dy = m.y - player.y;
-        const angle = Math.atan2(dy, dx);
-        const offsets = [
-          angle + Math.PI / 2,   // ตั้งฉากซ้าย
-          angle - Math.PI / 2,   // ตั้งฉากขวา
-          angle + Math.PI,       // ตรงข้าม (เดินหนีสั้นๆ แล้วเข้าใหม่)
-        ];
-        const off = offsets[(target._stuckTries - 1) % offsets.length];
-        const step = 6 + Math.random() * 4;
-        const ox = Math.round(player.x + Math.cos(off) * step);
-        const oy = Math.round(player.y + Math.sin(off) * step);
-        target._walkSentAt = now;
-        target._walkSentTo = { x: ox, y: oy };
-        target._lastMovePos = { x: player.x, y: player.y };
-        target._lastMovePosAt = now;   // reset stuck timer
-        if (sendMove(ox, oy)) {
-          log('🚧 stuck ลอง offset ' + target._stuckTries + '/3 → (' + ox + ',' + oy + ')');
-        }
-        return 'WALKING';
-      }
-      log('🚧 stuck: player ไม่ขยับ ' + ((now - target._lastMovePosAt)/1000).toFixed(1) + 's + offset ล้ม ' + target._stuckTries + ' ครั้ง');
+      log('🚧 stuck: player ไม่ขยับ ' + ((now - target._lastMovePosAt)/1000).toFixed(1) + 's dist=' + dist.toFixed(1));
       return 'STUCK';
     }
 
-    // ★ track mob position history — คำนวณ velocity (meeting position prediction)
-    if (!target._mobPosHist) target._mobPosHist = [];
-    const lastPos = target._mobPosHist[target._mobPosHist.length - 1];
-    if (!lastPos || Math.hypot(m.x - lastPos.x, m.y - lastPos.y) >= 1 || (now - lastPos.t) > 500) {
-      target._mobPosHist.push({ x: m.x, y: m.y, t: now });
-      if (target._mobPosHist.length > 4) target._mobPosHist.shift();
-    }
-
-    // ★ meeting position: predict where mob will be — walk to intercept ไม่ไปตำแหน่งเก่า
-    let destX = m.x, destY = m.y;
-    if (target._mobPosHist.length >= 2) {
-      const first = target._mobPosHist[0];
-      const last = target._mobPosHist[target._mobPosHist.length - 1];
-      const dt = (last.t - first.t) / 1000;
-      if (dt > 0.3) {
-        const vx = (last.x - first.x) / dt;
-        const vy = (last.y - first.y) / dt;
-        const speed = Math.hypot(vx, vy);
-        if (speed > 0.5 && speed < 10) {   // มอนกำลังเดินจริง (ไม่ใช่ jitter)
-          // walk time = dist / player_speed (สมมติ 5 ช่อง/s)
-          const walkTime = Math.min(dist / 5, 3);
-          destX = m.x + vx * walkTime;
-          destY = m.y + vy * walkTime;
-        }
-      }
-    }
-
-    // ★ re-issue MOVE เมื่อ: (a) ครั้งแรก, (b) meeting point ต่างจากเดิม >3, (c) MOVE เก่าเกิน 4s + player นิ่ง
+    // ★ re-issue MOVE เมื่อ: (a) ครั้งแรก, (b) มอนเคลื่อน >3, (c) MOVE เก่าเกิน 4s + player นิ่ง 1.5s
+    //   (OpenKore pattern: ส่ง MOVE ครั้งเดียว, รอ arrival — ไม่ predict/ไม่ offset)
     const sentTo = target._walkSentTo;
-    const movedFromSent = sentTo ? Math.hypot(destX - sentTo.x, destY - sentTo.y) : 999;
+    const movedFromSent = sentTo ? Math.hypot(m.x - sentTo.x, m.y - sentTo.y) : 999;
     const sentAge = target._walkSentAt ? (now - target._walkSentAt) : 999999;
     const playerIdleMs = now - target._lastMovePosAt;
     const shouldReissue = target._walkSentAt === 0
@@ -2723,10 +2673,9 @@
                         || (sentAge > 4000 && playerIdleMs > 1500);
     if (shouldReissue) {
       target._walkSentAt = now;
-      target._walkSentTo = { x: destX, y: destY };
-      if (sendMove(destX, destY)) {
-        const predicted = (Math.abs(destX - m.x) > 0.5 || Math.abs(destY - m.y) > 0.5) ? ' (predict)' : '';
-        log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', Math.round(destX), Math.round(destY) + ') dist=' + dist.toFixed(1) + predicted);
+      target._walkSentTo = { x: m.x, y: m.y };
+      if (sendMove(m.x, m.y)) {
+        log('🚶 เดินไปหา', m.name || m.id.toString(16), '@(', Math.round(m.x), Math.round(m.y) + ') dist=' + dist.toFixed(1));
         return 'WALKING';
       }
       return false;
