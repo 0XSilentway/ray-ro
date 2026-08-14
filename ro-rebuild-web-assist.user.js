@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.54.0
+// @version      4.55.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -2027,6 +2027,10 @@
   let noMonsterSince = 0;        // timestamp ที่เริ่มไม่เจอมอน
   let lastWanderAt = 0;
   let lastNavLogTag = '';   // ★ track last nav log target (กัน spam log)
+  // ★ persistent wander heading — เดินทิศเดียวหลายก้าวก่อน reroll (กันเดินไปมาที่เดิม)
+  let wanderHeading = null;         // angle (radian) — null = reroll ทันที
+  let wanderStepsInHeading = 0;     // นับก้าวที่เดินทิศนี้แล้ว
+  let wanderAnchor = null;          // {x, y} จุดเริ่มต้น heading — reroll ถ้าเดินได้น้อย
   let lastFleeAt = 0;
   let lastWarpFindAt = 0;        // throttle warpFind กัน spam
   let lastTargetSwitchAt = 0;    // throttle การสลับ target (กันสลับบ่อย)
@@ -2873,12 +2877,31 @@
           }
         }
         if (!moved) {
-          // fallback: สุ่มเดิน ≤ walkStepDistance ช่อง
-          const angle = Math.random() * Math.PI * 2;
-          const step = 3 + Math.random() * Math.min(CFG.wanderMaxStep, CFG.walkStepDistance) - 3;
-          const tx = player.x + Math.cos(angle) * step;
-          const ty = player.y + Math.sin(angle) * step;
-          if (sendMove(tx, ty)) log('🚶 สุ่มเดิน @(', Math.round(tx), Math.round(ty) + ') | จาก player(', player.x.toFixed(0), player.y.toFixed(0) + ') step=' + Math.round(step));
+          // fallback: สุ่มเดินแบบมี heading — เดินทิศเดียวหลายก้าวก่อน reroll
+          //   กัน bug เดิม: ทุก tick สุ่ม angle ใหม่ → mean displacement ≈ 0 → อยู่ที่เดิม
+          //   ใหม่: จำ heading, drift ±30° ต่อก้าว, reroll เมื่อ:
+          //     1. ยังไม่มี heading
+          //     2. เดินครบ 6 ก้าว
+          //     3. anchor → ตัวปัจจุบัน progress < 8 ช่อง (ติดกำแพง/ไปไม่ถึง)
+          let needReroll = wanderHeading == null || wanderStepsInHeading >= 6;
+          if (!needReroll && wanderAnchor) {
+            const progress = Math.hypot(player.x - wanderAnchor.x, player.y - wanderAnchor.y);
+            if (wanderStepsInHeading >= 3 && progress < 8) needReroll = true;   // ติดที่ → เปลี่ยนทิศ
+          }
+          if (needReroll) {
+            wanderHeading = Math.random() * Math.PI * 2;
+            wanderStepsInHeading = 0;
+            wanderAnchor = { x: player.x, y: player.y };
+          } else {
+            wanderHeading += (Math.random() - 0.5) * (Math.PI / 3);   // ±30° drift
+          }
+          const step = 8 + Math.random() * (Math.min(CFG.wanderMaxStep, CFG.walkStepDistance) - 8);   // 8-20 ช่อง
+          const tx = player.x + Math.cos(wanderHeading) * step;
+          const ty = player.y + Math.sin(wanderHeading) * step;
+          if (sendMove(tx, ty)) {
+            wanderStepsInHeading++;
+            log('🚶 สุ่มเดิน @(', Math.round(tx), Math.round(ty) + ') heading=' + Math.round(wanderHeading * 180 / Math.PI) + '° step=' + Math.round(step) + ' (' + wanderStepsInHeading + '/6)');
+          }
         }
       }
     }
