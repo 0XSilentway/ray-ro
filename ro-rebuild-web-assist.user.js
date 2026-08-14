@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.61.0
+// @version      4.62.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -4934,6 +4934,163 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
     for (const s of SKILL_PRESETS) { (groups[s.job] = groups[s.job] || []).push(s); }
     return groups;
   }
+  // ============================================================
+  //  MOB BLACKLIST POPUP — จัดการมอนที่ไม่ตี (permanent + death + สแกนบนจอ)
+  // ============================================================
+  function openMobBlacklistPopup() {
+    const old = document.getElementById('__assist_mobblpopup');
+    if (old) old.remove();
+    const popup = document.createElement('div');
+    popup.id = '__assist_mobblpopup';
+    popup.style.cssText = 'position:fixed;inset:0;z-index:2147483648;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center';
+    document.body.appendChild(popup);
+
+    function collectSeenMobs() {
+      const seen = new Map();   // key = sub || name → {sub, name, count}
+      const now = nowMs();
+      for (const e of entities.values()) {
+        if (e.kind !== 1 || !e.name) continue;
+        const key = e.sub != null ? String(e.sub) : e.name;
+        if (!seen.has(key)) seen.set(key, { sub: e.sub, name: e.name, count: 0 });
+        seen.get(key).count++;
+      }
+      return [...seen.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    }
+
+    function render() {
+      const perm = Array.isArray(CFG.targetBlacklist) ? CFG.targetBlacklist : [];
+      const deathList = ASSIST.getDeathBlacklist();
+      const seen = collectSeenMobs();
+
+      const permInPerm = new Set(perm.map(x => String(x).toLowerCase()));
+      const isPermBlocked = (mob) => {
+        if (mob.sub != null && perm.some(x => typeof x === 'number' && x === mob.sub)) return true;
+        return permInPerm.has(String(mob.name || '').toLowerCase());
+      };
+
+      let html = '';
+      // Section 1: permanent blacklist
+      html += `<div style="padding:6px 8px;color:#e67e22;font-size:11px;font-weight:600;border-bottom:1px solid #2a2d35">🚫 permanent blacklist (${perm.length})</div>`;
+      html += perm.length ? perm.map((x, i) => `
+        <div style="padding:5px 6px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(255,255,255,.04)">
+          <span style="flex:1;font-size:11px;color:#e8e8e8">${x}</span>
+          <button data-rmperm="${i}" style="background:#4a2020;border:1px solid #6a3030;border-radius:4px;color:#e8e8e8;cursor:pointer;font-size:11px;padding:3px 8px">✕</button>
+        </div>`).join('') : `<div style="padding:8px;color:#5f6368;font-size:10px">(ว่าง)</div>`;
+
+      // Section 2: death blacklist (auto)
+      const deathEntries = Object.entries(deathList);
+      html += `<div style="padding:6px 8px;color:#c0392b;font-size:11px;font-weight:600;border-bottom:1px solid #2a2d35;margin-top:6px">💀 death blacklist (auto, ${deathEntries.length}) — ตายฟาร์มมอนนี้ → skip อัตโนมัติ</div>`;
+      html += deathEntries.length ? deathEntries.map(([sub, e]) => `
+        <div style="padding:5px 6px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(255,255,255,.04)">
+          <span style="flex:1;font-size:11px;color:#e8e8e8">${e.name || ('sub#' + sub)} <span style="color:#5f6368">(#${sub})</span></span>
+          <span style="font-size:10px;color:#e67e22">${e.remainingMin} นาที</span>
+          <button data-rmdeath="${sub}" style="background:#4a2020;border:1px solid #6a3030;border-radius:4px;color:#e8e8e8;cursor:pointer;font-size:11px;padding:3px 8px">✕</button>
+        </div>`).join('') : `<div style="padding:8px;color:#5f6368;font-size:10px">(ว่าง — ยังไม่เคยตายฟาร์ม)</div>`;
+      if (deathEntries.length) {
+        html += `<div style="padding:6px 8px"><button data-cleardeath style="width:100%;background:#4a2020;border:1px solid #6a3030;border-radius:4px;color:#ef9a9a;cursor:pointer;font-size:11px;padding:6px">ล้าง death blacklist ทั้งหมด</button></div>`;
+      }
+
+      // Section 3: scan
+      html += `<div style="padding:6px 8px;color:#27ae60;font-size:11px;font-weight:600;border-bottom:1px solid #2a2d35;margin-top:6px">🔍 สแกนมอนบนจอ (${seen.length}) — คลิกเพื่อเพิ่มเข้า blacklist</div>`;
+      html += seen.length ? seen.map(mob => {
+        const blocked = isPermBlocked(mob);
+        const bg = blocked ? '#4a2020' : '#15171c';
+        const label = blocked ? '✓ blocked' : '+ block';
+        const color = blocked ? '#ef9a9a' : '#a5d6a7';
+        const key = mob.sub != null ? mob.sub : mob.name;
+        return `
+        <div style="padding:5px 6px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(255,255,255,.04);background:${bg}">
+          <span style="flex:1;font-size:11px;color:#e8e8e8">${mob.name} ${mob.sub != null ? `<span style="color:#5f6368">(#${mob.sub})</span>` : ''}</span>
+          <span style="font-size:10px;color:#5f6368">× ${mob.count}</span>
+          <button data-toggleperm="${encodeURIComponent(key)}" data-issub="${mob.sub != null ? '1' : '0'}" style="background:${blocked?'#6a3030':'#1b5e20'};border:1px solid ${blocked?'#8a4040':'#2e7d32'};border-radius:4px;color:${color};cursor:pointer;font-size:10px;padding:3px 8px">${label}</button>
+        </div>`;
+      }).join('') : `<div style="padding:8px;color:#5f6368;font-size:10px">(ไม่เห็นมอน — ยืนใกล้ๆ มอนแล้วเปิด popup ใหม่)</div>`;
+
+      // manual add
+      html += `<div style="padding:6px 8px;color:#8ab4f8;font-size:11px;font-weight:600;border-bottom:1px solid #2a2d35;margin-top:6px">➕ เพิ่มเอง (ชื่อ หรือ sprite ID)</div>`;
+      html += `<div style="padding:8px;display:flex;gap:6px">
+        <input id="__assist_mobbl_input" placeholder="เช่น Pupa หรือ 1008" style="flex:1;background:#15171c;border:1px solid #3a3f4b;border-radius:5px;color:#e8e8e8;padding:5px 7px;font-size:11px;font-family:inherit">
+        <button id="__assist_mobbl_addbtn" style="background:#1b5e20;border:1px solid #2e7d32;border-radius:5px;color:#a5d6a7;cursor:pointer;font-size:11px;padding:5px 10px">+ เพิ่ม</button>
+      </div>`;
+      return html;
+    }
+
+    popup.innerHTML = `
+      <div style="background:rgba(20,22,28,.98);border:1px solid #3a3f4b;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.7);width:440px;max-width:92vw;max-height:82vh;display:flex;flex-direction:column;overflow:hidden;color:#e8e8e8;font-family:'Segoe UI',system-ui,sans-serif;font-size:12px">
+        <div style="padding:10px 14px;background:#15171c;border-bottom:1px solid #3a3f4b;display:flex;justify-content:space-between;align-items:center">
+          <span style="color:#e67e22;font-weight:600;font-size:13px">🚫 จัดการ Mob Blacklist</span>
+          <span style="display:flex;gap:8px;align-items:center">
+            <button id="__assist_mobbl_refresh" title="rescan" style="background:#2a3441;border:1px solid #3a3f4b;border-radius:4px;color:#8ab4f8;cursor:pointer;font-size:11px;padding:3px 8px">🔄 rescan</button>
+            <span id="__assist_mobbl_close" style="cursor:pointer;color:#9aa0a6;font-size:18px;line-height:1">✕</span>
+          </span>
+        </div>
+        <div id="__assist_mobbl_body" style="overflow-y:auto;flex:1;padding:6px 8px"></div>
+      </div>`;
+    const bodyEl = popup.querySelector('#__assist_mobbl_body');
+    const refresh = () => { bodyEl.innerHTML = render(); wireButtons(); };
+
+    function wireButtons() {
+      bodyEl.querySelectorAll('[data-rmperm]').forEach(b => {
+        b.onclick = () => {
+          const i = parseInt(b.getAttribute('data-rmperm'), 10);
+          CFG.targetBlacklist.splice(i, 1);
+          saveConfigDebounced();
+          refresh();
+        };
+      });
+      bodyEl.querySelectorAll('[data-rmdeath]').forEach(b => {
+        b.onclick = () => {
+          const sub = Number(b.getAttribute('data-rmdeath'));
+          deathBlacklist.delete(sub);
+          try {
+            const obj = {};
+            for (const [s, e] of deathBlacklist) obj[s] = e;
+            localStorage.setItem(DEATH_BL_KEY, JSON.stringify(obj));
+          } catch (_) {}
+          refresh();
+        };
+      });
+      const cd = bodyEl.querySelector('[data-cleardeath]');
+      if (cd) cd.onclick = () => { ASSIST.clearDeathBlacklist(); refresh(); };
+      bodyEl.querySelectorAll('[data-toggleperm]').forEach(b => {
+        b.onclick = () => {
+          const raw = decodeURIComponent(b.getAttribute('data-toggleperm'));
+          const isSub = b.getAttribute('data-issub') === '1';
+          const val = isSub ? Number(raw) : raw;
+          const idx = CFG.targetBlacklist.findIndex(x => (isSub ? (typeof x === 'number' && x === val) : (String(x).toLowerCase() === String(val).toLowerCase())));
+          if (idx >= 0) CFG.targetBlacklist.splice(idx, 1);
+          else CFG.targetBlacklist.push(val);
+          saveConfigDebounced();
+          log('⚔️ blacklist =', CFG.targetBlacklist.join(', '));
+          refresh();
+        };
+      });
+      const addBtn = bodyEl.querySelector('#__assist_mobbl_addbtn');
+      if (addBtn) addBtn.onclick = () => {
+        const v = bodyEl.querySelector('#__assist_mobbl_input').value.trim();
+        if (!v) return;
+        const asNum = Number(v);
+        const val = (!isNaN(asNum) && String(asNum) === v) ? asNum : v;
+        if (!CFG.targetBlacklist.some(x => (typeof x === 'number' && typeof val === 'number' && x === val) || (String(x).toLowerCase() === String(val).toLowerCase()))) {
+          CFG.targetBlacklist.push(val);
+          saveConfigDebounced();
+        }
+        refresh();
+      };
+    }
+
+    popup.querySelector('#__assist_mobbl_close').addEventListener('click', () => popup.remove());
+    popup.querySelector('#__assist_mobbl_refresh').addEventListener('click', refresh);
+    popup.addEventListener('click', (ev) => { if (ev.target === popup) popup.remove(); });
+    popup.addEventListener('mousedown', (e) => {
+      if (e.target.matches && e.target.matches('input, select, textarea')) {
+        e.stopPropagation();
+        if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+      }
+    }, true);
+    refresh();
+  }
+
   function openItemListPopup(listType) {
     // ★ สร้าง popup ใหม่ทุกครั้ง (กัน closure/listener ค้างจากครั้งก่อน)
     const old = document.getElementById('__assist_itempopup');
@@ -5538,6 +5695,7 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
             <div class="field"><label>มอนที่จะตี — whitelist (ชื่อหรือ sprite id, คั่นจุลภาค) — ว่าง = ตีทุกมอน</label><input type="text" id="__assist_whitelist" placeholder="เช่น Poring,Lunatic หรือ 4000,1010"></div>
             <div class="field"><label>มอนที่จะไม่ตี — blacklist</label><input type="text" id="__assist_blacklist" placeholder="เช่น MVP,Boss"></div>
             <div class="btns"><button id="__assist_applywhitelist">ตั้ง whitelist</button><button id="__assist_applyblacklist">ตั้ง blacklist</button></div>
+            <div class="btns"><button id="__assist_manageblacklist">📋 จัดการ blacklist (สแกน + คลิก)</button></div>
             <div class="field"><label>ระยะโจมตี (ช่อง) — นักธนูตั้ง >2 เพื่อตีไกล</label><input type="number" id="__assist_attackrange" min="0" max="15"></div>
             <div class="btns">
               <button id="__assist_t_antiks" class="on">antiKS</button>
@@ -5911,6 +6069,7 @@ window.addEventListener('beforeunload', () => { try { chan.postMessage({ type:'p
     });
     root.querySelector('#__assist_applywhitelist').addEventListener('click', () => ASSIST.setTargetWhitelist(...parseList('#__assist_whitelist')));
     root.querySelector('#__assist_applyblacklist').addEventListener('click', () => ASSIST.setTargetBlacklist(...parseList('#__assist_blacklist')));
+    root.querySelector('#__assist_manageblacklist').addEventListener('click', () => openMobBlacklistPopup());
     root.querySelector('#__assist_applycombat').addEventListener('click', () => {
       const r = parseInt(root.querySelector('#__assist_attackrange').value, 10);
       if (!isNaN(r)) { if (r > 2) ASSIST.setRanged(r); else ASSIST.setAttackRange(r || 2); }
