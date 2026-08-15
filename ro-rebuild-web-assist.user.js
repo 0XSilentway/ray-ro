@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.73.1
+// @version      4.74.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.73.1';   // ★ MUST match @version header — bump both together
+  const VERSION = '4.74.0';   // ★ MUST match @version header — bump both together
   const GITHUB_RAW = 'https://raw.githubusercontent.com/0XSilentway/ray-ro/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -171,6 +171,15 @@
         CFG.searchRadii = [1, 3, 5, 8, 12, 20, 50, 100];
         CFG.entityStaleSec = 0;
         log('💾 migration: OpenKore default (maxAcquireDistance=100, entityStaleSec=0)');
+        saveConfigDebounced();
+      }
+      // ★ migration: reset HP guard (v4.61-v4.72 ตั้ง 40/20 หรือ auto-tune บล็อกไม่ให้ตี)
+      //   OpenKore default = 0 (disabled). User ตั้งเองถ้าอยาก
+      if (CFG.attackMinHpPercent > 0 || CFG.abortAttackHpPercent > 0 || CFG.autoTuneHpGuard === true) {
+        CFG.attackMinHpPercent = 0;
+        CFG.abortAttackHpPercent = 0;
+        CFG.autoTuneHpGuard = false;
+        log('💾 migration: ปิด HP guard (OpenKore default = disabled)');
         saveConfigDebounced();
       }
       // ★ migration: expand default healItems (add Novice Potion 569 + condensed + royal jelly)
@@ -466,12 +475,11 @@
     lowDamageAbandonThreshold: 3,   // ★ ตี N ครั้งได้ damage ≤ lowDamageValue → abandon + temp blacklist
     lowDamageValue: 3,              // ★ damage ≤ N ถือว่า "ตีไม่เข้า" (0 = miss, 1-3 = ตีเบามาก)
     lowDamageBlacklistMs: 60000,    // ★ temp blacklist นาน N ms (60s)
-    // ★ HP guards (OpenKore attackMinPlayerHP + custom abort)
-    attackMinHpPercent: 40,         // HP% < N → ไม่ acquire target ใหม่ (เก็บพลังก่อนสู้)
-    abortAttackHpPercent: 20,       // HP% ระหว่างสู้ ต่ำกว่า N → abandon + flee ทันที
-    // ★ auto-tune: ปรับ HP guard จาก HP.max อัตโนมัติ (Novice conservative, Knight aggressive)
-    //   ตั้ง false → ไม่ auto-tune. หรือตั้ง _userHpGuardOverride=true → lock
-    autoTuneHpGuard: true,
+    // ★ HP guards — OpenKore default = 0 (disabled). ผู้ใช้ตั้งเองถ้าอยาก
+    //   ปิดเพราะ auto-tune conservative ทำให้ Novice ตี้เม็ดไม่ยอมตี
+    attackMinHpPercent: 0,          // 0 = disabled (ตี้เม็ดตลอดแม้ HP ต่ำ)
+    abortAttackHpPercent: 0,        // 0 = disabled (ไม่มี abort mid-fight)
+    autoTuneHpGuard: false,         // ★ default OFF — user ตั้งเองถ้าอยาก
     // ★ Panic mode: item heal หมด → abandon + warp + auto-STOP combat (กันตาย)
     autoStopOnNoHealItems: true,
     autoResumeCombatOnHealAvail: true,   // มียากลับมา → เปิด combat อัตโนมัติ
