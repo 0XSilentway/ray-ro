@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.74.0
+// @version      4.75.0
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.74.0';   // ★ MUST match @version header — bump both together
+  const VERSION = '4.75.0';   // ★ MUST match @version header — bump both together
   const GITHUB_RAW = 'https://raw.githubusercontent.com/0XSilentway/ray-ro/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -165,12 +165,12 @@
         log('💾 migration: เอา Jellopy(909) ออกจาก exceptItems (default block เก่า)');
         saveConfigDebounced();
       }
-      // ★ migration: v4.71 เคย cap maxAcquireDistance=14. v4.73 กลับไปใช้ OpenKore default = 100
-      if (CFG.maxAcquireDistance === 14 || CFG.maxAcquireDistance === 30 || CFG.maxAcquireDistance === 20) {
-        CFG.maxAcquireDistance = 100;
-        CFG.searchRadii = [1, 3, 5, 8, 12, 20, 50, 100];
+      // ★ migration: v4.75 = maxAcquireDistance 12 (server walk-and-attack ทำงานได้)
+      if ([14, 20, 25, 30, 100].includes(CFG.maxAcquireDistance)) {
+        CFG.maxAcquireDistance = 12;
+        CFG.searchRadii = [1, 3, 5, 8, 12];
         CFG.entityStaleSec = 0;
-        log('💾 migration: OpenKore default (maxAcquireDistance=100, entityStaleSec=0)');
+        log('💾 migration: maxAcquireDistance=12 (server walk-and-attack ใช้ได้จริง)');
         saveConfigDebounced();
       }
       // ★ migration: reset HP guard (v4.61-v4.72 ตั้ง 40/20 หรือ auto-tune บล็อกไม่ให้ตี)
@@ -505,8 +505,9 @@
     //   default true = พฤติกรรมเหมือน OpenKore/classic bot
     approachBeforeAttack: true,
     rangedAttackRange: 8,         // 0 = ใช้ attackRange; >0 = นักธนูตีไกลได้ N ช่อง
-    maxAcquireDistance: 100,      // ★ OpenKore attackRouteMaxPathDistance default = 100 (ไม่ cap view)
-    searchRadii: [1, 3, 5, 8, 12, 20, 50, 100],   // OpenKore progressive
+    // ★ Reasonable range (no A*): 12 tile = ครึ่ง screen. Server walk-and-attack เชื่อถือได้
+    maxAcquireDistance: 12,
+    searchRadii: [1, 3, 5, 8, 12],
     entityStaleSec: 0,            // ★ OpenKore ไม่ทำ ghost aging — trust server entity list
     maxChaseDistance: 40,         // ★ เดินไล่ตามมอนได้สูงสุด N ช่อง (ไกลกว่านี้ abandon หาตัวอื่น)
     walkStepDistance: 20,         // ★ สั่งเดินทีละ N ช่อง (game click-walk cap ~20)
@@ -518,6 +519,7 @@
     attackPendingMax: 5,          // ★ abandon ถ้า pending ≥ N (เพิ่มจาก 3 → 5 กัน abandon ก่อน Thief low DPS ฆ่าได้)
     aggroKeepAliveMs: 15000,      // ★ มอน aggro เรา → ถือว่ายังสู้อยู่ N ms (กัน abandon ตอนมอนเดินมาหา)
     maxEngageSec: 30,             // abandon target ถ้า engage นานกว่านี้
+    noDamageAbandonSec: 8,        // ★ ถ้าไม่มี damage เข้าตัวเป้าใน N s หลัง engage → abandon (Miss เยอะ/เจาะไม่เข้า)
     maxEngageSecSlow: 180,        // ★ abandon มอน "ตีช้า/เจาะไม่เข้า" (เห็ด/พืช) ถ้านานกว่านี้ (3 นาที)
     slowMonsterSubIds: [4010, 4011, 4013, 4017, 4041, 4030, 4106, 4153],  // ★ sub-ID ที่ตี damage 1
     // flee (วาร์ปหนี)
@@ -3087,6 +3089,10 @@
           // stuck=false: engage-timeout ไม่ใช่ติดกำแพง (walkAway ไม่จำเป็น)
           abandonTarget('engage นาน ' + engageAge.toFixed(0) + 's' + (isSlowMonster ? ' (slow)' : ''), false, 10000); target = null;
         }
+        // ★ NEW: no damage in N s → abandon (ตี Miss หมด / เจาะไม่เข้า / server ไม่ตอบ)
+        else if (target.engageAt && engageAge > (CFG.noDamageAbandonSec || 8) && !target.lastAttackResultAt && !isSlowMonster) {
+          abandonTarget('no damage ' + engageAge.toFixed(0) + 's (Miss เยอะ/ไกลเกิน)', false, 15000); target = null;
+        }
         else if (!target.engageAt && acquireAge > engageLimit && !isTargetStillEngaged) {
           abandonTarget('ไม่ได้ตี ' + acquireAge.toFixed(0) + 's', false, 10000); target = null;
         }
@@ -3178,16 +3184,26 @@
     }
 
     // === 3. Attack ===
-    //   ★ RO client behavior: click มอน = server walk-and-attack (ATTACK packet เดียว)
-    //   ★ OpenKore attackSendAttackWithMove: ส่ง ATTACK ทันที + fallback MOVE ถ้า server ไม่ตอบ
-    //     1. ส่ง ATTACK เสมอในระยะ maxAcquireDistance (server จัดการ walk)
-    //     2. ถ้า pending สะสม 3+ ครั้ง 4s+ + player ไม่ขยับ → fallback ส่ง MOVE (helper)
+    //   ★ ระยะ:
+    //     ATTACK_RANGE (attackRange, default 2) — melee. ส่ง ATTACK
+    //     APPROACH_RANGE (attackRange*3, ~6) — ใกล้พอ server walk-and-attack ทำงาน
+    //     > APPROACH_RANGE → ส่ง MOVE เข้าไปก่อน (ไม่ ATTACK spam ระยะไกล)
     if (target) {
       const m = entities.get(target.id);
       if (m && player.x != null && m.x != null && m.y != null) {
         const dist = Math.hypot(m.x - player.x, m.y - player.y);
         target.lastDist = dist;
-        // ในระยะ acquire → ส่ง ATTACK ตรงๆ (server เดินเข้าไปตีเอง)
+        const APPROACH_RANGE = (CFG.attackRange || 2) * 3;   // ~6 tile
+        // ★ ไกลกว่า APPROACH_RANGE → walk-only (อย่า ATTACK spam ทำให้ pending พุ่ง)
+        if (dist > APPROACH_RANGE && dist <= CFG.maxAcquireDistance) {
+          const stuck = walkToTarget(now, m);
+          if (stuck === 'STUCK') {
+            abandonTarget('ติดกำแพง (approach)', false, 10000);
+            target = null;
+          }
+          return;
+        }
+        // ในระยะ approach → ส่ง ATTACK (server walk-and-attack ทำงานได้)
         if (dist <= CFG.maxAcquireDistance) {
           // (ลบ fallback เดินเข้า — server walk-and-attack ทำงานจริง แค่ reset ไม่ทำงานชั่วคราว)
           // ★ ถ้า pending สูง + server เงียบนาน + เปิด warpToMonster → วาร์ปไปหามอน (แทน abandon)
