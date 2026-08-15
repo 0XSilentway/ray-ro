@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RAY-RO Assist
 // @namespace    ray-ro
-// @version      4.75.0
+// @version      4.75.1
 // @description  RAY-RO fork (0XSilentway) — auto-loot/heal/combat/rest + stealth idle + chat reply
 // @match        *://*.rayrag.com/*
 // @run-at       document-start
@@ -116,7 +116,7 @@
   // ============================================================
   //  VERSION + config persistence (localStorage)
   // ============================================================
-  const VERSION = '4.75.0';   // ★ MUST match @version header — bump both together
+  const VERSION = '4.75.1';   // ★ MUST match @version header — bump both together
   const GITHUB_RAW = 'https://raw.githubusercontent.com/0XSilentway/ray-ro/main/ro-rebuild-web-assist.user.js';
   const CFG_STORAGE_KEY = 'roAssistConfig_v1';
   // keys ที่บันทึก/โหลด (boolean/number/array/string — ไม่เก็บ function หรือ object ซ้อน)
@@ -3185,17 +3185,17 @@
 
     // === 3. Attack ===
     //   ★ ระยะ:
-    //     ATTACK_RANGE (attackRange, default 2) — melee. ส่ง ATTACK
-    //     APPROACH_RANGE (attackRange*3, ~6) — ใกล้พอ server walk-and-attack ทำงาน
-    //     > APPROACH_RANGE → ส่ง MOVE เข้าไปก่อน (ไม่ ATTACK spam ระยะไกล)
+    //     - BEFORE engage: walk-only ถ้า dist > APPROACH_RANGE (6). กัน ATTACK spam ไกลๆ
+    //     - AFTER engage (target.engageAt set): ATTACK ต่อเนื่องแม้มอนเดินไปจนถึง maxAcquireDistance
+    //       (มอนเคลื่อน 3→8 = ไม่ควรหยุดตี, server walk-and-attack ตามได้)
     if (target) {
       const m = entities.get(target.id);
       if (m && player.x != null && m.x != null && m.y != null) {
         const dist = Math.hypot(m.x - player.x, m.y - player.y);
         target.lastDist = dist;
         const APPROACH_RANGE = (CFG.attackRange || 2) * 3;   // ~6 tile
-        // ★ ไกลกว่า APPROACH_RANGE → walk-only (อย่า ATTACK spam ทำให้ pending พุ่ง)
-        if (dist > APPROACH_RANGE && dist <= CFG.maxAcquireDistance) {
+        // ★ ก่อน engage: dist > APPROACH_RANGE → walk-only (ไม่ ATTACK spam ระยะไกล)
+        if (!target.engageAt && dist > APPROACH_RANGE && dist <= CFG.maxAcquireDistance) {
           const stuck = walkToTarget(now, m);
           if (stuck === 'STUCK') {
             abandonTarget('ติดกำแพง (approach)', false, 10000);
@@ -3203,7 +3203,7 @@
           }
           return;
         }
-        // ในระยะ approach → ส่ง ATTACK (server walk-and-attack ทำงานได้)
+        // ในระยะ acquire → ส่ง ATTACK (server walk-and-attack ตาม)
         if (dist <= CFG.maxAcquireDistance) {
           // (ลบ fallback เดินเข้า — server walk-and-attack ทำงานจริง แค่ reset ไม่ทำงานชั่วคราว)
           // ★ ถ้า pending สูง + server เงียบนาน + เปิด warpToMonster → วาร์ปไปหามอน (แทน abandon)
